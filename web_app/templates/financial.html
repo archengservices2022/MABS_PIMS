@@ -1,6 +1,22 @@
 ﻿{% extends "base.html" %}
 {% block title %}Finance{% endblock %}
-{% block page_title %}Finance Overview{% endblock %}
+
+{# Determine current section based on active tab - defined early for use in page_title #}
+{% set tab_to_section = {
+  'overview': 'overview',
+  'income': 'overview',
+  'by-project': 'overview',
+  'balance-sheet': 'overview',
+  'commission': 'overview',
+  'expenses': 'expenses',
+  'archived-expenses': 'expenses',
+  'ar-summary': 'receivables',
+  'aging': 'receivables'
+} %}
+{% set current_section = tab_to_section.get(active_tab, 'overview') %}
+{% set page_title_map = {'overview': 'Financial Overview', 'expenses': 'Expenses', 'receivables': 'Account Receivable Summary'} %}
+
+{% block page_title %}{{ page_title_map.get(current_section, 'Finance') }}{% endblock %}
 
 {% set status_icons = {
   'Draft':       ('bi-pencil',                  'Not sent to client yet'),
@@ -246,6 +262,15 @@ a[href*="filter_expense"]:hover {
   font-size: 10px; font-weight: 800; text-transform: uppercase;
   letter-spacing: .06em; color: #94a3b8; margin-bottom: 8px; margin-top: 14px;
 }
+
+/* Hide tab panes for non-active sections */
+{% if current_section == 'overview' %}
+#tab-expenses, #tab-archived-expenses, #tab-aging, #tab-ar-summary { display: none !important; }
+{% elif current_section == 'expenses' %}
+#tab-overview, #tab-income, #tab-by-project, #tab-balance-sheet, #tab-commission, #tab-aging, #tab-ar-summary { display: none !important; }
+{% elif current_section == 'receivables' %}
+#tab-overview, #tab-income, #tab-by-project, #tab-balance-sheet, #tab-commission, #tab-expenses, #tab-archived-expenses { display: none !important; }
+{% endif %}
 </style>
 {% endblock %}
 
@@ -253,6 +278,7 @@ a[href*="filter_expense"]:hover {
 
 <!-- ?? Tab nav ???????????????????????????????????????????????????????????????? -->
 <ul class="nav nav-tabs mb-3" id="finTabs">
+  {% if current_section == 'overview' %}
   <li class="nav-item">
     <a class="nav-link {{ 'active' if active_tab in ('overview', '') else '' }}" data-bs-toggle="tab" href="#tab-overview">
       <i class="bi bi-graph-up me-1"></i>Overview
@@ -262,18 +288,6 @@ a[href*="filter_expense"]:hover {
     <a class="nav-link {{ 'active' if active_tab == 'income' else '' }}" data-bs-toggle="tab" href="#tab-income">
       <i class="bi bi-cash-stack me-1"></i>Income
       {% if rev_list %}<span class="badge bg-secondary ms-1">{{ rev_list|length }}</span>{% endif %}
-    </a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link {{ 'active' if active_tab == 'expenses' else '' }}" data-bs-toggle="tab" href="#tab-expenses">
-      <i class="bi bi-receipt me-1"></i>Expenses
-      {% if expenses %}<span class="badge bg-secondary ms-1">{{ expenses|length }}</span>{% endif %}
-    </a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link {{ 'active' if active_tab == 'archived-expenses' else '' }}" data-bs-toggle="tab" href="#tab-archived-expenses">
-      <i class="bi bi-archive me-1"></i>Archived Expenses
-      {% if deleted_expenses %}<span class="badge bg-secondary ms-1">{{ deleted_expenses|length }}</span>{% endif %}
     </a>
   </li>
   <li class="nav-item">
@@ -287,17 +301,37 @@ a[href*="filter_expense"]:hover {
     </a>
   </li>
   <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'commission' else '' }}" data-bs-toggle="tab" href="#tab-commission">
+      <i class="bi bi-cash-coin me-1"></i>Commission
+    </a>
+  </li>
+  {% elif current_section == 'expenses' %}
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'expenses' else '' }}" data-bs-toggle="tab" href="#tab-expenses">
+      <i class="bi bi-receipt me-1"></i>Expenses
+      {% if expenses %}<span class="badge bg-secondary ms-1">{{ expenses|length }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'archived-expenses' else '' }}" data-bs-toggle="tab" href="#tab-archived-expenses">
+      <i class="bi bi-archive me-1"></i>Archived Expenses
+      {% if deleted_expenses %}<span class="badge bg-secondary ms-1">{{ deleted_expenses|length }}</span>{% endif %}
+    </a>
+  </li>
+  {% elif current_section == 'receivables' %}
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'ar-summary' else '' }}" data-bs-toggle="tab" href="#tab-ar-summary">
+      <i class="bi bi-file-earmark-check me-1"></i>A/R Summary
+    </a>
+  </li>
+  <li class="nav-item">
     <a class="nav-link {{ 'active' if active_tab == 'aging' else '' }}" data-bs-toggle="tab" href="#tab-aging">
       <i class="bi bi-clock-history me-1"></i>A/R Aging
       {% set aging_count = aging_buckets['1_30']|length + aging_buckets['31_60']|length + aging_buckets['61_90']|length + aging_buckets['90plus']|length %}
       {% if aging_count %}<span class="badge bg-danger ms-1">{{ aging_count }}</span>{% endif %}
     </a>
   </li>
-  <li class="nav-item">
-    <a class="nav-link {{ 'active' if active_tab == 'commission' else '' }}" data-bs-toggle="tab" href="#tab-commission">
-      <i class="bi bi-cash-coin me-1"></i>Commission
-    </a>
-  </li>
+  {% endif %}
 </ul>
 
 <!-- Admin: Fix historical exchange rates -->
@@ -313,14 +347,11 @@ a[href*="filter_expense"]:hover {
 
 <div class="tab-content">
 
-<!-- ????????????????????????????????????????????????????????????????
-     OVERVIEW TAB
-????????????????????????????????????????????????????????????????? -->
 <div class="tab-pane fade {{ 'show active' if active_tab in ('overview', '') else '' }}" id="tab-overview">
 
   {% set collection_pct = ((total_collected / total_invoiced * 100) if total_invoiced > 0 else 0)|round|int %}
 
-  <!-- ?? Row 1 — 5 KPI cards ??????????????????????????????????????? -->
+  <!-- ?? Row 1 — 5 KPI cards  -->
   <div class="row g-2 mb-4" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
     <div>
       <div class="kpi-card kpi-teal">
@@ -513,7 +544,6 @@ a[href*="filter_expense"]:hover {
 
 
 <!-- ????????????????????????????????????????????????????????????????
-     INCOME TAB
 ????????????????????????????????????????????????????????????????? -->
 <div class="tab-pane fade {{ 'show active' if active_tab == 'income' else '' }}" id="tab-income">
 
@@ -804,7 +834,6 @@ a[href*="filter_expense"]:hover {
 
 
 <!-- ????????????????????????????????????????????????????????????????
-     EXPENSES TAB
 ????????????????????????????????????????????????????????????????? -->
 <div class="tab-pane fade {{ 'show active' if active_tab == 'expenses' else '' }}" id="tab-expenses">
 
@@ -959,8 +988,20 @@ a[href*="filter_expense"]:hover {
             <td class="small text-muted">{{ exp.get('category','—') }}</td>
             <td class="fw-medium">{{ exp.get('vendor','—') }}</td>
             <td class="text-muted small">
+              {% set adj_details = exp.get('adjustment_payment_details', []) %}
               {% set proj_nums = exp.get('project_numbers', []) %}
-              {% if proj_nums and proj_nums|length > 0 %}
+              {% if adj_details and adj_details|length > 0 %}
+                <!-- Display adjustment deduction projects -->
+                {% if adj_details|length <= 3 %}
+                  {% for detail in adj_details %}
+                    {{ detail.get('project_number', '') }}<br>
+                  {% endfor %}
+                {% else %}
+                  <button type="button" class="btn btn-link btn-sm p-0" onclick="showProjectDetails([{{ adj_details|map(attribute='project_number')|map('tojson')|join(', ') }}], '{{ exp.get('firebase_id', '') }}')">
+                    {{ adj_details|length }} projects
+                  </button>
+                {% endif %}
+              {% elif proj_nums and proj_nums|length > 0 %}
                 {% if proj_nums|length <= 3 %}
                   {{ proj_nums|join(', ') }}
                 {% else %}
@@ -974,7 +1015,7 @@ a[href*="filter_expense"]:hover {
             </td>
             <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format((exp.get('remaining_due',0) if exp.get('expense_type') == 'Commission' else exp.get('amount',0))|float) }}</td>
             <td class="small">
-              {% set _sub = exp.get('submitted_by_name','') or exp.get('created_by','') or '' %}
+              {% set _sub = exp.get('submitted_by_name','') or exp.get('created_by','') or exp.get('submitted_by','') or '' %}
               <div class="text-muted">{{ _sub.split('@')[0].replace('.',' ').title() if '@' in _sub else (_sub or '—') }}</div>
               <div class="text-muted" style="font-size:0.85em;opacity:0.8;">{{ exp.get('created_at','—') | format_date }}</div>
             </td>
@@ -1021,6 +1062,7 @@ a[href*="filter_expense"]:hover {
       </div>
     </div>
   </div>
+
 </div><!-- /tab-expenses -->
 
 <!-- ARCHIVED EXPENSES TAB ????????????????????????????????????????????????????? -->
@@ -3923,7 +3965,6 @@ function viewReceipt(expId) {
 </script>
 
 <!-- ????????????????????????????????????????????????????????????????
-     BY PROJECT TAB
 ????????????????????????????????????????????????????????????????? -->
 <div class="tab-pane fade {{ 'show active' if active_tab == 'by-project' else '' }}" id="tab-by-project">
 
@@ -4308,7 +4349,6 @@ function viewReceipt(expId) {
 </div><!-- /tab-by-project -->
 
 <!-- ????????????????????????????????????????????????????????????????
-     BALANCE SHEET TAB
 ????????????????????????????????????????????????????????????????? -->
 <div class="tab-pane fade {{ 'show active' if active_tab == 'balance-sheet' else '' }}" id="tab-balance-sheet">
 
@@ -4449,18 +4489,22 @@ function viewReceipt(expId) {
             <tr>
               <th style="text-align: left; background: #f8fafc; color: #e74c3c; font-weight: 700; padding: 8px;">▶ EXPENSES</th>
               {% for m in range(1, 13) %}
-              {% set exp_with_comm = (annual_expenses.get(m, 0) | float) + (annual_commissions.get(m, 0) | float) %}
-              <td>{{ currency_symbol }}{{ exp_with_comm | round(2) }}</td>
+              {% set total_exp_m = (annual_payroll.get(m, 0) | float) + (annual_adjustments.get(m, 0) | float) + (annual_regular_expenses.get(m, 0) | float) %}
+              <td>{{ currency_symbol }}{{ total_exp_m | round(2) }}</td>
               {% endfor %}
-              <td id="bsExpTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ ((bs_total_expenses | default(0)) + (annual_commissions.values() | sum)) | round(2) }}</td>
+              {% set grand_total_exp = (annual_payroll.values() | sum) + (annual_adjustments.values() | sum) + (annual_regular_expenses.values() | sum) %}
+              <td id="bsExpTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ grand_total_exp | round(2) }}</td>
             </tr>
             <tr>
               <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">▶ NET P/L</th>
               {% for m in range(1, 13) %}
-              {% set netval = (annual_netpl.get(m, 0) | float) %}
+              {% set total_exp_m = (annual_payroll.get(m, 0) | float) + (annual_adjustments.get(m, 0) | float) + (annual_regular_expenses.get(m, 0) | float) %}
+              {% set netval = (annual_revenue.get(m, 0) | float) - total_exp_m %}
               <td style="{{ 'color:#16a34a;' if netval >= 0 else 'color:#dc2626;' }}">{{ currency_symbol }}{{ netval | round(2) }}</td>
               {% endfor %}
-              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ ((annual_revenue.values() | sum) - (bs_total_expenses | default(0)) - (annual_commissions.values() | sum)) | round(2) }}</td>
+              {% set grand_total_exp = (annual_payroll.values() | sum) + (annual_adjustments.values() | sum) + (annual_regular_expenses.values() | sum) %}
+              {% set grand_net = (annual_revenue.values() | sum) - grand_total_exp %}
+              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ grand_net | round(2) }}</td>
             </tr>
           </tbody>
         </table>
@@ -4514,62 +4558,7 @@ function viewReceipt(expId) {
       </div>
     </div>
 
-    <!-- Advance Collected Revenue Section -->
-    <div class="mb-3" id="monthAdvanceAdjustmentSection" style="display:none;">
-      <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#7C3AED; padding:6px 0; border-bottom:2px solid #DDD6FE; margin-bottom:8px;">
-        <i class="bi bi-arrow-repeat me-1"></i>Advance Collected Revenue
-      </div>
-      <div class="table-responsive" style="width:100%;">
-        <table class="table table-hover mb-0" style="font-size:12px; width:100%; table-layout:fixed;">
-          <colgroup>
-            <col style="width:10%;">
-            <col style="width:12%;">
-            <col style="width:12%;">
-            <col style="width:18%;">
-            <col style="width:13%;">
-            <col style="width:13%;">
-            <col style="width:12%;">
-          </colgroup>
-          <thead style="background:#1e293b;">
-            <tr>
-              <th style="padding:8px 12px; color:#fff; font-weight:700;">Advance No</th>
-              <th style="padding:8px 12px; color:#fff; font-weight:700;">Date</th>
-              <th style="padding:8px 12px; color:#fff; font-weight:700;">Employee</th>
-              <th style="padding:8px 12px; color:#fff; font-weight:700;">Description</th>
-              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Total</th>
-              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Adjusted Amount</th>
-              <th style="padding:8px 12px; color:#fff; font-weight:700;">Paid Date</th>
-            </tr>
-          </thead>
-          <tbody id="monthAdvanceAdjustmentTbody"></tbody>
-          <tfoot id="monthAdvanceAdjustmentTfoot" style="background:#F5F3FF; border-top:2px solid #DDD6FE;"></tfoot>
-        </table>
-      </div>
-    </div>
 
-    <!-- Total Monthly Revenue Breakdown -->
-    <div class="mb-3" id="monthTotalRevenueSection" style="display:none;">
-      <div style="background:#F0FDF4; border:2px solid #86EFAC; border-radius:8px; padding:12px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <span style="font-weight:600; font-size:12px; color:#059669;">
-            <i class="bi bi-arrow-down-up me-1"></i>Revenue Collected
-          </span>
-          <span style="font-weight:700; font-size:13px; color:#059669;" id="monthCollectedRevenue">$0.00</span>
-        </div>
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <span style="font-weight:600; font-size:12px; color:#7C3AED;">
-            <i class="bi bi-arrow-repeat me-1"></i>Advance Collected
-          </span>
-          <span style="font-weight:700; font-size:13px; color:#7C3AED;" id="monthAdjustmentRevenue">$0.00</span>
-        </div>
-        <div style="border-top:2px solid #86EFAC; padding-top:8px; display:flex; justify-content:space-between; align-items:center;">
-          <span style="font-weight:700; font-size:13px; color:#059669;">
-            <i class="bi bi-cash-stack me-2"></i>TOTAL MONTHLY REVENUE
-          </span>
-          <span style="font-weight:800; font-size:14px; color:#059669;" id="monthTotalRevenue">$0.00</span>
-        </div>
-      </div>
-    </div>
 
     <!-- Unpaid — Due This Month Section -->
     <div class="mb-3" id="monthDueSection" style="display:none;">
@@ -4626,7 +4615,7 @@ function viewReceipt(expId) {
       <!-- Salaries Subsection -->
       <div class="mb-4" id="monthSalariesSection">
         <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#1D4ED8; padding:6px 0; border-bottom:2px solid #BFDBFE; margin-bottom:8px;">
-          <i class="bi bi-people me-1"></i>Salaries
+          <i class="bi bi-cash-stack me-1"></i>Payroll
         </div>
         <div class="table-responsive">
           <table class="table mb-0" style="font-size:12px;">
@@ -4635,6 +4624,7 @@ function viewReceipt(expId) {
                 <th style="padding:8px 12px; color:#fff;">Date</th>
                 <th style="padding:8px 12px; color:#fff;">Employee</th>
                 <th style="padding:8px 12px; color:#fff;">Role</th>
+                <th style="padding:8px 12px; color:#fff;">Type</th>
                 <th style="padding:8px 12px; color:#fff;">Region</th>
                 <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
               </tr>
@@ -4645,53 +4635,32 @@ function viewReceipt(expId) {
         </div>
       </div>
 
-      <!-- Advances Subsection -->
-      <div class="mb-4" id="monthAdvancesSection">
-        <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#D97706; padding:6px 0; border-bottom:2px solid #FED7AA; margin-bottom:8px;">
-          <i class="bi bi-arrow-right-circle me-1"></i>Employee Advances
-        </div>
-        <div class="table-responsive">
-          <table class="table mb-0" style="font-size:12px;">
-            <thead style="background:#92400E; color:#fff;">
-              <tr>
-                <th style="padding:8px 12px; color:#fff;">Date</th>
-                <th style="padding:8px 12px; color:#fff;">Advance No</th>
-                <th style="padding:8px 12px; color:#fff;">Employee</th>
-                <th style="padding:8px 12px; color:#fff;">Description</th>
-                <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
-              </tr>
-            </thead>
-            <tbody id="monthAdvancesTbody"></tbody>
-            <tfoot id="monthAdvancesTfoot" style="background:#FFFBEB; border-top:2px solid #FED7AA;"></tfoot>
-          </table>
-        </div>
-      </div>
-
-      <!-- Commission Section -->
-      <div id="monthCommissionSection" style="display:none; margin-top:12px;">
+      <!-- Adjustments Subsection -->
+      <div class="mb-4" id="monthAdjustmentsSection" style="display:none;">
         <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#7C3AED; padding:6px 0; border-bottom:2px solid #DDD6FE; margin-bottom:8px;">
-          <i class="bi bi-cash-coin me-1"></i>Commission Paid
+          <i class="bi bi-arrow-left-right me-1"></i>Advance Adjustments
         </div>
         <div class="table-responsive">
           <table class="table mb-0" style="font-size:12px;">
             <thead style="background:#5B21B6; color:#fff;">
               <tr>
                 <th style="padding:8px 12px; color:#fff;">Date</th>
-                <th style="padding:8px 12px; color:#fff;">Salesperson</th>
-                <th style="padding:8px 12px; color:#fff;">Project #</th>
-                <th style="padding:8px 12px; color:#fff; text-align:right;">Commission Paid</th>
+                <th style="padding:8px 12px; color:#fff;">Employee</th>
+                <th style="padding:8px 12px; color:#fff;">Advance #</th>
+                <th style="padding:8px 12px; color:#fff;">Type</th>
+                <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
               </tr>
             </thead>
-            <tbody id="monthCommissionTbody"></tbody>
-            <tfoot id="monthCommissionTfoot" style="background:#F5F3FF; border-top:2px solid #DDD6FE;"></tfoot>
+            <tbody id="monthAdjustmentsTbody"></tbody>
+            <tfoot id="monthAdjustmentsTfoot" style="background:#F5F3FF; border-top:2px solid #DDD6FE;"></tfoot>
           </table>
         </div>
       </div>
 
-      <!-- Grand Total Row -->
+<!-- Grand Total Row -->
       <div style="background:#FEF2F2; border:2px solid #FECACA; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
         <span style="font-weight:700; font-size:13px; color:#991B1B;">
-          <i class="bi bi-calculator me-2"></i>TOTAL EXPENSES (Expenses + Salaries + Advances + Commissions)
+          <i class="bi bi-calculator me-2"></i>TOTAL EXPENSES (Expenses + Payroll + Adjustments)
         </span>
         <span style="font-weight:800; font-size:14px; color:#DC2626;" id="monthTotalExpenses">—</span>
       </div>
@@ -4703,7 +4672,6 @@ function viewReceipt(expId) {
     var monthlyPaymentDetails    = {{ monthly_payment_details | safe }};
     var monthlyExpenseDetails    = {{ monthly_expense_details | safe }};
     var monthlySalaryDetails      = {{ monthly_salary_details | safe }};
-    var monthlyAdvanceAdjustmentDetails = {{ monthly_advance_adjustment_details | safe }};
     var monthlyCommissionDetails  = {{ monthly_commission_details | safe }};
     var monthlyOutstandingDetails = {{ monthly_outstanding_details | safe }};
     var monthlyDueDetails         = {{ monthly_due_details | safe }};
@@ -4777,45 +4745,8 @@ function viewReceipt(expId) {
           +'<td style="padding:8px 12px;"></td></tr>';
       }
 
-      /* ?? 1.5. Advance Collected Revenue ?? */
-      var advAdjustments = monthlyAdvanceAdjustmentDetails[mkey] || [];
-      var advAdjSec = document.getElementById('monthAdvanceAdjustmentSection');
-      var totalAdvAdjRevenue = 0;
-      if (advAdjustments.length > 0) {
-        advAdjSec.style.display = '';
-        var advARows = advAdjustments.map(function(a, idx) {
-          var bg = idx%2===0?'#fff':'#f5f3ff';
-          var advanceLink = a.advance_id
-            ? '<a href="/payroll/advance/'+encodeURIComponent(a.advance_id)+'" style="color:#7C3AED;font-weight:700;text-decoration:none;">'+(a.advance_no||'—')+'</a>'
-            : (a.advance_no||'—');
-          return '<tr style="background:'+bg+';border-bottom:1px solid #ddd6fe;">'
-            +'<td style="padding:8px 12px;font-weight:500;">'+advanceLink+'</td>'
-            +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(a.date)+'</td>'
-            +'<td style="padding:8px 12px;color:#1e293b;font-weight:500;">'+(a.employee_name||'—')+'</td>'
-            +'<td style="padding:8px 12px;color:#6b7280;">Advance Adjustment</td>'
-            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#6b7280;">'+fmt(a.total_amount)+'</td>'
-            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#7C3AED;">'+fmt(a.adjusted_amount)+'</td>'
-            +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(a.adjusted_date)+'</td></tr>';
-        });
-        document.getElementById('monthAdvanceAdjustmentTbody').innerHTML = advARows.join('');
-        totalAdvAdjRevenue = advAdjustments.reduce(function(s,a){return s+parseFloat(a.adjusted_amount||0);},0);
-        document.getElementById('monthAdvanceAdjustmentTfoot').innerHTML = '<tr><td colspan="6" style="padding:8px 12px;font-weight:700;">Total Advance Collected</td>'
-          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#7C3AED;font-size:13px;">'+fmt(totalAdvAdjRevenue)+'</td></tr>';
-      } else {
-        advAdjSec.style.display = 'none';
-      }
-
-      // Calculate Total Monthly Revenue
-      var totalMonthlyRevenue = totalPaid + totalAdvAdjRevenue;
-      var totalRevSec = document.getElementById('monthTotalRevenueSection');
-      if (payments.length > 0 || advAdjustments.length > 0) {
-        totalRevSec.style.display = '';
-        document.getElementById('monthCollectedRevenue').textContent = fmt(totalPaid);
-        document.getElementById('monthAdjustmentRevenue').textContent = fmt(totalAdvAdjRevenue);
-        document.getElementById('monthTotalRevenue').textContent = fmt(totalMonthlyRevenue);
-      } else {
-        totalRevSec.style.display = 'none';
-      }
+      // NOTE: Advance adjustments are NOT revenue - they are employee repayments
+      // Monthly revenue section removed - use Income tab for revenue tracking
 
       /* ?? 2. Unpaid — Due This Month ?? */
       var due = monthlyDueDetails[mkey] || [];
@@ -4856,27 +4787,27 @@ function viewReceipt(expId) {
         dueSec.style.display = 'none';
       }
 
-      /* ?? 4. Advances and Expenses ?? */
+      /* ?? 4. Expenses and Adjustments ?? */
       var allExpenses = monthlyExpenseDetails[mkey] || [];
-      var advances = [];
+      var adjustments = [];
       var regularExpenses = [];
 
       allExpenses.forEach(function(e) {
-        if (e.advance_id) {
-          advances.push(e);
+        if (e.vendor === 'Advance Adjustments' || e.is_adjustment) {
+          adjustments.push(e);
         } else {
           regularExpenses.push(e);
         }
       });
 
+      /* ?? 4b. Commissions (from dedicated monthly_commission_details) ?? */
+      var commissions = monthlyCommissionDetails[mkey] || [];
+
       /* ?? 5. Salaries ?? */
       var salaries = monthlySalaryDetails[mkey] || [];
 
-      /* ?? 6. Commission Paid (fetch early) ?? */
-      var commissions = monthlyCommissionDetails[mkey] || [];
-
-      // Check if there's any data (salaries + advances + expenses + COMMISSIONS)
-      var hasData = salaries.length > 0 || advances.length > 0 || regularExpenses.length > 0 || commissions.length > 0;
+      // Check if there's any data (salaries + adjustments + expenses + COMMISSIONS)
+      var hasData = salaries.length > 0 || adjustments.length > 0 || regularExpenses.length > 0 || commissions.length > 0;
       var combinedSec = document.getElementById('monthCombinedExpensesSection');
 
       if (!hasData) {
@@ -4889,68 +4820,57 @@ function viewReceipt(expId) {
         var totalSal = 0;
         if (salaries.length > 0) {
           salSec.style.display = '';
+          salaries.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
           var roleColors = {admin:'#dc2626',finance:'#0D9488',projects:'#7C3AED',engineer:'#0369a1',sales:'#d97706'};
           var sRows = salaries.map(function(s, idx) {
             var bg = idx%2===0?'#fff':'#eff6ff';
-            var roleKey = (s.role||'').toLowerCase();
-            var roleColor = roleColors[roleKey] || '#64748b';
-            var roleBadge = s.role ? '<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;background:'+roleColor+'22;color:'+roleColor+';">'+s.role+'</span>' : '—';
+            var salaryType = s.type || s.category || 'Salary';
+            var typeKey = salaryType.toLowerCase();
+            var typeBgColor = {salary:'#dbeafe',bonus:'#fef3c7',commission:'#dcfce7'};
+            var typeTextColor = {salary:'#1e40af',bonus:'#92400e',commission:'#15803d'};
+            var typeBg = typeBgColor[typeKey] || '#f3f4f6';
+            var typeColor = typeTextColor[typeKey] || '#374151';
+            var typeBadge = '<span style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:500;background:'+typeBg+';color:'+typeColor+';letter-spacing:0.3px;">'+salaryType+'</span>';
             return '<tr style="background:'+bg+';border-bottom:1px solid #bfdbfe;">'
               +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(s.date)+'</td>'
               +'<td style="padding:8px 12px;font-weight:500;">'+(s.name||'—')+'</td>'
-              +'<td style="padding:8px 12px;">'+roleBadge+'</td>'
+              +'<td style="padding:8px 12px;color:#6b7280;">'+(s.role||'—')+'</td>'
+              +'<td style="padding:8px 12px;">'+typeBadge+'</td>'
               +'<td style="padding:8px 12px;color:#6b7280;">'+(s.region||'—')+'</td>'
               +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#1D4ED8;">'+fmt(s.amount)+'</td></tr>';
           });
           document.getElementById('monthSalariesTbody').innerHTML = sRows.join('');
           totalSal = salaries.reduce(function(s,e){return s+parseFloat(e.amount||0);},0);
-          document.getElementById('monthSalariesTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total Salaries</td>'
+          document.getElementById('monthSalariesTfoot').innerHTML = '<tr><td colspan="5" style="padding:8px 12px;font-weight:700;">Total Payroll</td>'
             +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#1D4ED8;font-size:13px;">'+fmt(totalSal)+'</td></tr>';
         } else {
           salSec.style.display = 'none';
         }
 
-        // Populate Advances
-        var advSec = document.getElementById('monthAdvancesSection');
-        var totalAdv = 0;
-        if (advances.length > 0) {
-          advSec.style.display = '';
-          var aRows = advances.map(function(a, idx) {
-            var bg = idx%2===0?'#fff':'#fffbeb';
-            var advanceLink = a.advance_id
-              ? '<a href="/payroll/advance/'+encodeURIComponent(a.advance_id)+'" style="color:#D97706;font-weight:700;text-decoration:none;">'+(a.advance_no||'—')+'</a>'
-              : (a.advance_no||'—');
-            // Extract original amount from reason field (format: "Original: $XXX.XX | Adjusted: $YYY.YY")
-            var originalAmount = a.amount;
-            if (a.reason && a.reason.includes('Original:')) {
-              var match = a.reason.match(/Original:\s*\$([0-9,]+\.?\d*)/);
-              if (match) {
-                originalAmount = parseFloat(match[1].replace(/,/g, ''));
-              }
-            }
-            return '<tr style="background:'+bg+';border-bottom:1px solid #fed7aa;">'
+        // Populate Adjustments (from Advance Adjustments expenses)
+        var adjSec = document.getElementById('monthAdjustmentsSection');
+        var totalAdj = 0;
+        if (adjustments.length > 0) {
+          adjSec.style.display = '';
+          adjustments.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+          var aRows = adjustments.map(function(a, idx) {
+            var bg = idx%2===0?'#fff':'#f5f3ff';
+            var advanceNo = a.advance_no || '—';
+            var adjustmentType = a.adjustment_type || '—';
+            var employeeName = a.employee_name || '—';
+            return '<tr style="background:'+bg+';border-bottom:1px solid #ddd6fe;">'
               +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(a.date)+'</td>'
-              +'<td style="padding:8px 12px;font-weight:500;">'+advanceLink+'</td>'
-              +'<td style="padding:8px 12px;color:#1e293b;font-weight:500;">'+(a.employee_name||'—')+'</td>'
-              +'<td style="padding:8px 12px;color:#6b7280;">'+(a.reason||'—')+'</td>'
-              +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#D97706;">'+fmt(originalAmount)+'</td></tr>';
+              +'<td style="padding:8px 12px;color:#1e293b;font-weight:500;">'+employeeName+'</td>'
+              +'<td style="padding:8px 12px;font-weight:500;">'+advanceNo+'</td>'
+              +'<td style="padding:8px 12px;color:#6b7280;">'+adjustmentType+'</td>'
+              +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#7C3AED;">'+fmt(a.amount)+'</td></tr>';
           });
-          document.getElementById('monthAdvancesTbody').innerHTML = aRows.join('');
-          // Calculate total using original amounts from Balance Sheet perspective
-          totalAdv = advances.reduce(function(s,a){
-            var originalAmount = a.amount;
-            if (a.reason && a.reason.includes('Original:')) {
-              var match = a.reason.match(/Original:\s*\$([0-9,]+\.?\d*)/);
-              if (match) {
-                originalAmount = parseFloat(match[1].replace(/,/g, ''));
-              }
-            }
-            return s + parseFloat(originalAmount||0);
-          },0);
-          document.getElementById('monthAdvancesTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total Advances</td>'
-            +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#D97706;font-size:13px;">'+fmt(totalAdv)+'</td></tr>';
+          document.getElementById('monthAdjustmentsTbody').innerHTML = aRows.join('');
+          totalAdj = adjustments.reduce(function(s,a){return s+parseFloat(a.amount||0);},0);
+          document.getElementById('monthAdjustmentsTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total Adjustments</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#7C3AED;font-size:13px;">'+fmt(totalAdj)+'</td></tr>';
         } else {
-          advSec.style.display = 'none';
+          adjSec.style.display = 'none';
         }
 
         // Populate Regular Expenses
@@ -4958,6 +4878,7 @@ function viewReceipt(expId) {
         var totalExp = 0;
         if (regularExpenses.length > 0) {
           expSec.style.display = '';
+          regularExpenses.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
           var eRows = regularExpenses.map(function(e, idx) {
             var bg = idx%2===0?'#fff':'#fef2f2';
             return '<tr style="background:'+bg+';border-bottom:1px solid #fee2e2;">'
@@ -4975,33 +4896,10 @@ function viewReceipt(expId) {
         }
       }
 
-      /* ?? 6. Commission Paid ?? */
-      var commSec = document.getElementById('monthCommissionSection');
-      var totalComm = 0;
-      if (commissions.length > 0) {
-        commSec.style.display = '';
-        var cRows = commissions.map(function(c, idx) {
-          var bg = idx%2===0?'#fff':'#f5f3ff';
-          var projLink = c.project_id
-            ? '<a href="/projects/'+encodeURIComponent(c.project_id)+'" style="color:#5B21B6;font-weight:700;text-decoration:none;">'+(c.project_number||'—')+'</a>'
-            : (c.project_number||'—');
-          return '<tr style="background:'+bg+';border-bottom:1px solid #ddd6fe;">'
-            +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(c.paid_date)+'</td>'
-            +'<td style="padding:8px 12px;color:#1e293b;font-weight:500;">'+(c.salesperson||'—')+'</td>'
-            +'<td style="padding:8px 12px;font-weight:500;">'+projLink+'</td>'
-            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#2563EB;">'+fmt(c.commission_amount)+'</td></tr>';
-        });
-        document.getElementById('monthCommissionTbody').innerHTML = cRows.join('');
-        totalComm = commissions.reduce(function(s,c){return s+parseFloat(c.commission_amount||0);},0);
-        document.getElementById('monthCommissionTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Commission Paid</td>'
-          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#2563EB;font-size:13px;">'+fmt(totalComm)+'</td></tr>';
-      } else {
-        commSec.style.display = 'none';
-      }
 
-      // Calculate and display grand total (including commissions) - only if hasData is true
+      // Calculate and display grand total - only if hasData is true
       if (hasData) {
-        var grandTotal = totalSal + totalAdv + totalExp + totalComm;
+        var grandTotal = totalSal + totalAdj + totalExp;
         document.getElementById('monthTotalExpenses').textContent = fmt(grandTotal);
       }
 
@@ -5204,7 +5102,6 @@ function viewReceipt(expId) {
 </div><!-- /tab-balance-sheet -->
 
 <!-- ????????????????????????????????????????????????????????????????
-     A/R AGING TAB
 ????????????????????????????????????????????????????????????????? -->
 <div class="tab-pane fade {{ 'show active' if active_tab == 'aging' else '' }}" id="tab-aging">
 
@@ -5387,38 +5284,41 @@ function viewReceipt(expId) {
 </div><!-- /tab-aging -->
 
 <!-- ????????????????????????????????????????????????????????????????
-     COMMISSION TAB
 ????????????????????????????????????????????????????????????????? -->
 <div class="tab-pane fade {{ 'show active' if active_tab == 'commission' else '' }}" id="tab-commission">
 
   <!-- KPI strip -->
+  {% set comm_total_earned = project_commissions|sum(attribute='commission_amount') | default(0, true) | float %}
+  {% set comm_total_adjusted = project_commissions|sum(attribute='adjusted_amount') | default(0, true) | float %}
+  {% set comm_total_paid = project_commissions|sum(attribute='paid_amount') | default(0, true) | float %}
+  {% set comm_total_outstanding = [comm_total_earned - comm_total_adjusted - comm_total_paid, 0] | max %}
   <div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-2">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Earned</div>
-        <div style="font-size:1.6rem;font-weight:800;color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_earned) }}</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(comm_total_earned) }}</div>
         <div style="font-size:11px;color:#94a3b8;margin-top:6px;">All Commissions</div>
       </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-2">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Adjusted</div>
-        <div style="font-size:1.6rem;font-weight:800;color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(0) }}</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Advance Deductions</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(comm_total_adjusted) }}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Deductions and adjustments</div>
       </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-2">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Paid</div>
-        <div style="font-size:1.6rem;font-weight:800;color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_paid) }}</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Paid Commissions</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(comm_total_paid) }}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Commission paid out</div>
       </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-2">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Outstanding</div>
-        <div style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if commission_total_outstanding > 0 else '#16a34a' }};">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_outstanding) }}</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Pending Commission</div>
+        <div style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if comm_total_outstanding > 0 else '#16a34a' }};">{{ currency_symbol }}{{ "{:,.2f}".format(comm_total_outstanding) }}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Pending commission payment</div>
       </div>
     </div>
   </div>
@@ -5453,6 +5353,7 @@ function viewReceipt(expId) {
           <option value="">All Status</option>
           <option value="Pending">Pending</option>
           <option value="Paid">Paid</option>
+          <option value="Fully Adjusted">Fully Adjusted</option>
         </select>
         <div class="form-check form-switch mb-0 ms-1" style="font-size:12px;">
           <input class="form-check-input" type="checkbox" id="commHideZero" checked onchange="filterCommTable()">
@@ -5470,17 +5371,32 @@ function viewReceipt(expId) {
             <th>Salesperson</th>
             <th class="text-end">Contract Value</th>
             <th class="text-center">Rate / Type</th>
-            <th class="text-end" style="color:#7C3AED;">Commission</th>
-            <th class="text-end" style="color:#16A34A;">Adjusted</th>
-            <th class="text-end" style="color:#2563EB;">Remaining Due</th>
+            <th class="text-end">Commission</th>
+            <th class="text-end">Adjusted</th>
+            <th class="text-end">Paid Commission</th>
+            <th class="text-end">Remaining Due</th>
             <th class="text-center">Status</th>
-            {% if user_role in ('admin', 'finance', 'accountant') %}<th class="text-right">Action</th>{% endif %}
           </tr>
         </thead>
         <tbody>
           {% for pc in project_commissions %}
-          {% set display_status = 'Paid' if pc.get('deduction_status') == 'fully_covered' else pc.get('status','Pending') %}
-          <tr data-sp="{{ pc.get('salesperson','') }}" data-status="{{ display_status }}" data-amount="{{ pc.get('commission_amount',0)|float }}" data-adjusted="{{ pc.get('adjusted_amount',0)|float }}" data-remaining="{{ pc.get('remaining_due',0)|float }}" data-deduction-status="{{ pc.get('deduction_status','not_covered') }}">
+          {% set comm_amt = pc.get('commission_amount', 0) | float %}
+          {% set adj_amt = pc.get('adjusted_amount', 0) | float %}
+          {% set paid = pc.get('paid_amount', 0) | float %}
+          {% set remaining = (comm_amt - adj_amt - paid) | float %}
+
+          {# Calculate status with new logic #}
+          {% if remaining <= 0.01 %}
+            {% if paid <= 0.01 and adj_amt > 0.01 %}
+              {% set display_status = 'Fully Adjusted' %}
+            {% else %}
+              {% set display_status = 'Paid' %}
+            {% endif %}
+          {% else %}
+            {% set display_status = 'Pending' %}
+          {% endif %}
+
+          <tr data-sp="{{ pc.get('salesperson','') }}" data-status="{{ display_status }}" data-amount="{{ pc.get('commission_amount',0)|float }}" data-adjusted="{{ pc.get('adjusted_amount',0)|float }}" data-paid="{{ pc.get('paid_amount',0)|float }}" data-remaining="{{ pc.get('remaining_due',0)|float }}" data-deduction-status="{{ pc.get('deduction_status','not_covered') }}">
             <td class="fw-semibold">
               <a href="{{ url_for('project_detail', project_id=pc.firebase_id) }}" class="text-decoration-none">
                 {{ pc.get('project_number','—') }}
@@ -5496,38 +5412,10 @@ function viewReceipt(expId) {
                 data-pid="{{ pc.firebase_id }}"
                 data-type="{{ pc.get('commission_override_type','default') }}"
                 data-value="{{ pc.get('commission_override_value',0)|float }}">
-              {% if user_role == 'admin' %}
-              <span class="comm-rate-display text-muted small" style="cursor:pointer;" title="Click to edit"
-                    onclick="commRateEditOpen('{{ pc.firebase_id }}')">
-                {{ pc.get('rate_display','—') }} <i class="bi bi-pencil-fill ms-1" style="font-size:10px;opacity:.5;"></i>
-              </span>
-              <div class="comm-rate-editor d-none" style="min-width:200px;">
-                <div class="d-flex gap-1 align-items-center flex-wrap">
-                  <select class="form-select form-select-sm" style="width:auto;font-size:11px;"
-                          id="rateTypeInput-{{ pc.firebase_id }}"
-                          onchange="commRateTypeChange('{{ pc.firebase_id }}')">
-                    <option value="default" {% if pc.get('commission_override_type','default')=='default' %}selected{% endif %}>Default</option>
-                    <option value="percent" {% if pc.get('commission_override_type')=='percent' %}selected{% endif %}>Custom %</option>
-                    <option value="fixed"   {% if pc.get('commission_override_type')=='fixed' %}selected{% endif %}>Fixed $</option>
-                  </select>
-                  <input type="number" min="0" step="0.01"
-                         class="form-control form-control-sm {% if pc.get('commission_override_type','default')=='default' %}d-none{% endif %}"
-                         style="width:70px;font-size:11px;"
-                         id="rateValInput-{{ pc.firebase_id }}"
-                         value="{{ pc.get('commission_override_value',0)|float }}">
-                  <button class="btn btn-xs btn-success" style="font-size:11px;padding:2px 7px;"
-                          onclick="commRateSave('{{ pc.firebase_id }}')">Save</button>
-                  <button class="btn btn-xs btn-outline-secondary" style="font-size:11px;padding:2px 7px;"
-                          onclick="commRateEditClose('{{ pc.firebase_id }}')">✕</button>
-                </div>
-                <div id="rateErr-{{ pc.firebase_id }}" class="text-danger mt-1" style="font-size:10px;display:none;"></div>
-              </div>
-              {% else %}
               <span class="text-muted small">{{ pc.get('rate_display','—') }}</span>
-              {% endif %}
             </td>
             <td class="text-end fw-bold comm-amount-cell" id="amountCell-{{ pc.firebase_id }}" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('commission_amount',0)|float) }}</td>
-            <td class="text-center" style="color:#16A34A;">
+            <td class="text-center" style="color:#D97706;">
               <div style="font-weight:bold;">
                 {% if pc.get('adjusted_amount',0)|float > 0 %}
                 {{ currency_symbol }}{{ "{:,.2f}".format(pc.get('adjusted_amount',0)|float) }}
@@ -5535,99 +5423,67 @@ function viewReceipt(expId) {
                 0
                 {% endif %}
               </div>
-              {% if pc.get('deductions_list') and pc.deductions_list|length > 0 %}
-              <div class="text-muted" style="font-size:10px;">
-                {% set shown_advs = [] %}
-                {% for deduction in pc.deductions_list %}
-                  {% set adv_no = deduction.get('advance_no', '') %}
-                  {% if adv_no and adv_no not in shown_advs %}
-                    {% if shown_advs.append(adv_no) %}{% endif %}
-                    <a href="{{ url_for('advance_detail', advance_id=deduction.get('advance_id', '')) }}"
-                       style="color:#666; text-decoration:none; cursor:pointer;"
-                       title="View adjustment details"
-                       onmouseover="this.style.color='#16A34A'; this.style.textDecoration='underline';"
-                       onmouseout="this.style.color='#666'; this.style.textDecoration='none';">
-                      {{ adv_no }}
-                    </a><br/>
-                  {% endif %}
-                {% endfor %}
-              </div>
-              {% else %}
-              <div class="text-muted" style="font-size:10px;"></div>
-              {% endif %}
             </td>
-            <td class="text-end" style="color:#2563EB;">
+            <td class="text-end fw-bold" style="color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('paid_amount',0)|float) }}</td>
+            <td class="text-end" style="color:#DC2626;">
               <strong>{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('remaining_due',0)|float) }}</strong>
             </td>
             <td class="text-center">
-              {% set is_fully_covered = pc.get('deduction_status') == 'fully_covered' %}
-              {% set is_partially_covered = pc.get('deduction_status') == 'partially_covered' %}
+              {% set commission_amt = pc.get('commission_amount', 0) | float %}
+              {% set total_adjusted = pc.get('adjusted_amount', 0) | float %}
+              {% set paid_amt = pc.get('paid_amount', 0) | float %}
+              {% set remaining = (commission_amt - total_adjusted - paid_amt) | float %}
 
-              {% if is_fully_covered %}
+              {# Status determination logic based on remaining balance, paid amount, and adjusted amount #}
+              {% if remaining <= 0.01 %}
+                {# Remaining balance is 0 #}
+                {% if paid_amt <= 0.01 and total_adjusted > 0.01 %}
+                  {% set display_status = 'Fully Adjusted' %}
+                {% elif paid_amt > 0.01 and total_adjusted > 0.01 %}
+                  {% set display_status = 'Paid' %}
+                {% elif paid_amt > 0.01 and total_adjusted <= 0.01 %}
+                  {% set display_status = 'Paid' %}
+                {% elif paid_amt <= 0.01 and total_adjusted <= 0.01 %}
+                  {% set display_status = 'Paid' %}
+                {% else %}
+                  {% set display_status = 'Paid' %}
+                {% endif %}
+              {% else %}
+                {# Remaining balance is greater than 0 #}
+                {% set display_status = 'Pending' %}
+              {% endif %}
+
+              {% if display_status == 'Fully Adjusted' %}
               <div>
-                <span class="badge bg-success" style="font-size:10px;" title="All commission covered by advance deductions">
-                  <i class="bi bi-lock-fill me-1"></i>Paid (Fully Covered)
+                <span class="badge bg-info" style="font-size:10px; display:inline-flex; align-items:center; gap:4px;" title="Commission fully covered by advance deductions">
+                  <i class="bi bi-lock-fill"></i>Fully Adjusted
                 </span>
                 {% set deductions_dates = pc.get('deductions_list', [])|map(attribute='date')|list %}
                 {% if deductions_dates %}
                   {% set latest_date = deductions_dates|max %}
-                  <div class="text-muted" style="font-size:10px;">{{ latest_date[5:7] }}-{{ latest_date[8:10] }}-{{ latest_date[0:4] }}</div>
-                {% elif pc.get('paid_at') %}
-                  {% set paid_date = pc.get('paid_at','')[:10] %}
-                  <div class="text-muted" style="font-size:10px;">{{ paid_date[5:7] }}-{{ paid_date[8:10] }}-{{ paid_date[0:4] }}</div>
+                  <div class="text-muted" style="font-size:10px; margin-top:3px;">{{ latest_date[5:7] }}-{{ latest_date[8:10] }}-{{ latest_date[0:4] }}</div>
                 {% endif %}
               </div>
-              {% elif is_partially_covered %}
+              {% elif display_status == 'Paid' %}
               <div>
-                {% if pc.get('status') == 'Paid' %}
-                <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
+                <span class="badge bg-success" style="font-size:10px; display:inline-flex; align-items:center; gap:4px;"><i class="bi bi-check-circle"></i>Paid</span>
                 {% if pc.get('paid_at') %}
-                {% set paid_date = pc.get('paid_at','')[:10] %}
-                <div class="text-muted" style="font-size:10px;">{{ paid_date[5:7] }}-{{ paid_date[8:10] }}-{{ paid_date[0:4] }}</div>
-                {% endif %}
+                {% set paid_at_str = pc.get('paid_at','')[:10] %}
+                {% if '-' in paid_at_str and paid_at_str[4] == '-' %}
+                {# YYYY-MM-DD format #}
+                <div class="text-muted" style="font-size:10px; margin-top:3px;">{{ paid_at_str[5:7] }}-{{ paid_at_str[8:10] }}-{{ paid_at_str[0:4] }}</div>
                 {% else %}
-                <span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>
+                {# MM-DD-YYYY format #}
+                <div class="text-muted" style="font-size:10px; margin-top:3px;">{{ paid_at_str }}</div>
+                {% endif %}
                 {% endif %}
               </div>
-              {% else %}
-              {% if pc.get('status') == 'Paid' %}
-              <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
-              {% if pc.get('paid_at') %}
-              {% set paid_date = pc.get('paid_at','')[:10] %}
-              <div class="text-muted" style="font-size:10px;">{{ paid_date[5:7] }}-{{ paid_date[8:10] }}-{{ paid_date[0:4] }}</div>
-              {% endif %}
-              {% else %}
-              <span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>
-              {% endif %}
+              {% elif display_status == 'Pending' %}
+              <div>
+                <span class="badge bg-warning text-dark" style="font-size:10px; display:inline-flex; align-items:center; gap:4px;"><i class="bi bi-clock"></i>Pending</span>
+              </div>
               {% endif %}
             </td>
-            {% if user_role in ('admin', 'finance', 'accountant') %}
-            <td class="text-center">
-              {% set is_fully_covered = pc.get('deduction_status') == 'fully_covered' %}
-
-              {% if is_fully_covered %}
-              <button class="btn btn-xs btn-outline-secondary"
-                      disabled
-                      title="Status locked: All commission covered by advance deductions. Remove adjustments to unlock."
-                      style="font-size:12px; padding:6px 8px;">
-                <i class="bi bi-lock-fill me-1"></i>Locked
-              </button>
-              {% else %}
-              {% if pc.get('status') == 'Paid' %}
-              <button class="btn btn-xs btn-outline-secondary"
-                      onclick="commProjectToggle('{{ pc.firebase_id }}','unpay',this)"
-                      title="Mark as Pending"
-                      style="font-size:12px; padding:6px 8px;">Mark Pending</button>
-              {% else %}
-              <button class="btn btn-xs btn-outline-success"
-                      id="markPaidBtn-{{ pc.firebase_id }}"
-                      onclick="showMarkPaidDateModal('{{ pc.firebase_id }}', this)"
-                      title="Mark as Paid"
-                      style="font-size:12px; padding:6px 8px;">Mark Paid</button>
-              {% endif %}
-              {% endif %}
-            </td>
-            {% endif %}
           </tr>
           {% endfor %}
         </tbody>
@@ -5635,9 +5491,10 @@ function viewReceipt(expId) {
           <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
             <td colspan="5" class="text-end text-muted small">Total Commission</td>
             <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='commission_amount')) }}</td>
-            <td class="text-end" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='adjusted_amount')) }}</td>
-            <td class="text-end" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='remaining_due')) }}</td>
-            <td{% if user_role == 'admin' %} colspan="2"{% endif %}></td>
+            <td class="text-end" style="color:#D97706;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='adjusted_amount')) }}</td>
+            <td class="text-end" style="color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='paid_amount')) }}</td>
+            <td class="text-end" style="color:#DC2626;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='remaining_due')) }}</td>
+            <td></td>
           </tr>
         </tfoot>
       </table>
@@ -5660,6 +5517,116 @@ function viewReceipt(expId) {
   {% endif %}
 
 </div><!-- /tab-commission -->
+
+<!-- A/R SUMMARY TAB -->
+<div class="tab-pane fade {{ 'show active' if active_tab == 'ar-summary' else '' }}" id="tab-ar-summary">
+
+  <!-- Top KPI Cards -->
+  <div class="row g-3 mb-4" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
+    <div>
+      <div class="kpi-card kpi-blue">
+        <div class="kpi-top"><span class="kpi-label">Total Market Receivable</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
+        <div class="kpi-value" id="arSummaryTopMarket">{{ currency_symbol }}0.00</div>
+        <div class="kpi-sub">Total amount currently expected</div>
+      </div>
+    </div>
+    <div>
+      <div class="kpi-card kpi-green">
+        <div class="kpi-top"><span class="kpi-label">Total Outstanding</span><i class="bi bi-arrow-up-right kpi-icon-sm"></i></div>
+        <div class="kpi-value" id="arSummaryTopOutstanding">{{ currency_symbol }}0.00</div>
+        <div class="kpi-sub">From all categories</div>
+      </div>
+    </div>
+    <div>
+      <div class="kpi-card kpi-purple">
+        <div class="kpi-top"><span class="kpi-label">Clients Owing</span><i class="bi bi-people kpi-icon-sm"></i></div>
+        <div class="kpi-value" id="arSummaryTopClients">0</div>
+        <div class="kpi-sub">Total clients</div>
+      </div>
+    </div>
+    <div>
+      <div class="kpi-card kpi-red">
+        <div class="kpi-top"><span class="kpi-label">Overdue Amount</span><i class="bi bi-exclamation-circle kpi-icon-sm"></i></div>
+        <div class="kpi-value" id="arSummaryTopOverdue">{{ currency_symbol }}0.00</div>
+        <div class="kpi-sub">Overdue from all outstanding payments</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Layout: Left Categories + Right Big Card -->
+  <div class="row g-4 mb-4">
+    <!-- LEFT SIDE: Categories List -->
+    <div class="col-lg-7">
+      <div class="card-panel">
+        <h6 class="section-heading mb-4" style="font-size:14px;"><i class="bi bi-list me-2"></i>Receivable by Category</h6>
+        <div id="arCategoryList" style="margin-bottom:24px;">
+          <!-- Categories will be populated here -->
+        </div>
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
+            <div style="font-weight:700;color:#1e293b;font-size:13px;text-transform:uppercase;letter-spacing:.05em;">Total Outstanding Receivable</div>
+            <div style="font-weight:700;color:#DC2626;font-size:18px;" id="arTotalOutstandingDisplay">{{ currency_symbol }}0.00</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT SIDE: Large Market Receivable Card -->
+    <div class="col-lg-5">
+      <div style="background:linear-gradient(135deg, #2563EB 0%, #1e40af 100%);border-radius:12px;padding:40px;color:white;box-shadow:0 4px 20px rgba(37, 99, 235, 0.2);height:100%;">
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:20px;">
+          <!-- Large Circle with Money Bag Icon -->
+          <div style="width:120px;height:120px;background:rgba(255,255,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px);border:2px solid rgba(255,255,255,0.2);">
+            <i class="bi bi-bag-fill" style="font-size:60px;color:white;line-height:1;"></i>
+          </div>
+
+          <!-- Text Content -->
+          <div style="text-align:center;">
+            <div style="font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:1px;opacity:0.95;margin-bottom:12px;">Total Market Receivable</div>
+            <div style="font-size:52px;font-weight:800;margin-bottom:16px;" id="arLargeCardAmount">{{ currency_symbol }}0.00</div>
+            <div style="font-size:14px;opacity:0.9;line-height:1.6;">Total amount currently expected to be collected from the market</div>
+          </div>
+
+          <!-- Chart Icon -->
+          <div style="margin-top:20px;">
+            <i class="bi bi-graph-up" style="font-size:24px;opacity:0.7;"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full Details Table -->
+  <div class="card-panel">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <h6 class="section-heading mb-0"><i class="bi bi-list-check me-2"></i>All Outstanding Invoices</h6>
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        <input type="text" id="arSearchBox" class="form-control form-control-sm" placeholder="Search invoices..." style="width:200px;">
+        <select id="arCategoryFilter" class="form-select form-select-sm" style="width:auto;min-width:150px;">
+          <option value="">All Categories</option>
+        </select>
+      </div>
+    </div>
+    <div id="arPaginationInfo" class="text-muted mb-2" style="font-size:12px;"></div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" id="arInvoicesTable" style="font-size:13px;">
+        <thead>
+          <tr>
+            <th>Invoice #</th>
+            <th>Client</th>
+            <th>Category</th>
+            <th class="text-end">Amount</th>
+            <th class="text-center">Days Pending</th>
+            <th class="text-center">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /tab-ar-summary -->
 
 </div><!-- /tab-content -->
 {% endblock %}
@@ -5852,9 +5819,9 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
   } catch(e) { resultEl.innerHTML = '<span class="text-danger">Request failed.</span>'; }
 });
 
-// ?? Tab persistence ??????????????????????????????????????????????????????????
+// Tab persistence
 (function () {
-  const tabMap = { overview: '#tab-overview', income: '#tab-income', expenses: '#tab-expenses', 'new-expense': '#tab-new-expense', 'by-project': '#tab-by-project', 'balance-sheet': '#tab-balance-sheet', aging: '#tab-aging', commission: '#tab-commission' };
+  const tabMap = { overview: '#tab-overview', income: '#tab-income', expenses: '#tab-expenses', 'new-expense': '#tab-new-expense', 'by-project': '#tab-by-project', 'balance-sheet': '#tab-balance-sheet', aging: '#tab-aging', commission: '#tab-commission', 'ar-summary': '#tab-ar-summary' };
   const initTab = "{{ active_tab or 'overview' }}";
   const target  = tabMap[initTab] || '#tab-overview';
   const el = document.querySelector(`.nav-link[href="${target}"]`);
@@ -5886,9 +5853,230 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
   });
 })();
 
-// ??????????????????????????????????????????????????????????????????????????????
+// A/R Summary Tab
+(function () {
+  // Define all A/R categories with their order and colors
+  const AR_CATEGORIES = [
+    { name: 'Advance Payment Received', icon: '▪', color: '#2563EB' },
+    { name: 'Invoiced - Not Paid', icon: '▪', color: '#16A34A' },
+    { name: 'Partial Payment - Outstanding', icon: '▪', color: '#F59E0B' },
+    { name: 'Invoice Disputed', icon: '▪', color: '#DC2626' },
+    { name: 'Scope Disagreement', icon: '▪', color: '#0EA5E9' },
+    { name: 'Incorrect Invoice', icon: '▪', color: '#8B5CF6' },
+    { name: 'Project Completion Issue', icon: '▪', color: '#10B981' },
+    { name: 'Others / On Hold', icon: '▪', color: '#6366F1' }
+  ];
+
+  function categorizeInvoice(inv) {
+    // Use explicit ar_category if set, otherwise infer from status and properties
+    if (inv.ar_category) {
+      return inv.ar_category;
+    }
+
+    const status = (inv.status || '').trim().toLowerCase();
+
+    if (status === 'partial') return 'Partial Payment - Outstanding';
+    if (status === 'paid' || status === 'cancelled') return null;
+    if (status === 'sent' || status === 'viewed' || status === 'overdue') return 'Invoiced - Not Paid';
+    // Draft invoices go to Others/On Hold, not Invoiced - Not Paid
+
+    return 'Others / On Hold';
+  }
+
+  function initArSummary() {
+    if (!document.getElementById('arCategoryList')) return;
+
+    const invList = {{ inv_list|default([])|tojson|safe }} || [];
+    const advancesList = {{ advances_list|default([])|tojson|safe }} || [];
+    const currencySymbol = '{{ currency_symbol }}';
+    const today = new Date();
+
+    // Initialize all categories with zero data
+    const arData = {};
+    AR_CATEGORIES.forEach(cat => {
+      arData[cat.name] = { amount: 0, invoices: [], count: 0, color: cat.color };
+    });
+
+    let totalMarket = 0;
+    let totalOutstanding = 0;
+    const clients = new Set();
+    let overdueAmount = 0;
+
+    // Process advances first - add to "Advance Payment Received" category
+    (advancesList || []).forEach(adv => {
+      if (!adv || !adv.balance || adv.balance <= 0) return;
+
+      const balance = parseFloat(adv.balance) || 0;
+      const advDate = adv.date ? new Date(adv.date) : null;
+      const daysPending = advDate ? Math.floor((today - advDate) / (1000 * 60 * 60 * 24)) : 0;
+
+      totalMarket += balance;
+      totalOutstanding += balance;
+
+      if (adv.employee_name) {
+        clients.add(adv.employee_name);
+      }
+
+      if (daysPending >= 90) {
+        overdueAmount += balance;
+      }
+
+      if (arData['Advance Payment Received']) {
+        arData['Advance Payment Received'].amount += balance;
+        arData['Advance Payment Received'].count += 1;
+        arData['Advance Payment Received'].invoices.push({
+          number: adv.advance_no || adv.id,
+          client: adv.employee_name || '—',
+          amount: balance,
+          daysPending: daysPending,
+          status: adv.status || 'Open',
+          date: adv.date,
+          isAdvance: true
+        });
+      }
+    });
+
+    // Categorize all invoices using invoice-level data (not individual payments)
+    (invList || []).forEach(inv => {
+      if (!inv) return;
+
+      // Get invoice meta if it exists
+      const meta = inv.meta || inv;
+      const status = (meta.status || inv.status || '').trim();
+
+      if (status === 'Paid' || status === 'Cancelled') return; // Skip paid invoices
+
+      // Calculate unpaid amount based on status
+      let amount = 0;
+      if (status === 'Partial') {
+        const totalAmount = parseFloat(meta.total || inv.amount || 0);
+        const paidAmount = parseFloat(meta.amount_paid || 0);
+        amount = totalAmount - paidAmount;
+      } else {
+        // For unpaid invoices (Draft, Sent, Viewed, Overdue), show full amount
+        amount = parseFloat(meta.total || inv.amount || 0);
+      }
+
+      if (amount <= 0) return; // Skip if no outstanding amount
+
+      const invDate = meta.invoice_date || meta.date || inv.date ? new Date(meta.invoice_date || meta.date || inv.date) : null;
+      const daysPending = invDate ? Math.floor((today - invDate) / (1000 * 60 * 60 * 24)) : 0;
+
+      totalMarket += amount;
+      totalOutstanding += amount;
+
+      const clientName = meta.client_name || meta.company_name || inv.client_name || inv.company_name || '—';
+      if (clientName && clientName !== '—') {
+        clients.add(clientName);
+      }
+
+      if (daysPending >= 90) {
+        overdueAmount += amount;
+      }
+
+      const category = categorizeInvoice(meta);
+      console.log(`[AR_DEBUG_CAT] Invoice ${meta.invoice_number || inv.id} categorized as: "${category}", Amount: ${amount}`);
+
+      if (category && arData[category]) {
+        arData[category].amount += amount;
+        arData[category].count += 1;
+        arData[category].invoices.push({
+          number: meta.invoice_number || inv.invoice_number || meta.id || inv.id,
+          client: clientName,
+          amount: amount,
+          daysPending: daysPending,
+          status: status,
+          date: meta.invoice_date || meta.date || inv.date
+        });
+      }
+    });
+
+    // Update top KPI cards
+    document.getElementById('arSummaryTopMarket').textContent = currencySymbol + totalMarket.toLocaleString('en-US', {minimumFractionDigits: 2});
+    document.getElementById('arSummaryTopOutstanding').textContent = currencySymbol + totalOutstanding.toLocaleString('en-US', {minimumFractionDigits: 2});
+    document.getElementById('arSummaryTopClients').textContent = clients.size;
+    document.getElementById('arSummaryTopOverdue').textContent = currencySymbol + overdueAmount.toLocaleString('en-US', {minimumFractionDigits: 2});
+
+    // Update large card on right
+    document.getElementById('arLargeCardAmount').textContent = currencySymbol + totalMarket.toLocaleString('en-US', {minimumFractionDigits: 2});
+
+    // Build left side category list
+    const categoryList = document.getElementById('arCategoryList');
+    const categoryRows = AR_CATEGORIES.map((cat, idx) => {
+      const catData = arData[cat.name];
+      const iconMap = {
+        'Advance Payment Received': 'bi-cash-coin',
+        'Invoiced - Not Paid': 'bi-file-earmark',
+        'Partial Payment - Outstanding': 'bi-percent',
+        'Invoice Disputed': 'bi-exclamation-triangle',
+        'Scope Disagreement': 'bi-chat-dots',
+        'Incorrect Invoice': 'bi-x-circle',
+        'Project Completion Issue': 'bi-tools',
+        'Others / On Hold': 'bi-hourglass'
+      };
+      const icon = iconMap[cat.name] || 'bi-circle';
+
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;${idx > 0 ? 'border-top:1px solid #f3f4f6;' : ''}">
+        <div style="display:flex;align-items:center;gap:12px;flex:1;">
+          <div style="width:32px;height:32px;border-radius:6px;background:${cat.color}20;display:flex;align-items:center;justify-content:center;">
+            <i class="bi ${icon}" style="font-size:16px;color:${cat.color};"></i>
+          </div>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#1e293b;">${cat.name}</div>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:14px;font-weight:700;color:${cat.color};">${currencySymbol}${catData.amount.toLocaleString('en-US', {maximumFractionDigits: 0})}</div>
+        </div>
+      </div>`;
+    }).join('');
+    categoryList.innerHTML = categoryRows;
+
+    // Update total outstanding display
+    document.getElementById('arTotalOutstandingDisplay').textContent = currencySymbol + totalOutstanding.toLocaleString('en-US', {minimumFractionDigits: 2});
+
+    // Build invoices table
+    const invTable = document.getElementById('arInvoicesTable').querySelector('tbody');
+    const allInvoices = [];
+    AR_CATEGORIES.forEach(cat => {
+      arData[cat.name].invoices.forEach(inv => {
+        allInvoices.push({...inv, category: cat.name});
+      });
+    });
+    allInvoices.sort((a, b) => b.daysPending - a.daysPending);
+
+    invTable.innerHTML = allInvoices.length === 0 ?
+      '<tr><td colspan="6" class="text-center text-muted py-4">No outstanding invoices or advances</td></tr>' :
+      allInvoices.map(inv => {
+        const statusColor = inv.daysPending >= 90 ? 'danger' : inv.daysPending >= 60 ? 'warning' : 'info';
+        const categoryDisplay = inv.isAdvance ? 'Advance Payment' : inv.category;
+        return `<tr>
+          <td style="font-weight:600;">${inv.number}</td>
+          <td>${inv.client}</td>
+          <td>${categoryDisplay}</td>
+          <td class="text-end" style="color:#DC2626;font-weight:600;">${currencySymbol}${inv.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+          <td class="text-center">${inv.daysPending} days</td>
+          <td class="text-center"><span class="badge bg-${statusColor}">${inv.daysPending >= 90 ? 'Overdue' : 'Pending'}</span></td>
+        </tr>`;
+      }).join('');
+
+    // Populate category filter
+    const catFilter = document.getElementById('arCategoryFilter');
+    catFilter.innerHTML = '<option value="">All Categories</option>' +
+      AR_CATEGORIES.map(cat => `<option value="${cat.name}">${cat.name}</option>`).join('');
+  }
+
+  // Initialize when DOM is ready
+  document.addEventListener('DOMContentLoaded', initArSummary);
+
+  // Re-initialize if tab is shown
+  const tabElement = document.getElementById('tab-ar-summary');
+  if (tabElement) {
+    tabElement.addEventListener('shown.bs.tab', initArSummary);
+  }
+})();
+
 // INCOME + AGING FILTERS
-// ??????????????????????????????????????????????????????????????????????????????
 (function () {
   // ?? Shared helpers ????????????????????????????????????????????????
   function parseDate(s) {
@@ -6315,15 +6503,18 @@ function backfillCommissions(btn) {
   function updateCommissionTableFooter(visibleRows) {
     var totalCommission = 0;
     var totalAdjusted = 0;
+    var totalPaid = 0;
     var totalRemaining = 0;
 
     visibleRows.forEach(function(row) {
       var amount = parseFloat(row.dataset.amount || '0');
       var adjusted = parseFloat(row.dataset.adjusted || '0');
+      var paid = parseFloat(row.dataset.paid || '0');
       var remaining = parseFloat(row.dataset.remaining || '0');
 
       totalCommission += amount;
       totalAdjusted += adjusted;
+      totalPaid += paid;
       totalRemaining += remaining;
     });
 
@@ -6336,14 +6527,16 @@ function backfillCommissions(btn) {
     if (!table) return;
 
     var footerCells = table.querySelectorAll('tfoot tr td');
-    if (footerCells.length >= 4) {
-      // Footer structure: [label(colspan=5), commission, adjusted, remaining, action]
+    if (footerCells.length >= 5) {
+      // Footer structure: [label(colspan=5), commission, adjusted, paid, remaining, action]
       // Commission value cell (index 1)
       footerCells[1].textContent = '$' + format(totalCommission);
       // Adjusted value cell (index 2)
       footerCells[2].textContent = '$' + format(totalAdjusted);
-      // Remaining Due value cell (index 3)
-      footerCells[3].textContent = '$' + format(totalRemaining);
+      // Paid Commission value cell (index 3)
+      footerCells[3].textContent = '$' + format(totalPaid);
+      // Remaining Due value cell (index 4)
+      footerCells[4].textContent = '$' + format(totalRemaining);
     }
   }
 
