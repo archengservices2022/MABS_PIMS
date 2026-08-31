@@ -5293,28 +5293,28 @@ function viewReceipt(expId) {
   {% set comm_total_paid = project_commissions|sum(attribute='paid_amount') | default(0, true) | float %}
   {% set comm_total_outstanding = [comm_total_earned - comm_total_adjusted - comm_total_paid, 0] | max %}
   <div class="row g-3 mb-4">
-    <div class="col-6 col-md-2">
+    <div class="col-12 col-md-6 col-lg-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Earned</div>
         <div style="font-size:1.6rem;font-weight:800;color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(comm_total_earned) }}</div>
         <div style="font-size:11px;color:#94a3b8;margin-top:6px;">All Commissions</div>
       </div>
     </div>
-    <div class="col-6 col-md-2">
+    <div class="col-12 col-md-6 col-lg-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Adjusted</div>
         <div style="font-size:1.6rem;font-weight:800;color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(comm_total_adjusted) }}</div>
         <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Deductions and adjustments</div>
       </div>
     </div>
-    <div class="col-6 col-md-2">
+    <div class="col-12 col-md-6 col-lg-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Paid</div>
         <div style="font-size:1.6rem;font-weight:800;color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(comm_total_paid) }}</div>
         <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Commission paid out</div>
       </div>
     </div>
-    <div class="col-6 col-md-2">
+    <div class="col-12 col-md-6 col-lg-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Outstanding</div>
         <div style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if comm_total_outstanding > 0 else '#16a34a' }};">{{ currency_symbol }}{{ "{:,.2f}".format(comm_total_outstanding) }}</div>
@@ -5525,7 +5525,7 @@ function viewReceipt(expId) {
   <div class="row g-3 mb-4" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
     <div>
       <div class="kpi-card kpi-blue">
-        <div class="kpi-top"><span class="kpi-label">Total Market Receivable</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
+        <div class="kpi-top"><span class="kpi-label">Total Market Receivable</span><i class="bi bi-cash-coin kpi-icon-sm"></i></div>
         <div class="kpi-value" id="arSummaryTopMarket">{{ currency_symbol }}0.00</div>
         <div class="kpi-sub">Total amount currently expected</div>
       </div>
@@ -5577,7 +5577,7 @@ function viewReceipt(expId) {
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:20px;">
           <!-- Large Circle with Money Bag Icon -->
           <div style="width:120px;height:120px;background:rgba(255,255,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px);border:2px solid rgba(255,255,255,0.2);">
-            <i class="bi bi-bag-fill" style="font-size:60px;color:white;line-height:1;"></i>
+            <i class="bi bi-cash-coin" style="font-size:60px;color:white;line-height:1;"></i>
           </div>
 
           <!-- Text Content -->
