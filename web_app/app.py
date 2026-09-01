@@ -575,6 +575,21 @@ def fb_ref(path: str):
         return None
     return db.reference(path)
 
+# ── Write guard ─────────────────────────────────────────────────────────────
+# Safety net for local/dev machines that happen to hold a production service
+# key: set FIREBASE_READONLY=1 in the environment and every write through
+# fb_push/fb_update/fb_delete becomes a logged no-op. Render does NOT set it,
+# so production behaves normally. Put it in your local shell profile.
+_FB_READONLY = os.environ.get("FIREBASE_READONLY", "0") == "1"
+if _FB_READONLY:
+    log.warning("FIREBASE_READONLY=1 — all Firebase writes are disabled for this process.")
+
+def _fb_write_blocked(op: str, path: str) -> bool:
+    if _FB_READONLY:
+        log.warning("BLOCKED Firebase %s on %s (FIREBASE_READONLY=1)", op, path)
+        return True
+    return False
+
 # ── Firebase read cache ──────────────────────────────────────────────────────
 # Full-node reads of these top-level paths dominate page-load time (the whole
 # table is pulled over the network on every request). They are served from a
@@ -663,6 +678,8 @@ def fb_get(path: str):
     return ref.get()
 
 def fb_push(path: str, data: dict) -> Optional[str]:
+    if _fb_write_blocked("push", path):
+        return None
     ref = fb_ref(path)
     if not ref:
         return None
@@ -680,6 +697,8 @@ def fb_get_shallow(path: str):
     return ref.get(shallow=True)
 
 def fb_update(path: str, data: dict) -> bool:
+    if _fb_write_blocked("update", path):
+        return False
     ref = fb_ref(path)
     if not ref:
         return False
@@ -688,6 +707,8 @@ def fb_update(path: str, data: dict) -> bool:
     return True
 
 def fb_delete(path: str) -> bool:
+    if _fb_write_blocked("delete", path):
+        return False
     ref = fb_ref(path)
     if not ref:
         return False
@@ -24438,7 +24459,7 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
         else:
             # Create new commission entry in balance_sheet_expenses
             ref = fb_ref(f"/balance_sheet_expenses/{project_id}_commission")
-            if ref:
+            if ref and not _fb_write_blocked("set", f"/balance_sheet_expenses/{project_id}_commission"):
                 ref.set({
                     "project_number": proj_num,
                     "type": "commission",
