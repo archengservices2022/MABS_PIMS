@@ -455,6 +455,8 @@ body {
 .status-on-hold     { background:#FEF9C3; color:#A16207; }
 .status-overdue     { background:#FEE2E2; color:#B91C1C; }
 .status-cancelled   { background:#FFE4E6; color:#BE123C; }
+.status-invoice-disputed { background:#FEE2E2; color:#B91C1C; }
+.status-incorrect-invoice { background:#FEF9C3; color:#A16207; }
 .status-converted   { background:#DCFCE7; color:#15803D; }
 .status-approved    { background:#DCFCE7; color:#15803D; }
 .status-in-review   { background:var(--violet-l);  color:#1D4ED8; }

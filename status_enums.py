@@ -10,11 +10,13 @@ class InvoiceStatus:
     OVERDUE = "Overdue"
     PENDING = "Pending"
     PARTIALLY_PAID = "Partially Paid"
+    INVOICE_DISPUTED = "Invoice Disputed"
+    INCORRECT_INVOICE = "Incorrect Invoice"
 
-    ALL = (UNPAID, PAID, OVERDUE, PENDING, PARTIALLY_PAID)
+    ALL = (UNPAID, PAID, OVERDUE, PENDING, PARTIALLY_PAID, INVOICE_DISPUTED, INCORRECT_INVOICE)
 
     # Statuses that mean money is still owed
-    OPEN = frozenset({UNPAID, OVERDUE, PENDING, PARTIALLY_PAID})
+    OPEN = frozenset({UNPAID, OVERDUE, PENDING, PARTIALLY_PAID, INVOICE_DISPUTED, INCORRECT_INVOICE})
 
     # Statuses that block auto-overdue marking
     CLOSED = frozenset({PAID})

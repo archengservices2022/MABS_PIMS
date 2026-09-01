@@ -5525,7 +5525,7 @@ function viewReceipt(expId) {
   <div class="row g-3 mb-4" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
     <div>
       <div class="kpi-card kpi-blue">
-        <div class="kpi-top"><span class="kpi-label">Total Market Receivable</span><i class="bi bi-cash-coin kpi-icon-sm"></i></div>
+        <div class="kpi-top"><span class="kpi-label">Total Market Receivable</span><i class="bi bi-cash-bag kpi-icon-sm"></i></div>
         <div class="kpi-value" id="arSummaryTopMarket">{{ currency_symbol }}0.00</div>
         <div class="kpi-sub">Total amount currently expected</div>
       </div>
@@ -5577,7 +5577,7 @@ function viewReceipt(expId) {
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:20px;">
           <!-- Large Circle with Money Bag Icon -->
           <div style="width:120px;height:120px;background:rgba(255,255,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px);border:2px solid rgba(255,255,255,0.2);">
-            <i class="bi bi-cash-coin" style="font-size:60px;color:white;line-height:1;"></i>
+            <i class="bi bi-bag-fill" style="font-size:60px;color:white;line-height:1;"></i>
           </div>
 
           <!-- Text Content -->
@@ -5873,11 +5873,14 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       return inv.ar_category;
     }
 
-    const status = (inv.status || '').trim().toLowerCase();
+    const meta = inv.meta || inv;
+    const status = (meta.status || inv.status || '').trim();
 
-    if (status === 'partial') return 'Partial Payment - Outstanding';
-    if (status === 'paid' || status === 'cancelled') return null;
-    if (status === 'sent' || status === 'viewed' || status === 'overdue') return 'Invoiced - Not Paid';
+    if (status === 'Invoice Disputed') return 'Invoice Disputed';
+    if (status === 'Incorrect Invoice') return 'Incorrect Invoice';
+    if (status === 'Partial') return 'Partial Payment - Outstanding';
+    if (status === 'Paid' || status === 'Cancelled') return null;
+    if (status === 'Sent' || status === 'Viewed' || status === 'Overdue') return 'Invoiced - Not Paid';
     // Draft invoices go to Others/On Hold, not Invoiced - Not Paid
 
     return 'Others / On Hold';
@@ -6544,27 +6547,18 @@ function backfillCommissions(btn) {
     var totalEarned = 0;
     var totalAdjusted = 0;
     var totalPaid = 0;
-    var totalOutstanding = 0;
 
     visibleRows.forEach(function(row) {
       var amount = parseFloat(row.dataset.amount || '0');
       var adjusted = parseFloat(row.dataset.adjusted || '0');
-      var remaining = parseFloat(row.dataset.remaining || '0');
-      var status = (row.dataset.status || '').toLowerCase();
+      var paid = parseFloat(row.dataset.paid || '0');
 
       totalEarned += amount;
       totalAdjusted += adjusted;
-
-      // Total Paid = remaining_due from Paid status rows
-      if (status === 'paid') {
-        totalPaid += remaining;
-      }
-
-      // Outstanding = remaining_due from Pending status rows
-      if (status === 'pending') {
-        totalOutstanding += remaining;
-      }
+      totalPaid += paid;
     });
+
+    var totalOutstanding = totalEarned - totalAdjusted - totalPaid;
 
     // Update the summary cards
     var format = function(num) {
@@ -6575,7 +6569,7 @@ function backfillCommissions(btn) {
     var commTab = document.getElementById('tab-commission');
     if (!commTab) return;
 
-    var cardPanels = commTab.querySelectorAll('.row.g-3.mb-4 > .col-6.col-md-3 > .card-panel');
+    var cardPanels = commTab.querySelectorAll('#tab-commission > .row.g-3.mb-4 > .col-12.col-md-6.col-lg-3 > .card-panel');
     if (cardPanels.length >= 4) {
       // First card: Total Earned
       var earnedDiv = cardPanels[0].querySelector('div[style*="font-size:1.6rem"]');
@@ -6591,7 +6585,7 @@ function backfillCommissions(btn) {
 
       // Fourth card: Outstanding
       var outstandingDiv = cardPanels[3].querySelector('div[style*="font-size:1.6rem"]');
-      if (outstandingDiv) outstandingDiv.textContent = '$' + format(totalOutstanding);
+      if (outstandingDiv) outstandingDiv.textContent = '$' + format(Math.max(0, totalOutstanding));
     }
   }
 

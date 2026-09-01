@@ -57,7 +57,8 @@
   background: white;
   border-radius: 8px;
   border: 1px solid #e2e8f0;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .commission-table {
@@ -93,22 +94,19 @@
   border-bottom: none;
 }
 
+.commission-table th:nth-child(9),
+.commission-table td:nth-child(9) {
+  min-width: 110px;
+}
+
 .status-badge {
-  display: inline-block;
-  padding: 2px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
   border-radius: 12px;
-  font-size: .68rem;
-  font-weight: 700;
-}
-
-.status-pending {
-  background: #fef9c3;
-  color: #92400e;
-}
-
-.status-paid {
-  background: #dcfce7;
-  color: #15803d;
 }
 
 .status-date {
@@ -190,8 +188,9 @@
 }
 
 .amount-info {
-  font-weight: 600;
-  color: #3b82f6;
+  font-weight: 500;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .empty-state {
@@ -469,14 +468,16 @@ input:checked + .toggle-slider:before {
   font-size: 13px;
   color: #15803d;
 }
+
+.
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid">
   <div class="commission-header">
-    <a href="/payroll?tab=commission" class="back-btn">
-      <i class="bi bi-arrow-left"></i>Back to Commissions
+    <a href="{{ url_for('payroll') }}#commission" style="display: inline-flex; align-items: center; gap: 6px; color: #0d9488; text-decoration: none; font-weight: 600; font-size: 13px; margin-bottom: 20px;">
+      ← Back to Commissions
     </a>
     <button type="button" class="btn btn-sm btn-teal" onclick="openPaymentModal()">
       <i class="bi bi-plus-lg me-1"></i>Add Commission Payment
@@ -484,31 +485,31 @@ input:checked + .toggle-slider:before {
   </div>
 
   {% if commissions %}
-    {% set total_earned = commissions | map(attribute='commission_amount') | map('float') | sum %}
-    {% set total_adjusted = commissions | map(attribute='total_deducted') | map('float') | sum %}
-    {% set total_remaining = commissions | map(attribute='remaining_due') | map('float') | sum %}
-    {% set total_paid = total_earned - total_remaining %}
+    {% set total_earned = commissions | map(attribute='commission_amount', default=0) | map('float') | sum %}
+    {% set total_adjusted = commissions | map(attribute='total_deducted', default=0) | map('float') | sum %}
+    {% set total_remaining = commissions | map(attribute='remaining_due', default=0) | map('float') | sum %}
+    {% set total_paid = commissions | map(attribute='paid_amount', default=0) | map('float') | sum %}
 
     <!-- Stat Cards -->
     <div class="stats-section">
       <div class="kpi-card kpi-purple">
         <div class="kpi-top"><span class="kpi-label">Total Earned</span><i class="bi bi-currency-dollar kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_earned) }}</div>
+        <div class="kpi-value" id="detailTotalEarned">{{ currency_symbol }}{{ "{:,.2f}".format(total_earned) }}</div>
         <div class="kpi-sub">Across All Projects</div>
       </div>
       <div class="kpi-card kpi-blue">
         <div class="kpi-top"><span class="kpi-label">Total Adjusted</span><i class="bi bi-pencil-square kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_adjusted) }}</div>
+        <div class="kpi-value" id="detailTotalAdjusted">{{ currency_symbol }}{{ "{:,.2f}".format(total_adjusted) }}</div>
         <div class="kpi-sub">Across All Adjustments</div>
       </div>
       <div class="kpi-card kpi-green">
         <div class="kpi-top"><span class="kpi-label">Total Paid</span><i class="bi bi-check-circle kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_paid) }}</div>
+        <div class="kpi-value" id="detailTotalPaid">{{ currency_symbol }}{{ "{:,.2f}".format(total_paid) }}</div>
         <div class="kpi-sub">Across All Payments</div>
       </div>
       <div class="kpi-card kpi-amber">
         <div class="kpi-top"><span class="kpi-label">Outstanding</span><i class="bi bi-exclamation-circle kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_remaining) }}</div>
+        <div class="kpi-value" id="detailTotalOutstanding">{{ currency_symbol }}{{ "{:,.2f}".format(total_remaining) }}</div>
         <div class="kpi-sub">Remaining Due</div>
       </div>
     </div>
@@ -521,7 +522,7 @@ input:checked + .toggle-slider:before {
         <option value="">All Status</option>
         <option value="Pending">Pending</option>
         <option value="Paid">Paid</option>
-        <option value="Paid (Fully Covered)">Paid (Fully Covered)</option>
+        <option value="Fully Adjusted">Fully Adjusted</option>
       </select>
 
       <div class="filter-toggle">
@@ -555,39 +556,63 @@ input:checked + .toggle-slider:before {
           {% set paid_amount = comm.get('paid_amount', 0) | float %}
           {% set remaining = (earned - adjusted - paid_amount) | float %}
 
-          {% if earned == 0 %}
-            {% set display_status = 'Paid' %}
-          {% elif paid_amount > 0 and remaining <= 0.01 %}
-            {% set display_status = 'Paid (Fully Covered)' %}
-          {% elif adjusted >= earned %}
-            {% set display_status = 'Fully Adjusted' %}
-          {% elif adjusted > 0 and paid_amount > 0 %}
-            {% set display_status = 'Paid' %}
+          {# Status determination logic based on remaining balance, paid amount, and adjusted amount #}
+          {% if remaining <= 0.01 %}
+            {# Remaining balance is 0 #}
+            {% if paid_amount <= 0.01 and adjusted > 0.01 %}
+              {% set display_status = 'Fully Adjusted' %}
+            {% elif paid_amount > 0.01 and adjusted > 0.01 %}
+              {% set display_status = 'Paid' %}
+            {% elif paid_amount > 0.01 and adjusted <= 0.01 %}
+              {% set display_status = 'Paid' %}
+            {% elif paid_amount <= 0.01 and adjusted <= 0.01 %}
+              {% set display_status = 'Paid' %}
+            {% else %}
+              {% set display_status = 'Paid' %}
+            {% endif %}
           {% else %}
+            {# Remaining balance is greater than 0 #}
             {% set display_status = 'Pending' %}
           {% endif %}
 
-          {% set status_class = 'status-paid' if (display_status in ['Paid', 'Paid (Fully Covered)', 'Fully Adjusted']) else 'status-pending' %}
+          {% if display_status == 'Paid' %}
+            {% set status_class = 'badge bg-success' %}
+          {% elif display_status == 'Fully Adjusted' %}
+            {% set status_class = 'badge bg-info' %}
+          {% else %}
+            {# Pending #}
+            {% set status_class = 'badge bg-warning text-dark' %}
+          {% endif %}
           {% set row_class = 'row-zero-commission' if earned == 0 else '' %}
           <tr class="{{ row_class }}">
             <td><a href="/projects/{{ comm.get('firebase_id', '') }}" class="project-link">{{ comm.get('project_number', '—') }}</a></td>
-            <td><strong>{{ comm.get('client_name', '—') }}</strong></td>
+            <td style="font-size: 12px; color: #64748b;">
+              {% if comm.get('company_name') %}
+                {{ comm.get('company_name', '') }}
+              {% else %}
+                {{ comm.get('client_name', '—') }}
+              {% endif %}
+            </td>
             <td>{{ currency_symbol }}{{ "{:,.2f}".format(comm.get('contract_value', 0) | float) }}</td>
-            <td><span style="display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;background:#e0e7ff;color:#312e81;">{{ comm.get('rate_display', '—') }}</span></td>
+            <td><span style="display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;background:#e0e7ff;color:#312e81;white-space:nowrap;">{{ comm.get('rate_display', '—') }}</span></td>
             <td class="amount-primary">{{ currency_symbol }}{{ "{:,.2f}".format(earned) }}</td>
             <td>
-              <div style="font-weight:600;margin-bottom:4px;">{{ currency_symbol }}{{ "{:,.2f}".format(adjusted) }}</div>
               {% set deductions = comm.get('deductions_list', []) %}
+              <div style="font-weight:600;margin-bottom:6px;">
+                {{ currency_symbol }}{{ "{:,.2f}".format(adjusted) }}
+              </div>
               {% if deductions %}
+                {% set seen_adv = [] %}
                 {% for deduction in deductions %}
                   {% set adv_no = deduction.get('advance_no', '') %}
                   {% set adv_id = deduction.get('advance_id', '') %}
-                  {% if adv_no %}
-                    <div style="font-size:11px;margin-top:3px;">
+                  {% if adv_no and adv_no not in seen_adv %}
+                    {% if seen_adv.append(adv_no) %}{% endif %}
+                    <div style="font-size:11px;margin-top:2px;">
                       {% if adv_id %}
-                        <a href="/advance/{{ adv_id }}" class="advance-link">{{ adv_no }}</a>
+                        <a href="/payroll/advance/{{ adv_id }}" class="advance-link" title="View advance details">{{ adv_no }}</a>
                       {% else %}
-                        <span style="color:#94a3b8;">{{ adv_no }}</span>
+                        <span class="advance-link" style="cursor:pointer;" onclick="alert('Advance ID not available')">{{ adv_no }}</span>
                       {% endif %}
                     </div>
                   {% endif %}
@@ -595,16 +620,22 @@ input:checked + .toggle-slider:before {
               {% endif %}
             </td>
             <td class="amount-success">
-              <div style="font-weight:600;">{{ currency_symbol }}{{ "{:,.2f}".format(paid_amount) }}</div>
-              {% if comm.get('paid_at') and paid_amount > 0 %}
-                <div style="font-size:11px;color:#64748b;margin-top:3px;">{{ comm.get('paid_at')[0:10] }}</div>
-              {% endif %}
+              <div style="font-weight:600;color:#10b981;">{{ currency_symbol }}{{ "{:,.2f}".format(paid_amount) }}</div>
             </td>
-            <td class="amount-info"><strong>{{ currency_symbol }}{{ "{:,.2f}".format(remaining) }}</strong></td>
+            <td class="amount-info"><strong style="font-weight:600;color:#ef4444;">{{ currency_symbol }}{{ "{:,.2f}".format(remaining) }}</strong></td>
             <td>
               <div>
-                <span class="status-badge {{ status_class }}">{{ display_status }}</span>
-                {% if display_status == 'Paid (Fully Covered)' or display_status == 'Paid' %}
+                <span class="status-badge {{ status_class }}">
+                  {% if display_status == 'Paid' %}
+                    <i class="bi bi-check-circle" style="font-size: 10px;"></i>
+                  {% elif display_status == 'Fully Adjusted' %}
+                    <i class="bi bi-lock-fill" style="font-size: 10px;"></i>
+                  {% elif display_status == 'Pending' %}
+                    <i class="bi bi-clock" style="font-size: 10px;"></i>
+                  {% endif %}
+                  {{ display_status }}
+                </span>
+                {% if display_status == 'Paid' %}
                   {% if comm.get('paid_at') %}
                     {% set paid_date = comm.get('paid_at')[0:10] %}
                     {% if paid_date[0:4].isdigit() and paid_date[0] in '0123456789' and paid_date[4] == '-' %}
@@ -644,6 +675,10 @@ input:checked + .toggle-slider:before {
           {% endfor %}
         </tbody>
       </table>
+      <!-- Pagination Info -->
+      <div style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+        Showing <span id="pageStart">1</span>–<span id="pageEnd">10</span> of <span id="totalRecords">0</span> commissions
+      </div>
       <!-- Pagination -->
       <div style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 20px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
         <button type="button" class="pagination-btn" onclick="previousPage()" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; background: white; cursor: pointer; font-size: 14px;">‹</button>
@@ -730,24 +765,10 @@ input:checked + .toggle-slider:before {
   </div>
 </div>
 
-<!-- Success Modal -->
-<div id="successModal" class="modal-overlay">
-  <div class="modal-content" style="max-width: 450px;">
-    <div style="background: #0f766e; color: white; padding: 20px; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 12px;">
-      <i class="bi bi-check-circle-fill" style="font-size: 24px;"></i>
-      <div class="modal-header" style="margin: 0; color: white;">Payment Added Successfully</div>
-    </div>
-    <div style="padding: 24px; text-align: center;">
-      <p style="margin: 0 0 20px 0; color: #0f172a; font-size: 15px;">
-        Commission payment has been recorded successfully.
-      </p>
-    </div>
-    <div style="padding: 0 24px 24px; text-align: center;">
-      <button type="button" class="btn btn-teal" onclick="closeSuccessModal()">
-        <i class="bi bi-check me-1"></i>Close
-      </button>
-    </div>
-  </div>
+<!-- Success Toast -->
+<div id="successToast" style="position: fixed; bottom: 20px; right: 20px; background: #0f766e; color: white; padding: 14px 20px; border-radius: 6px; display: flex; align-items: center; gap: 10px; font-size: 14px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); z-index: 9999; opacity: 0; transition: opacity 0.3s ease;">
+  <i class="bi bi-check-circle-fill" style="font-size: 18px;"></i>
+  <span id="toastMessage">Commission payment has been recorded successfully.</span>
 </div>
 
 <!-- Payment Modal -->
@@ -778,6 +799,32 @@ input:checked + .toggle-slider:before {
   </div>
 </div>
 
+<!-- Mark as Paid Modal -->
+<div id="markPaidModal" class="modal-overlay">
+  <div class="modal-content" style="max-width: 450px; padding: 0; overflow: hidden;">
+    <div style="background: #16a34a; color: white; padding: 16px 24px; display: flex; align-items: center; gap: 12px;">
+      <i class="bi bi-check-circle-fill" style="font-size: 20px;"></i>
+      <span style="font-size: 18px; font-weight: 600;">Mark as Paid</span>
+      <button type="button" style="background: none; border: none; font-size: 24px; cursor: pointer; color: white; padding: 0; margin-left: auto;" onclick="closeMarkPaidModal()">×</button>
+    </div>
+    <div style="padding: 24px;">
+      <p style="margin: 0 0 20px 0; color: #0f172a; font-size: 15px;">
+        Enter the date this commission was paid:
+      </p>
+      <form onsubmit="submitMarkPaid(event)">
+        <div class="form-group">
+          <label class="form-label">Paid Date</label>
+          <input type="date" id="markPaidDate" class="form-input" required>
+        </div>
+        <div class="modal-actions" style="justify-content: center; gap: 12px; margin-top: 24px;">
+          <button type="button" class="btn-cancel" onclick="closeMarkPaidModal()">Cancel</button>
+          <button type="submit" class="btn-pay">Confirm</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
 function toggleZeroRows() {
   const checkbox = document.getElementById('showZeroCommissions');
@@ -796,10 +843,21 @@ function toggleZeroRows() {
       row.classList.add('show');
     }
   });
+
+  // Update summary cards based on filtered data
+  updateDetailSummaryCards();
 }
 
 // Initialize toggle state from localStorage on page load
 document.addEventListener('DOMContentLoaded', function() {
+  // Restore page from localStorage FIRST before any pagination updates
+  const savedPage = localStorage.getItem('commissionDetailPage');
+  if (savedPage) {
+    currentPage = parseInt(savedPage);
+    localStorage.setItem('isRestoringPage', 'true');
+    localStorage.removeItem('commissionDetailPage');
+  }
+
   const checkbox = document.getElementById('showZeroCommissions');
   const savedState = localStorage.getItem('hideZeroCommissions') === 'true';
 
@@ -809,8 +867,13 @@ document.addEventListener('DOMContentLoaded', function() {
   // Apply the saved state
   toggleZeroRows();
 
-  // Initialize pagination
+  // Initialize pagination with restored page
   updatePagination();
+
+  // Clear restore flag after pagination is done
+  setTimeout(() => {
+    localStorage.removeItem('isRestoringPage');
+  }, 100);
 });
 
 function filterCommissions() {
@@ -829,8 +892,38 @@ function filterCommissions() {
     row.style.display = (searchMatch && statusMatch) ? '' : 'none';
   });
 
+  // Update summary cards based on filtered data
+  updateDetailSummaryCards();
+
   currentPage = 1;
   updatePagination();
+}
+
+function updateDetailSummaryCards() {
+  const rows = document.querySelectorAll('.commission-table tbody tr');
+  let totalEarned = 0, totalAdjusted = 0, totalPaid = 0;
+
+  rows.forEach(row => {
+    if (row.style.display === 'none') return;
+
+    // Extract values from visible rows
+    const earnedText = row.querySelector('td:nth-child(5)').textContent.replace(/[^0-9.]/g, '');
+    const adjustedText = row.querySelector('td:nth-child(6)').textContent.replace(/[^0-9.]/g, '');
+    const paidText = row.querySelector('td:nth-child(7)').textContent.replace(/[^0-9.]/g, '');
+
+    totalEarned += parseFloat(earnedText) || 0;
+    totalAdjusted += parseFloat(adjustedText) || 0;
+    totalPaid += parseFloat(paidText) || 0;
+  });
+
+  const totalOutstanding = totalEarned - totalAdjusted - totalPaid;
+  const currencySymbol = '{{ currency_symbol }}';
+
+  // Update summary card values
+  document.getElementById('detailTotalEarned').textContent = currencySymbol + totalEarned.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  document.getElementById('detailTotalAdjusted').textContent = currencySymbol + totalAdjusted.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  document.getElementById('detailTotalPaid').textContent = currencySymbol + totalPaid.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  document.getElementById('detailTotalOutstanding').textContent = currencySymbol + Math.max(0, totalOutstanding).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
 function resetFilters() {
@@ -845,11 +938,31 @@ const ROWS_PER_PAGE = 10;
 let currentPage = 1;
 
 function updatePagination() {
-  const rows = document.querySelectorAll('.commission-table tbody tr:not(.row-zero-commission)');
-  const visibleRows = Array.from(rows).filter(row => row.style.display !== 'none');
+  const rows = document.querySelectorAll('.commission-table tbody tr');
+  let visibleRows = Array.from(rows).filter(row => {
+    // Include rows that pass the search/filter but are currently hidden by pagination
+    const isZeroRow = row.classList.contains('row-zero-commission');
+    const hideZero = document.getElementById('showZeroCommissions')?.checked;
+    if (isZeroRow && hideZero) return false;
+
+    const projectNo = row.querySelector('td:nth-child(1)').textContent.toLowerCase();
+    const client = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+    const statusCell = row.querySelector('td:nth-child(9)').textContent;
+
+    const searchInput = document.getElementById('searchCommissions').value.toLowerCase();
+    const statusFilter = document.getElementById('filterStatus').value;
+
+    const searchMatch = projectNo.includes(searchInput) || client.includes(searchInput);
+    const statusMatch = !statusFilter || statusCell.includes(statusFilter);
+
+    return searchMatch && statusMatch;
+  });
+
   const totalPages = Math.ceil(visibleRows.length / ROWS_PER_PAGE);
+  const totalRecords = visibleRows.length;
 
   document.getElementById('totalPages').textContent = Math.max(1, totalPages);
+  document.getElementById('totalRecords').textContent = totalRecords;
 
   const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
   const endIndex = startIndex + ROWS_PER_PAGE;
@@ -858,6 +971,11 @@ function updatePagination() {
     row.style.display = (index >= startIndex && index < endIndex) ? '' : 'none';
   });
 
+  // Update pagination info
+  const pageStart = totalRecords > 0 ? startIndex + 1 : 0;
+  const pageEnd = Math.min(endIndex, totalRecords);
+  document.getElementById('pageStart').textContent = pageStart;
+  document.getElementById('pageEnd').textContent = pageEnd;
   document.getElementById('currentPage').value = currentPage;
 }
 
@@ -879,7 +997,9 @@ function nextPage() {
 function goToPage(pageNum) {
   const page = parseInt(pageNum);
   const totalPages = parseInt(document.getElementById('totalPages').textContent);
-  if (page >= 1 && page <= totalPages) {
+  // If going back from localStorage restore, allow it even if totalPages hasn't updated yet
+  const isRestoringFromStorage = localStorage.getItem('isRestoringPage') === 'true';
+  if ((page >= 1 && page <= totalPages) || isRestoringFromStorage) {
     currentPage = page;
     updatePagination();
   } else {
@@ -888,36 +1008,81 @@ function goToPage(pageNum) {
 }
 
 function markProjectPaid(commissionId, projectNumber, remainingAmount) {
-  const today = new Date().toISOString().split('T')[0];
+  // Store data in modal dataset
+  const modal = document.getElementById('markPaidModal');
+  modal.dataset.commissionId = commissionId;
+  modal.dataset.projectNumber = projectNumber;
+  modal.dataset.remainingAmount = remainingAmount;
 
-  if (confirm(`Mark project ${projectNumber} commission as fully paid ($${remainingAmount.toFixed(2)})?`)) {
-    fetch('/api/commission/mark-paid', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        commission_id: commissionId,
-        project_number: projectNumber,
-        amount: remainingAmount,
-        date: today,
-        salesperson: '{{ salesperson_name }}'
-      })
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success) {
-        alert('Commission marked as paid!');
-        location.reload();
-      } else {
-        alert('Error: ' + (data.message || 'Failed to mark as paid'));
-      }
-    })
-    .catch(error => {
-      console.error('Error:', error);
-      alert('Error processing payment');
-    });
+  // Set date to today
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('markPaidDate').value = today;
+
+  // Open modal
+  modal.classList.add('show');
+}
+
+function openMarkPaidModal() {
+  document.getElementById('markPaidModal').classList.add('show');
+}
+
+function closeMarkPaidModal() {
+  document.getElementById('markPaidModal').classList.remove('show');
+  document.getElementById('markPaidDate').value = '';
+}
+
+function submitMarkPaid(event) {
+  event.preventDefault();
+
+  const modal = document.getElementById('markPaidModal');
+  const commissionId = modal.dataset.commissionId;
+  const projectNumber = modal.dataset.projectNumber;
+  const remainingAmount = parseFloat(modal.dataset.remainingAmount);
+  const paidDate = document.getElementById('markPaidDate').value;
+
+  if (!paidDate) {
+    alert('Please select a paid date');
+    return;
   }
+
+  // Store current page before reload
+  localStorage.setItem('commissionDetailPage', currentPage);
+
+  fetch('/api/commission/mark-paid', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      commission_id: commissionId,
+      project_number: projectNumber,
+      amount: remainingAmount,
+      date: paidDate,
+      salesperson: '{{ salesperson_name }}'
+    })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      closeMarkPaidModal();
+      const toast = document.getElementById('successToast');
+      const toastMsg = document.getElementById('toastMessage');
+      toastMsg.textContent = 'Commission marked as paid!';
+      toast.style.opacity = '1';
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => {
+          location.reload();
+        }, 300);
+      }, 2500);
+    } else {
+      alert('Error: ' + (data.message || 'Failed to mark as paid'));
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Error processing payment');
+  });
 }
 
 function openEditModal(commissionId, projectNumber, commissionAmount, rateDisplay, commissionType, paidAt, statusParam, rateValue = 0) {
@@ -1085,6 +1250,9 @@ function submitEditCommission(event) {
     return;
   }
 
+  // Store current page before reload
+  localStorage.setItem('commissionDetailPage', currentPage);
+
   fetch('/api/commission/edit', {
     method: 'POST',
     headers: {
@@ -1143,14 +1311,18 @@ function closePaymentModal() {
 }
 
 function openSuccessModal() {
-  document.getElementById('successModal').classList.add('show');
+  const toast = document.getElementById('successToast');
+  toast.style.opacity = '1';
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => {
+      location.reload();
+    }, 300);
+  }, 2500);
 }
 
 function closeSuccessModal() {
-  document.getElementById('successModal').classList.remove('show');
-  setTimeout(() => {
-    location.reload();
-  }, 500);
+  // No longer needed, kept for backward compatibility
 }
 
 function submitPayment(event) {
@@ -1184,6 +1356,9 @@ function submitPayment(event) {
     alert(`Payment amount ($${amount.toFixed(2)}) exceeds outstanding ($${totalRemaining.toFixed(2)}). Please enter an amount less than or equal to the outstanding.`);
     return;
   }
+
+  // Store current page before reload
+  localStorage.setItem('commissionDetailPage', currentPage);
 
   fetch('/api/commission/pay', {
     method: 'POST',

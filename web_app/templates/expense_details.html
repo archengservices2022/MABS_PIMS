@@ -133,11 +133,6 @@
             ${{ "{:,.2f}".format(expense.amount or 0) }} USD
             {% if expense.amount_bdt %} / ৳{{ "{:,.0f}".format(expense.amount_bdt) }} BDT{% endif %}
           </div>
-          {% if expense.exchange_rate %}
-          <div style="font-size: 11px; color: #94a3b8; margin-top: 6px;">
-            Exchange Rate: 1 USD = ৳{{ "{:,.2f}".format(expense.exchange_rate) }}
-          </div>
-          {% endif %}
         </div>
       </div>
     </div>
@@ -149,6 +144,10 @@
     {% set project_count = (expense.project_numbers|list)|length if expense.project_numbers else 0 %}
   {% elif expense.is_commission and expense.commission_payment_details %}
     {% set project_count = (expense.commission_payment_details|list)|length %}
+  {% elif expense.is_commission and expense.project_number %}
+    {% set project_count = 1 %}
+  {% elif expense.project_number and not expense.is_commission %}
+    {% set project_count = 1 %}
   {% endif %}
 
   <div class="row mb-4">
@@ -176,11 +175,6 @@
             ${{ "{:,.2f}".format(expense.amount or 0) }} USD
             {% if expense.amount_bdt %} / ৳{{ "{:,.0f}".format(expense.amount_bdt) }} BDT{% endif %}
           </div>
-          {% if expense.exchange_rate %}
-          <div style="font-size: 11px; color: #94a3b8; margin-top: 6px;">
-            Exchange Rate: 1 USD = ৳{{ "{:,.2f}".format(expense.exchange_rate) }}
-          </div>
-          {% endif %}
         </div>
       </div>
     </div>
@@ -238,22 +232,23 @@
             <strong>Vendor:</strong>
             <div class="text-muted">{{ expense.vendor or '—' }}</div>
           </div>
-          <div class="mb-3">
-            <strong>Exchange Rate (USD to BDT):</strong>
-            <div class="text-muted">
-              {% if expense.exchange_rate %}
-                1 USD = <strong style="color: #0d9488;">৳{{ "{:,.2f}".format(expense.exchange_rate) }}</strong> BDT
-              {% else %}
-                —
-              {% endif %}
-            </div>
-          </div>
         </div>
         <div class="col-md-6">
           <div class="mb-3">
             <strong>Project(s):</strong>
             <div class="text-muted">
-              {% if expense.project_numbers and expense.project_numbers|length > 0 %}
+              {% if expense.adjustment_payment_details and expense.adjustment_payment_details|length > 0 %}
+                <!-- Display all projects in adjustment with deduction amounts -->
+                <ul style="margin: 8px 0; padding-left: 20px;">
+                  {% for detail in expense.adjustment_payment_details %}
+                    {% if detail.get and detail.project_number %}
+                      <li>{{ detail.project_number }} - ${{ "{:,.2f}".format(detail.amount or 0) }}</li>
+                    {% elif detail.get('project_number') %}
+                      <li>{{ detail['project_number'] }} - ${{ "{:,.2f}".format(detail.get('amount', 0)) }}</li>
+                    {% endif %}
+                  {% endfor %}
+                </ul>
+              {% elif expense.project_numbers and expense.project_numbers|length > 0 %}
                 <!-- Display all projects in adjustment -->
                 <ul style="margin: 8px 0; padding-left: 20px;">
                   {% for proj in expense.project_numbers %}
@@ -283,6 +278,16 @@
                 {{ expense.submitted_by_name }}
               {% elif expense.created_by %}
                 {{ expense.created_by.split('@')[0].replace('.', ' ').title() if '@' in expense.created_by else expense.created_by }}
+              {% else %}
+                —
+              {% endif %}
+            </div>
+          </div>
+          <div class="mb-3">
+            <strong>Exchange Rate (USD to BDT):</strong>
+            <div class="text-muted">
+              {% if expense.exchange_rate %}
+                1 USD = <strong style="color: #0d9488;">৳{{ "{:,.2f}".format(expense.exchange_rate) }}</strong> BDT
               {% else %}
                 —
               {% endif %}

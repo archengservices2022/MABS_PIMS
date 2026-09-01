@@ -349,7 +349,7 @@
         </div>
         {% else %}
         <select name="status" id="detailStatusSelect" class="form-select form-select-sm mb-2" onchange="toggleDetailAmtPaid()">
-          {% for s in ['Draft','Sent','Viewed','Paid','Partial','Overdue','Cancelled'] %}
+          {% for s in ['Draft','Sent','Viewed','Paid','Partial','Overdue','Cancelled','Invoice Disputed','Incorrect Invoice'] %}
           <option value="{{ s }}" {{ 'selected' if meta.get('status','Draft') == s }}>{{ s }}</option>
           {% endfor %}
         </select>

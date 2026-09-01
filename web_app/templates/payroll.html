@@ -38,6 +38,16 @@
   to   { opacity: 1; }
 }
 
+@keyframes slideIn {
+  from { transform: translateX(400px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideOut {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(400px); opacity: 0; }
+}
+
 /* Salaries Filters */
 .salaries-filters {
   background: #f8fafc;
@@ -111,9 +121,30 @@
 .payroll-table thead { background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
 .payroll-table th { padding: 14px; text-align: left; font-weight: 700; color: #0f172a; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
 .payroll-table td { padding: 14px; border-bottom: 1px solid #e2e8f0; }
+.payroll-table th:nth-child(1) { width: 14%; }
+.payroll-table th:nth-child(2) { width: 9%; }
+.payroll-table th:nth-child(3) { width: 13%; }
+.payroll-table th:nth-child(4) { width: 10%; }
+.payroll-table th:nth-child(5) { width: 10%; }
+.payroll-table th:nth-child(6) { width: 10%; }
+.payroll-table th:nth-child(7) { width: 15%; }
+.payroll-table th:nth-child(8) { width: 28%; }
+.payroll-table th:nth-child(9) { width: 8%; }
+.payroll-table td:nth-child(6) { font-size: 13px; }
+.payroll-table td:nth-child(8) { font-size: 11.5px; }
 .payroll-table tbody tr:hover { background: #f8fafc; }
 .payroll-table tbody tr:last-child td { border-bottom: none; }
 .payroll-table a { text-decoration: none !important; color: inherit; }
+
+/* Commission table specific column widths */
+#commission th:nth-child(1) { width: 12%; }
+#commission th:nth-child(2) { width: 8%; }
+#commission th:nth-child(3) { width: 16%; }
+#commission th:nth-child(4) { width: 16%; }
+#commission th:nth-child(5) { width: 16%; }
+#commission th:nth-child(6) { width: 12%; }
+#commission th:nth-child(7) { width: 12%; }
+#commission th:nth-child(8) { width: 8%; }
 
 .region-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
 .region-usa   { background: #dbeafe; color: #1e40af; }
@@ -139,7 +170,7 @@
 .year-group-header.collapsed  .period-toggle { transform: rotate(-90deg); }
 .period-group-header.collapsed .period-toggle { transform: rotate(-90deg); }
 
-.summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 25px; }
+.summary-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 25px; }
 .summary-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; text-align: center; }
 .summary-card-label { font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 700; margin-bottom: 8px; letter-spacing: .5px; }
 .summary-card-value { font-size: 26px; font-weight: 800; color: #0f172a; }
@@ -173,10 +204,10 @@
   <!-- Tab Navigation -->
   <div class="payroll-tabs-container">
     <button class="payroll-tab-button active" onclick="switchTab('salaries', event)">
-      <i class="bi bi-receipt me-2" style="font-size:16px;"></i>Salaries
+      <i class="bi bi-receipt me-2" style="font-size:16px;"></i>Payroll Records
     </button>
     <button class="payroll-tab-button" onclick="switchTab('add-salary', event)">
-      <i class="bi bi-plus-circle me-2" style="font-size:16px;"></i>Add Salary/Bonus
+      <i class="bi bi-plus-circle me-2" style="font-size:16px;"></i>Payroll Entry
     </button>
     <button class="payroll-tab-button" onclick="switchTab('commission', event)">
       <i class="bi bi-percent me-2" style="font-size:16px;"></i>Commission Management
@@ -192,24 +223,45 @@
   <!-- ?? Salaries Tab ?????????????????????????????????????????? -->
   <div id="salaries" class="payroll-tab-content active">
     <div class="salaries-section">
-      <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Salary & Bonus Records</h5>
+      <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Payroll Records</h5>
 
       <!-- Summary Cards (server-rendered) -->
+      {% set all_salaries = salaries | list %}
       {% set paid_salaries = salaries | selectattr('salary_status','equalto','Paid') | list %}
-      {% set usa_total  = paid_salaries | selectattr('region','equalto','Inside America')  | sum(attribute='amount') %}
-      {% set intl_total = paid_salaries | selectattr('region','equalto','Outside America') | sum(attribute='amount') %}
+      {% set pending_salaries = salaries | selectattr('salary_status','equalto','Pending') | list %}
+      {% set salary_entries = paid_salaries | selectattr('salary_type','equalto','Salary') | list %}
+      {% set bonus_entries = all_salaries | selectattr('salary_type','equalto','Bonus') | list %}
+      {% set commission_entries = all_salaries | selectattr('salary_type','equalto','Commission') | list %}
+      {% set salary_only_total = salary_entries | sum(attribute='amount') %}
+      {% set bonus_total = bonus_entries | sum(attribute='amount') %}
+      {% set commission_total = commission_entries | sum(attribute='amount') %}
+      {% set pending_total = pending_salaries | sum(attribute='amount') %}
+      {% set paid_total = paid_salaries | sum(attribute='amount') %}
       <div class="summary-cards" id="salaryCards">
         <div class="summary-card usa">
-          <div class="summary-card-label">Inside America</div>
-          <div class="summary-card-value" id="cardUSA">{{ currency_symbol }}{{ "{:,.2f}".format(usa_total | float) }}</div>
+          <div class="summary-card-label">Total Salaries</div>
+          <div class="summary-card-value" id="cardSalary">{{ currency_symbol }}{{ "{:,.2f}".format(salary_only_total | float) }}</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">{{ salary_entries | length }} Salary Entries</div>
+        </div>
+        <div class="summary-card" style="border-left:4px solid #8b5cf6;">
+          <div class="summary-card-label">Total Bonus</div>
+          <div class="summary-card-value" id="cardBonus">{{ currency_symbol }}{{ "{:,.2f}".format(bonus_total | float) }}</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">{{ bonus_entries | length }} Performance Bonuses</div>
+        </div>
+        <div class="summary-card" style="border-left:4px solid #06b6d4;">
+          <div class="summary-card-label">Total Commission</div>
+          <div class="summary-card-value" id="cardCommission">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total | float) }}</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">{{ commission_entries | length }} Earned Commissions</div>
         </div>
         <div class="summary-card intl">
-          <div class="summary-card-label">Outside America</div>
-          <div class="summary-card-value" id="cardIntl">{{ currency_symbol }}{{ "{:,.2f}".format(intl_total | float) }}</div>
+          <div class="summary-card-label">Total Pending</div>
+          <div class="summary-card-value" id="cardPending">{{ currency_symbol }}{{ "{:,.2f}".format(pending_total | float) }}</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">{{ pending_salaries | length }} Awaiting approvals</div>
         </div>
-        <div class="summary-card">
-          <div class="summary-card-label">Total Salary</div>
-          <div class="summary-card-value" id="cardTotal">{{ currency_symbol }}{{ "{:,.2f}".format((usa_total + intl_total) | float) }}</div>
+        <div class="summary-card" style="border-left:4px solid #10b981;">
+          <div class="summary-card-label">Total Paid</div>
+          <div class="summary-card-value" id="cardPaid">{{ currency_symbol }}{{ "{:,.2f}".format(paid_total | float) }}</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">{{ paid_salaries | length }} Paid Entries</div>
         </div>
       </div>
 
@@ -228,6 +280,12 @@
               <option value="">All Regions</option>
               <option value="Inside America">Inside America</option>
               <option value="Outside America">Outside America</option>
+            </select>
+            <select id="filterStatus" class="form-select form-select-sm" style="width:160px;">
+              <option value="">All Status</option>
+              <option value="Pending">Pending</option>
+              <option value="Paid">Paid</option>
+              <option value="Processing">Processing</option>
             </select>
           </div>
         </div>
@@ -267,7 +325,7 @@
               {% set sal_period = sal.date[:7] if sal.date and sal.date|length >= 7 else '' %}
               {% set ss = sal.get('salary_status','Pending') %}
               {% set sal_type = sal.get('salary_type','Salary') %}
-              <tr data-salary="1" data-employee="{{ sal_emp | lower }}" data-type="{{ sal_type }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
+              <tr data-salary="1" data-employee="{{ sal_emp | lower }}" data-type="{{ sal_type }}" data-status="{{ ss }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
                 <td><strong>{{ sal_emp or '—' }}</strong></td>
                 <td><span style="display:inline-block;padding:3px 8px;border-radius:14px;font-size:11px;font-weight:600;{% if sal_type == 'Bonus' %}background:#fcd34d;color:#78350f;{% elif sal_type == 'Commission' %}background:#d1fae5;color:#065f46;{% else %}background:#dbeafe;color:#1e40af;{% endif %}">{{ sal_type }}</span></td>
                 <td>{{ sal.date[5:7] + '-' + sal.date[8:10] + '-' + sal.date[0:4] if sal.date and sal.date|length >= 10 else '—' }}</td>
@@ -283,7 +341,7 @@
                 <td>{{ sal.notes or '—' }}</td>
                 <td>
                   <div class="d-flex gap-1" style="justify-content:center;">
-                    <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit" onclick="editSalary('{{ sal.firebase_id }}','{{ sal_emp | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Pending') }}','{{ sal_type }}')"><i class="bi bi-pencil"></i></button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit" onclick="editSalary('{{ sal.firebase_id }}','{{ sal_emp | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Pending') }}','{{ sal_type }}','{{ sal.get('paid_at','') }}')"><i class="bi bi-pencil"></i></button>
                     <span id="salary-action-{{ sal.firebase_id }}"></span>
                   </div>
                 </td>
@@ -306,7 +364,7 @@
   <!-- ?? Add Salary Tab ???????????????????????????????????????? -->
   <div id="add-salary" class="payroll-tab-content">
     <div>
-      <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Add Salary/Bonus</h5>
+      <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Payroll Entry</h5>
 
       <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:25px;">
         <form id="salaryForm" onsubmit="addSalary(event)">
@@ -322,10 +380,9 @@
 
             <div class="form-group">
               <label for="sal_type">Type</label>
-              <select id="sal_type" required>
+              <select id="sal_type" required onchange="toggleCommissionPaidDate()">
                 <option value="Salary">Salary</option>
                 <option value="Bonus">Bonus</option>
-                <option value="Commission">Commission</option>
               </select>
             </div>
 
@@ -350,11 +407,16 @@
 
             <div class="form-group">
               <label for="sal_status">Status</label>
-              <select id="sal_status">
+              <select id="sal_status" onchange="toggleCommissionPaidDate()">
                 <option value="Pending">Pending</option>
                 <option value="Paid">Paid</option>
                 <option value="Processing">Processing</option>
               </select>
+            </div>
+
+            <div class="form-group" id="sal_paid_date_group" style="display:none;">
+              <label for="sal_paid_date">Paid Date</label>
+              <input type="date" id="sal_paid_date" />
             </div>
 
             <div class="form-group" style="grid-column:1/-1;">
@@ -365,7 +427,7 @@
 
           <div style="display:flex;gap:10px;">
             <button type="submit" class="btn-primary" id="submitBtn">
-              <i class="bi bi-check-circle me-1"></i><span id="submitBtnText">Add Salary/Bonus</span>
+              <i class="bi bi-check-circle me-1"></i><span id="submitBtnText">Add Entry</span>
             </button>
             <button type="reset" class="btn-secondary" onclick="resetSalaryForm()">Clear</button>
           </div>
@@ -380,22 +442,31 @@
       <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Commission Management</h5>
 
       <!-- Summary Cards -->
-      <div class="summary-cards" id="commissionCards">
-        <div class="summary-card">
+      <div class="summary-cards" id="commissionCards" style="display:grid;grid-template-columns:repeat(5,1fr);gap:15px;margin-bottom:25px;">
+        <div class="summary-card" style="border-left:4px solid #3b82f6;">
+          <div class="summary-card-label">Total Employees</div>
+          <div class="summary-card-value" id="cardCommEmployees" style="color:#3b82f6;font-size:26px;font-weight:800;">0</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Commission available employees</div>
+        </div>
+        <div class="summary-card" style="border-left:4px solid #8b5cf6;">
           <div class="summary-card-label">Total Earned</div>
           <div class="summary-card-value" id="cardCommEarned" style="color:#8b5cf6;">{{ currency_symbol }}0.00</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Across all employees</div>
         </div>
-        <div class="summary-card">
+        <div class="summary-card" style="border-left:4px solid #06b6d4;">
           <div class="summary-card-label">Total Adjusted</div>
           <div class="summary-card-value" id="cardCommAdjusted" style="color:#06b6d4;">{{ currency_symbol }}0.00</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Deductions and adjustments</div>
         </div>
-        <div class="summary-card">
+        <div class="summary-card" style="border-left:4px solid #10b981;">
           <div class="summary-card-label">Total Paid</div>
           <div class="summary-card-value" id="cardCommPaid" style="color:#10b981;">{{ currency_symbol }}0.00</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Commission paid out</div>
         </div>
-        <div class="summary-card">
+        <div class="summary-card" style="border-left:4px solid #f59e0b;">
           <div class="summary-card-label">Outstanding</div>
           <div class="summary-card-value" id="cardCommOutstanding" style="color:#f59e0b;">{{ currency_symbol }}0.00</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Pending commission payment</div>
         </div>
       </div>
 
@@ -408,16 +479,9 @@
               <option value="">All Status</option>
               <option value="Pending">Pending</option>
               <option value="Paid">Paid</option>
-              <option value="Paid (Fully Covered)">Paid (Fully Covered)</option>
             </select>
             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadCommissions()">Refresh</button>
             <button type="button" class="btn btn-sm btn-light" onclick="clearCommissionFilters()">Clear</button>
-          </div>
-          <div class="d-flex align-items-center gap-2">
-            <label for="commHideZero" style="margin:0;font-weight:500;font-size:13px;">Hide $0</label>
-            <div class="form-check form-switch" style="margin:0;">
-              <input class="form-check-input" type="checkbox" id="commHideZero" onchange="renderCommissionTable()">
-            </div>
           </div>
         </div>
       </div>
@@ -436,12 +500,11 @@
               <th>Adjusted</th>
               <th>Remaining Due</th>
               <th>Status</th>
-              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="commissionTableBody">
             <tr>
-              <td colspan="10" style="text-align:center;color:#94a3b8;padding:40px;">
+              <td colspan="9" style="text-align:center;color:#94a3b8;padding:40px;">
                 Loading commissions...
               </td>
             </tr>
@@ -536,7 +599,6 @@
                 <select id="commEditStatus" class="form-control form-control-sm" onchange="togglePaidDate()">
                   <option value="Pending">Pending</option>
                   <option value="Paid">Paid</option>
-                  <option value="Paid (Fully Covered)">Paid (Fully Covered)</option>
                 </select>
               </div>
               <div class="form-group" id="paidDateGroup" style="display:none;">
@@ -659,17 +721,17 @@
             <tr>
               <th>Advance No</th>
               <th style="min-width: 110px;">Date</th>
-              <th>Employee</th>
-              <th>Amount</th>
-              <th>Adjusted</th>
-              <th>Balance</th>
+              <th style="min-width: 150px;">Employee</th>
+              <th style="min-width: 130px;">Amount</th>
+              <th style="min-width: 130px;">Adjusted</th>
+              <th style="min-width: 130px;">Balance</th>
               <th>Status</th>
-              <th style="width: 80px;">Actions</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="advanceTableBody">
             <tr>
-              <td colspan="8" style="text-align:center;color:#94a3b8;padding:40px;">
+              <td colspan="7" style="text-align:center;color:#94a3b8;padding:40px;">
                 No advances found. Create one using the form above.
               </td>
             </tr>
@@ -968,33 +1030,46 @@ function applySalaryFilters() {
   const search   = document.getElementById('searchEmployee').value.toLowerCase();
   const type     = document.getElementById('filterType').value;
   const region   = document.getElementById('filterRegion').value;
+  const status   = document.getElementById('filterStatus').value;
   const dateFrom = document.getElementById('dateFrom').value;
   const dateTo   = document.getElementById('dateTo').value;
 
   // Per-period accumulators for summary cards and header totals
   const periodTotals  = {};
   const periodVisible = {};
-  let usaTotal = 0, intlTotal = 0;
+
+  // Summary card totals
+  let salaryTotal = 0, pendingTotal = 0, bonusTotal = 0, commissionTotal = 0, paidTotal = 0;
+  let salaryCount = 0, pendingCount = 0, bonusCount = 0, commissionCount = 0, paidCount = 0;
 
   document.querySelectorAll('#salaryTableBody tr[data-salary]').forEach(row => {
     const emp    = (row.dataset.employee || '').toLowerCase();
     const salType = row.dataset.type || 'Salary';
+    const salStatus = row.dataset.status || 'Pending';
     const reg    = row.dataset.region || '';
     const date   = row.dataset.date || '';
     const period = row.dataset.periodGroup || '';
+    const amt    = parseFloat(row.dataset.amount || 0);
+
     const passes = (!search || emp.includes(search))
                 && (!type || salType === type)
                 && (!region || reg === region)
+                && (!status || salStatus === status)
                 && (!dateFrom || date >= dateFrom)
                 && (!dateTo   || date <= dateTo);
     row.dataset.filterHidden = passes ? '' : '1';
     updateRowVisibility(row);
+
     if (passes) {
-      const amt = parseFloat(row.dataset.amount || 0);
       periodTotals[period]  = (periodTotals[period]  || 0) + amt;
       periodVisible[period] = (periodVisible[period] || 0) + 1;
-      if (reg === 'Inside America')  usaTotal  += amt;
-      if (reg === 'Outside America') intlTotal += amt;
+
+      // Update summary card totals
+      if (salType === 'Salary' && salStatus === 'Paid') { salaryTotal += amt; salaryCount++; }
+      if (salStatus === 'Pending') { pendingTotal += amt; pendingCount++; }
+      if (salType === 'Bonus') { bonusTotal += amt; bonusCount++; }
+      if (salType === 'Commission') { commissionTotal += amt; commissionCount++; }
+      if (salStatus === 'Paid') { paidTotal += amt; paidCount++; }
     }
   });
 
@@ -1031,9 +1106,30 @@ function applySalaryFilters() {
   });
 
   // Update summary cards to reflect filtered data
-  document.getElementById('cardUSA').textContent   = CURRENCY_SYMBOL + fmt(usaTotal);
-  document.getElementById('cardIntl').textContent  = CURRENCY_SYMBOL + fmt(intlTotal);
-  document.getElementById('cardTotal').textContent = CURRENCY_SYMBOL + fmt(usaTotal + intlTotal);
+  const cardSalary = document.getElementById('cardSalary');
+  const cardPending = document.getElementById('cardPending');
+  const cardBonus = document.getElementById('cardBonus');
+  const cardCommission = document.getElementById('cardCommission');
+  const cardPaid = document.getElementById('cardPaid');
+
+  if (cardSalary) cardSalary.textContent = CURRENCY_SYMBOL + fmt(salaryTotal);
+  if (cardPending) cardPending.textContent = CURRENCY_SYMBOL + fmt(pendingTotal);
+  if (cardBonus) cardBonus.textContent = CURRENCY_SYMBOL + fmt(bonusTotal);
+  if (cardCommission) cardCommission.textContent = CURRENCY_SYMBOL + fmt(commissionTotal);
+  if (cardPaid) cardPaid.textContent = CURRENCY_SYMBOL + fmt(paidTotal);
+
+  // Update entry counts in the cards
+  const salaryCard = document.querySelector('.summary-card.usa');
+  const pendingCard = document.querySelector('.summary-card.intl');
+  const bonusCard = document.querySelectorAll('.summary-card')[2];
+  const commissionCard = document.querySelectorAll('.summary-card')[3];
+  const paidCard = document.querySelectorAll('.summary-card')[4];
+
+  if (salaryCard) salaryCard.querySelector('div:last-child').textContent = salaryCount + ' Salary Entries';
+  if (pendingCard) pendingCard.querySelector('div:last-child').textContent = pendingCount + ' Awaiting approvals';
+  if (bonusCard) bonusCard.querySelector('div:last-child').textContent = bonusCount + ' Performance Bonuses';
+  if (commissionCard) commissionCard.querySelector('div:last-child').textContent = commissionCount + ' Earned Commissions';
+  if (paidCard) paidCard.querySelector('div:last-child').textContent = paidCount + ' Paid Entries';
 }
 
 function setDateRange(range) {
@@ -1055,6 +1151,24 @@ function clearFilters() {
   document.getElementById('dateTo').value          = '';
   applySalaryFilters();
 }
+
+// Real-time filter updates for summary cards
+document.addEventListener('DOMContentLoaded', function() {
+  const searchEmployee = document.getElementById('searchEmployee');
+  const filterType = document.getElementById('filterType');
+  const filterRegion = document.getElementById('filterRegion');
+  const filterStatus = document.getElementById('filterStatus');
+  const dateFrom = document.getElementById('dateFrom');
+  const dateTo = document.getElementById('dateTo');
+
+  // Add event listeners for real-time updates
+  if (searchEmployee) searchEmployee.addEventListener('input', applySalaryFilters);
+  if (filterType) filterType.addEventListener('change', applySalaryFilters);
+  if (filterRegion) filterRegion.addEventListener('change', applySalaryFilters);
+  if (filterStatus) filterStatus.addEventListener('change', applySalaryFilters);
+  if (dateFrom) dateFrom.addEventListener('change', applySalaryFilters);
+  if (dateTo) dateTo.addEventListener('change', applySalaryFilters);
+});
 
 // Employee autocomplete
 const employeesList = {{ employee_profiles | tojson | safe }};
@@ -1095,7 +1209,24 @@ function renderEmployeeOptions(filter) {
   });
 }
 
-function editSalary(id, employee, date, amount, region, notes, status, type) {
+function toggleCommissionPaidDate() {
+  const type = document.getElementById('sal_type').value;
+  const status = document.getElementById('sal_status').value;
+  const paidDateGroup = document.getElementById('sal_paid_date_group');
+  if (type === 'Commission' && status === 'Paid') {
+    paidDateGroup.style.display = 'block';
+  } else {
+    paidDateGroup.style.display = 'none';
+  }
+}
+
+function editSalary(id, employee, date, amount, region, notes, status, type, paidDate) {
+  // For Commission, show the quick edit modal instead
+  if (type === 'Commission') {
+    showCommissionEditModal(id, employee, date, amount, region, status, notes, paidDate);
+    return;
+  }
+
   document.getElementById('salary_id').value = id;
   document.getElementById('sal_employee').value = employee;
   document.getElementById('sal_date').value = date;
@@ -1104,7 +1235,9 @@ function editSalary(id, employee, date, amount, region, notes, status, type) {
   document.getElementById('sal_notes').value = notes || '';
   document.getElementById('sal_status').value = status || 'Pending';
   document.getElementById('sal_type').value = type || 'Salary';
-  document.getElementById('submitBtnText').textContent = 'Update ' + (type === 'Bonus' ? 'Bonus' : 'Salary');
+  if (paidDate) document.getElementById('sal_paid_date').value = paidDate;
+  document.getElementById('submitBtnText').textContent = 'Update ' + (type === 'Bonus' ? 'Bonus' : type === 'Commission' ? 'Commission' : 'Salary');
+  toggleCommissionPaidDate();
   // Switch to add-salary tab
   document.querySelectorAll('.payroll-tab-content').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.payroll-tab-button').forEach(b => b.classList.remove('active'));
@@ -1116,7 +1249,9 @@ function editSalary(id, employee, date, amount, region, notes, status, type) {
 function resetSalaryForm() {
   document.getElementById('salary_id').value = '';
   document.getElementById('sal_type').value = 'Salary';
-  document.getElementById('submitBtnText').textContent = 'Add Salary/Bonus';
+  document.getElementById('sal_paid_date').value = '';
+  document.getElementById('submitBtnText').textContent = 'Add Entry';
+  toggleCommissionPaidDate();
 }
 
 function addSalary(e) {
@@ -1142,15 +1277,25 @@ function addSalary(e) {
   }
 
   const salaryId = document.getElementById('salary_id').value;
+  const salType = document.getElementById('sal_type').value || 'Salary';
+  const salStatus = document.getElementById('sal_status').value || 'Pending';
   const data = {
     employee_name:  employeeName,
     date:           dateVal,
     amount:         amountVal,
     region:         document.getElementById('sal_region').value,
     notes:          document.getElementById('sal_notes').value,
-    salary_status:  document.getElementById('sal_status').value || 'Pending',
-    salary_type:    document.getElementById('sal_type').value || 'Salary',
+    salary_status:  salStatus,
+    salary_type:    salType,
   };
+
+  // Add paid_at for commission records when status is Paid
+  if (salType === 'Commission' && salStatus === 'Paid') {
+    const paidDateVal = document.getElementById('sal_paid_date').value;
+    if (paidDateVal) {
+      data.paid_at = paidDateVal;
+    }
+  }
 
   const method = salaryId ? 'PUT' : 'POST';
   const url = salaryId ? '/api/payroll/salaries/' + salaryId : '/api/payroll/salaries';
@@ -1160,12 +1305,10 @@ function addSalary(e) {
   .then(res => {
     if (res.success || res.salary_id || res.firebase_id) {
       const isEditing = !!salaryId;
-      // Capture salary type BEFORE resetting form
-      const salaryType = data.salary_type || 'Salary';
       // Clear form and load salaries, then show modal
       document.getElementById('salaryForm').reset();
       document.getElementById('salary_id').value = '';
-      loadSalariesAndShowModal(isEditing, salaryType);
+      loadSalariesAndShowModal(isEditing, salType);
     } else {
       alert('Error: ' + (res.error || 'Failed to save salary'));
       submitBtn.disabled = false;
@@ -1869,8 +2012,8 @@ function refreshAdvanceTable() {
         <td><span style="display:inline-block;padding:6px 14px;border-radius:16px;font-size:12px;font-weight:700;
           ${adv.status === 'Closed' ? 'background:#dcfce7;color:#15803d;' : 'background:#dbeafe;color:#1d4ed8;'}">
           ${adv.status || 'Open'}</span></td>
-        <td onclick="event.stopPropagation()">
-          <div class="d-flex gap-1" style="justify-content:center;">
+        <td onclick="event.stopPropagation()" style="padding:0;">
+          <div class="d-flex gap-1" style="padding:10px;">
             <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit"
               onclick="editAdvanceEntry('${advanceId}')"><i class="bi bi-pencil"></i></button>
             ${advanceDeletePerms.has(adv.advance_no) ?
@@ -1900,7 +2043,8 @@ function refreshAdvanceTable() {
       <td style="padding:12px 10px;color:#1f2937;">{{ currency_symbol }}${parseFloat(totalAmount).toFixed(2)}</td>
       <td style="padding:12px 10px;color:#10b981;">{{ currency_symbol }}${parseFloat(totalAdjusted).toFixed(2)}</td>
       <td style="padding:12px 10px;color:#ef4444;">{{ currency_symbol }}${parseFloat(totalBalance).toFixed(2)}</td>
-      <td colspan="2"></td>
+      <td></td>
+      <td></td>
     </tr>
   `;
 
@@ -2067,7 +2211,7 @@ function performDeleteAdvance() {
 // Handle hash-based tab navigation
 function handleHashNavigation() {
   const hash = window.location.hash.substring(1) || 'salaries';
-  const validTabs = ['salaries', 'add-salary', 'employee-advance', 'export'];
+  const validTabs = ['salaries', 'add-salary', 'commission', 'employee-advance', 'export'];
 
   if (validTabs.includes(hash)) {
     document.querySelectorAll('.payroll-tab-content').forEach(t => t.classList.remove('active'));
@@ -2107,7 +2251,8 @@ window.addEventListener('hashchange', handleHashNavigation);
 
 // Refresh advance delete permissions when page regains focus
 window.addEventListener('focus', function() {
-  if (document.getElementById('employee-advance').classList.contains('active')) {
+  const advanceTab = document.getElementById('employee-advance');
+  if (advanceTab && advanceTab.classList.contains('active')) {
     refreshAdvanceDeletePerms();
   }
 });
@@ -2279,6 +2424,43 @@ document.addEventListener('DOMContentLoaded', function() {
 let allCommissions = [];
 let selectedSalesperson = null;
 
+// Calculate commission status based on remaining balance, paid amount, and adjusted amount
+function getCommissionStatus(earned, adjusted, paid) {
+  const remaining = earned - adjusted - paid;
+  const EPSILON = 0.01;
+
+  if (remaining <= EPSILON) {
+    // Remaining balance is 0
+    if (paid <= EPSILON && adjusted > EPSILON) {
+      return 'Fully Adjusted';
+    } else if (paid > EPSILON && adjusted > EPSILON) {
+      return 'Paid';
+    } else if (paid > EPSILON && adjusted <= EPSILON) {
+      return 'Paid';
+    } else if (paid <= EPSILON && adjusted <= EPSILON) {
+      return 'Paid';
+    } else {
+      return 'Paid';
+    }
+  } else {
+    // Remaining balance is greater than 0
+    return 'Pending';
+  }
+}
+
+function getStatusBadgeClass(status) {
+  if (status === 'Paid') return 'badge bg-success';
+  if (status === 'Fully Adjusted') return 'badge bg-info';
+  return 'badge bg-warning text-dark'; // Pending
+}
+
+function getStatusIcon(status) {
+  if (status === 'Paid') return '<i class="bi bi-check-circle me-1"></i>';
+  if (status === 'Fully Adjusted') return '<i class="bi bi-lock-fill me-1"></i>';
+  if (status === 'Pending') return '<i class="bi bi-clock me-1"></i>';
+  return '';
+}
+
 function loadCommissions() {
   fetch('{{ url_for("get_payroll_commissions") }}')
     .then(r => r.json())
@@ -2289,27 +2471,33 @@ function loadCommissions() {
     })
     .catch(e => {
       console.error('Error loading commissions:', e);
-      document.getElementById('commissionTableBody').innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e74c3c;">Error loading commissions</td></tr>';
+      document.getElementById('commissionTableBody').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e74c3c;">Error loading commissions</td></tr>';
     });
 }
 
 function updateCommissionSummary() {
-  let totalEarned = 0, totalAdjusted = 0, totalPaid = 0, totalOutstanding = 0;
+  let totalEarned = 0, totalAdjusted = 0, totalPaid = 0;
+  const uniqueEmployees = new Set();
 
   allCommissions.forEach(comm => {
     const earned = parseFloat(comm.commission_amount) || 0;
     const adjusted = parseFloat(comm.total_deducted) || 0;
-    const remaining = parseFloat(comm.remaining_due) || 0;
+    const paid = parseFloat(comm.paid_amount) || 0;
 
     totalEarned += earned;
     totalAdjusted += adjusted;
-    totalOutstanding += remaining;
+    totalPaid += paid;
 
-    if (comm.status === 'Paid' || comm.status === 'Paid (Fully Covered)') {
-      totalPaid += earned - adjusted;
+    // Track unique employees
+    if (comm.salesperson) {
+      uniqueEmployees.add(comm.salesperson);
     }
   });
 
+  const totalOutstanding = totalEarned - totalAdjusted - totalPaid;
+  const employeeCount = uniqueEmployees.size;
+
+  document.getElementById('cardCommEmployees').textContent = employeeCount;
   document.getElementById('cardCommEarned').textContent = CURRENCY_SYMBOL + fmt(totalEarned);
   document.getElementById('cardCommAdjusted').textContent = CURRENCY_SYMBOL + fmt(totalAdjusted);
   document.getElementById('cardCommPaid').textContent = CURRENCY_SYMBOL + fmt(totalPaid);
@@ -2320,23 +2508,53 @@ function renderCommissionTable() {
   const tbody = document.getElementById('commissionTableBody');
   const searchVal = document.getElementById('commSearchSalesperson').value.toLowerCase();
   const statusVal = document.getElementById('commFilterStatus').value;
-  const hideZero = document.getElementById('commHideZero').checked;
 
   const filtered = allCommissions.filter(comm => {
     const salespersonMatch = (comm.salesperson || '').toLowerCase().includes(searchVal);
     const statusMatch = !statusVal || comm.status === statusVal;
-    const commissionAmount = parseFloat(comm.commission_amount) || 0;
-    const zeroMatch = !hideZero || commissionAmount > 0;
-    return salespersonMatch && statusMatch && zeroMatch;
+    return salespersonMatch && statusMatch;
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:40px;">No commissions found</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:40px;">No commissions found</td></tr>';
+    updateFilteredCommissionSummary([]);
     return;
   }
 
+  // Update summary cards based on filtered data
+  updateFilteredCommissionSummary(filtered);
+
   // Always show salesperson summary
   renderSalespersonSummary(filtered, tbody);
+}
+
+function updateFilteredCommissionSummary(filtered) {
+  let totalEarned = 0, totalAdjusted = 0, totalPaid = 0;
+  const uniqueEmployees = new Set();
+
+  filtered.forEach(comm => {
+    const earned = parseFloat(comm.commission_amount) || 0;
+    const adjusted = parseFloat(comm.total_deducted) || 0;
+    const paid = parseFloat(comm.paid_amount) || 0;
+
+    totalEarned += earned;
+    totalAdjusted += adjusted;
+    totalPaid += paid;
+
+    // Track unique employees
+    if (comm.salesperson) {
+      uniqueEmployees.add(comm.salesperson);
+    }
+  });
+
+  const totalOutstanding = totalEarned - totalAdjusted - totalPaid;
+  const employeeCount = uniqueEmployees.size;
+
+  document.getElementById('cardCommEmployees').textContent = employeeCount;
+  document.getElementById('cardCommEarned').textContent = CURRENCY_SYMBOL + fmt(totalEarned);
+  document.getElementById('cardCommAdjusted').textContent = CURRENCY_SYMBOL + fmt(totalAdjusted);
+  document.getElementById('cardCommPaid').textContent = CURRENCY_SYMBOL + fmt(totalPaid);
+  document.getElementById('cardCommOutstanding').textContent = CURRENCY_SYMBOL + fmt(totalOutstanding);
 }
 
 function renderSalespersonSummary(filtered, tbody) {
@@ -2345,12 +2563,13 @@ function renderSalespersonSummary(filtered, tbody) {
   if (thead) {
     thead.innerHTML = `
       <th>Employee Name</th>
+      <th>Projects</th>
+      <th>Revenue Generated</th>
       <th>Commission Earned</th>
       <th>Adjusted Amount</th>
       <th>Amount Paid</th>
       <th>Remaining Balance</th>
       <th>Status</th>
-      <th>Actions</th>
     `;
   }
 
@@ -2369,29 +2588,39 @@ function renderSalespersonSummary(filtered, tbody) {
     const personComms = byPerson[personName];
     const earned = personComms.reduce((sum, c) => sum + (parseFloat(c.commission_amount) || 0), 0);
     const adjusted = personComms.reduce((sum, c) => sum + (parseFloat(c.total_deducted) || 0), 0);
-    const remaining = earned - adjusted;
-    const paid = personComms.filter(c => c.status === 'Paid' || c.status === 'Paid (Fully Covered)').reduce((sum, c) => sum + (parseFloat(c.commission_amount) || 0), 0);
-    const unpaid = paid - adjusted;
+    const paid = personComms.reduce((sum, c) => sum + (parseFloat(c.paid_amount) || 0), 0);
+    const remaining = earned - adjusted - paid;
+
+    // Calculate revenue generated as sum of unique project contract values
+    const uniqueProjectsMap = {};
+    personComms.forEach(c => {
+      const projKey = c.project_number || c.project_id || 'Unknown';
+      if (!uniqueProjectsMap[projKey]) {
+        uniqueProjectsMap[projKey] = parseFloat(c.contract_value) || 0;
+      }
+    });
+    const revenueGenerated = Object.values(uniqueProjectsMap).reduce((sum, val) => sum + val, 0);
+
+    // Count unique projects
+    const uniqueProjects = new Set(personComms.map(c => c.project_number || c.project_id || 'Unknown'));
+    const projectCount = uniqueProjects.size;
 
     // Get status from commissions (mostly pending or paid)
-    const isPaid = personComms.every(c => c.status === 'Paid' || c.status === 'Paid (Fully Covered)');
+    const isPaid = personComms.every(c => c.status === 'Paid' || c.status === 'Fully Adjusted');
     const status = isPaid ? 'Paid' : 'Pending';
-    const statusBadge = status === 'Paid' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+    const statusBadgeClass = status === 'Paid' ? 'badge bg-success' : 'badge bg-warning text-dark';
+    const statusIcon = status === 'Paid' ? '<i class="bi bi-check-circle me-1"></i>' : '';
 
     html += `
       <tr style="background:white;border-top:1px solid #e2e8f0;">
         <td style="font-weight:600;color:#0d9488;cursor:pointer;" onclick="showSalespersonProjects('${personName.replace(/'/g, "&#39;")}')"><u>${personName}</u></td>
+        <td style="font-weight:600;text-align:center;">${projectCount}</td>
+        <td style="font-weight:600;color:#0891b2;">${CURRENCY_SYMBOL}${fmt(revenueGenerated)}</td>
         <td style="font-weight:600;">${CURRENCY_SYMBOL}${fmt(earned)}</td>
         <td style="font-weight:600;">${CURRENCY_SYMBOL}${fmt(adjusted)}</td>
         <td style="font-weight:600;color:#10b981;">${CURRENCY_SYMBOL}${fmt(paid)}</td>
         <td style="font-weight:600;color:#ef4444;">${CURRENCY_SYMBOL}${fmt(remaining)}</td>
-        <td><span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${status}</span></td>
-        <td>
-          <div class="d-flex gap-1" style="justify-content:center;">
-            <button type="button" class="btn btn-xs btn-outline-secondary" title="View Details" onclick="event.stopPropagation(); showSalespersonProjects('${personName.replace(/'/g, "&#39;")}')"><i class="bi bi-eye"></i></button>
-            ${remaining > 0 ? `<button type="button" class="btn btn-xs btn-outline-success" title="Mark All as Paid" onclick="event.stopPropagation(); markSalespersonCommissionsPaid('${personName.replace(/'/g, "&#39;")}', ${remaining})"><i class="bi bi-check-circle"></i></button>` : ''}
-          </div>
-        </td>
+        <td><span class="${statusBadgeClass}" style="font-size:10px;">${statusIcon}${status}</span></td>
       </tr>
     `;
   });
@@ -2482,9 +2711,10 @@ function renderProjectDetailsModal(personName) {
       commissions.forEach(comm => {
         const earned = parseFloat(comm.commission_amount) || 0;
         const adjusted = parseFloat(comm.total_deducted) || 0;
-        const remaining = parseFloat(comm.remaining_due) || 0;
-        const displayStatus = (remaining === 0 || Math.abs(earned - adjusted) < 0.01) && adjusted > 0 ? 'Paid (Fully Covered)' : (comm.status || 'Pending');
-        const statusBadge = displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+        const paid = parseFloat(comm.paid_amount) || 0;
+        const displayStatus = getCommissionStatus(earned, adjusted, paid);
+        const statusBadgeClass = getStatusBadgeClass(displayStatus);
+        const statusIcon = getStatusIcon(displayStatus);
 
         html += `
           <tr style="background:white;" data-commission-id="${comm.commission_doc_id}">
@@ -2518,8 +2748,8 @@ function renderProjectDetailsModal(personName) {
             <td style="font-size:13px;"><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
             <td>
               <div>
-                <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${displayStatus}</span>
-                ${(displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
+                <span class="${statusBadgeClass}" style="font-size:10px;">${statusIcon}${displayStatus}</span>
+                ${(displayStatus === 'Paid') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
               </div>
             </td>
             <td>
@@ -2535,9 +2765,10 @@ function renderProjectDetailsModal(personName) {
       const comm = firstComm;
       const earned = parseFloat(comm.commission_amount) || 0;
       const adjusted = parseFloat(comm.total_deducted) || 0;
-      const remaining = parseFloat(comm.remaining_due) || 0;
-      const displayStatus = (remaining === 0 || Math.abs(earned - adjusted) < 0.01) && adjusted > 0 ? 'Paid (Fully Covered)' : (comm.status || 'Pending');
-      const statusBadge = displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+      const paid = parseFloat(comm.paid_amount) || 0;
+      const displayStatus = getCommissionStatus(earned, adjusted, paid);
+      const statusBadgeClass = getStatusBadgeClass(displayStatus);
+      const statusIcon = getStatusIcon(displayStatus);
 
       html += `
         <tr style="background:white;border-top:1px solid #e2e8f0;" data-commission-id="${comm.commission_doc_id}">
@@ -2571,8 +2802,8 @@ function renderProjectDetailsModal(personName) {
           <td><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
           <td>
             <div>
-              <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${displayStatus}</span>
-              ${(displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
+              <span class="${statusBadgeClass}" style="font-size:10px;">${statusIcon}${displayStatus}</span>
+              ${(displayStatus === 'Paid') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
             </div>
           </td>
           <td>
@@ -2674,9 +2905,10 @@ function renderProjectDetailsInContainer(personName, container) {
       commissions.forEach(comm => {
         const earned = parseFloat(comm.commission_amount) || 0;
         const adjusted = parseFloat(comm.total_deducted) || 0;
-        const remaining = parseFloat(comm.remaining_due) || 0;
-        const displayStatus = (remaining === 0 || Math.abs(earned - adjusted) < 0.01) && adjusted > 0 ? 'Paid (Fully Covered)' : (comm.status || 'Pending');
-        const statusBadge = displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+        const paid = parseFloat(comm.paid_amount) || 0;
+        const displayStatus = getCommissionStatus(earned, adjusted, paid);
+        const statusBadgeClass = getStatusBadgeClass(displayStatus);
+        const statusIcon = getStatusIcon(displayStatus);
 
         html += `
           <tr style="background:white;" data-commission-id="${comm.commission_doc_id}">
@@ -2710,8 +2942,8 @@ function renderProjectDetailsInContainer(personName, container) {
             <td style="font-size:13px;"><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
             <td>
               <div>
-                <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${displayStatus}</span>
-                ${(displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
+                <span class="${statusBadgeClass}" style="font-size:10px;">${statusIcon}${displayStatus}</span>
+                ${(displayStatus === 'Paid') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
               </div>
             </td>
             <td>
@@ -2729,8 +2961,8 @@ function renderProjectDetailsInContainer(personName, container) {
       const earned = parseFloat(comm.commission_amount) || 0;
       const adjusted = parseFloat(comm.total_deducted) || 0;
       const remaining = parseFloat(comm.remaining_due) || 0;
-      const displayStatus = (remaining === 0 || Math.abs(earned - adjusted) < 0.01) && adjusted > 0 ? 'Paid (Fully Covered)' : (comm.status || 'Pending');
-      const statusBadge = displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+      const displayStatus = getCommissionStatus(earned, adjusted, paid);
+      const statusBadge = displayStatus === 'Paid' || displayStatus === 'Fully Adjusted' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
 
       html += `
         <tr style="background:white;border-top:1px solid #e2e8f0;" data-commission-id="${comm.commission_doc_id}">
@@ -2765,7 +2997,7 @@ function renderProjectDetailsInContainer(personName, container) {
           <td>
             <div>
               <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${displayStatus}</span>
-              ${(displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
+              ${(displayStatus === 'Paid') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
             </div>
           </td>
           <td>
@@ -2863,11 +3095,13 @@ function renderProjectDetailsByPerson(filtered, personName, tbody) {
       commissions.forEach(comm => {
         const earned = parseFloat(comm.commission_amount) || 0;
         const adjusted = parseFloat(comm.total_deducted) || 0;
+        const paid = parseFloat(comm.paid_amount) || 0;
         const remaining = parseFloat(comm.remaining_due) || 0;
 
-        // Determine display status: if remaining is 0 or adjusted equals earned, show "Paid (Fully Covered)"
-        const displayStatus = (remaining === 0 || Math.abs(earned - adjusted) < 0.01) && adjusted > 0 ? 'Paid (Fully Covered)' : (comm.status || 'Pending');
-        const statusBadge = displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+        // Determine display status based on remaining balance, paid amount, and adjusted amount
+        const displayStatus = getCommissionStatus(earned, adjusted, paid);
+        const statusBadgeClass = getStatusBadgeClass(displayStatus);
+        const statusIcon = getStatusIcon(displayStatus);
 
         html += `
           <tr style="background:white;padding-left:40px;" data-commission-id="${comm.commission_doc_id}">
@@ -2901,8 +3135,8 @@ function renderProjectDetailsByPerson(filtered, personName, tbody) {
             <td style="font-size:13px;"><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
             <td>
               <div>
-                <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${displayStatus}</span>
-                ${(displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
+                <span class="${statusBadgeClass}" style="font-size:10px;">${statusIcon}${displayStatus}</span>
+                ${(displayStatus === 'Paid') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
               </div>
             </td>
             <td>
@@ -2921,9 +3155,9 @@ function renderProjectDetailsByPerson(filtered, personName, tbody) {
       const adjusted = parseFloat(comm.total_deducted) || 0;
       const remaining = parseFloat(comm.remaining_due) || 0;
 
-      // Determine display status: if remaining is 0 or adjusted equals earned, show "Paid (Fully Covered)"
-      const displayStatus = (remaining === 0 || Math.abs(earned - adjusted) < 0.01) && adjusted > 0 ? 'Paid (Fully Covered)' : (comm.status || 'Pending');
-      const statusBadge = displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+      // Determine display status: based on remaining balance, paid amount, and adjusted amount
+      const displayStatus = getCommissionStatus(earned, adjusted, paid);
+      const statusBadge = displayStatus === 'Paid' || displayStatus === 'Fully Adjusted' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
 
       const hasProjectLink = comm.actual_project_id && comm.actual_project_id.trim() !== '';
       const projectLink = hasProjectLink ? `/projects/${comm.actual_project_id}` : 'javascript:void(0)';
@@ -2962,7 +3196,7 @@ function renderProjectDetailsByPerson(filtered, personName, tbody) {
           <td>
             <div>
               <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${displayStatus}</span>
-              ${(displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
+              ${(displayStatus === 'Paid') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
             </div>
           </td>
           <td>
@@ -3024,7 +3258,7 @@ function togglePaidDate() {
   const paidDateGroup = document.getElementById('paidDateGroup');
   const paidDateField = document.getElementById('commEditPaidDate');
 
-  if (status === 'Paid' || status === 'Paid (Fully Covered)') {
+  if (status === 'Paid') {
     paidDateGroup.style.display = 'block';
     // Auto-set date to today if not already set
     if (!paidDateField.value) {
@@ -3108,7 +3342,7 @@ function saveCommissionEdit(e) {
   };
 
   // Add paid_date if status is Paid
-  if ((status === 'Paid' || status === 'Paid (Fully Covered)') && paidDate) {
+  if ((status === 'Paid') && paidDate) {
     payload.paid_at = paidDate;
   }
 
@@ -3208,7 +3442,6 @@ function markSalespersonCommissionsPaid(salespersonName, remainingAmount) {
 function clearCommissionFilters() {
   document.getElementById('commSearchSalesperson').value = '';
   document.getElementById('commFilterStatus').value = '';
-  document.getElementById('commHideZero').checked = false;
   renderCommissionTable();
 }
 
@@ -3223,6 +3456,167 @@ document.addEventListener('DOMContentLoaded', function() {
 document.addEventListener('DOMContentLoaded', function() {
   setTimeout(() => { loadCommissions(); }, 500);
 });
+</script>
+
+<!-- Commission Edit Modal -->
+<div id="commissionEditNoticeModal" class="modal fade" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div style="background: #0d9488; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 12px;">
+        <i class="bi bi-check-circle-fill" style="font-size: 20px;"></i>
+        <h5 style="margin: 0; font-size: 16px; font-weight: 600;">Commission Record</h5>
+      </div>
+      <div class="modal-body" style="padding: 24px;">
+        <p style="margin: 0 0 20px 0; color: #0f172a; font-size: 15px;">
+          Commission records are managed in the <strong>"Commission Management"</strong> tab for better tracking and control.
+        </p>
+        <p style="margin: 0 0 20px 0; color: #64748b; font-size: 14px;">
+          Update the paid date below for this commission:
+        </p>
+        <form id="commissionQuickEditForm" onsubmit="saveCommissionQuickEdit(event)">
+          <input type="hidden" id="commissionQuickEditId">
+          <input type="hidden" id="commissionQuickEditEmployee">
+          <input type="hidden" id="commissionQuickEditDate">
+          <input type="hidden" id="commissionQuickEditAmount">
+          <input type="hidden" id="commissionQuickEditRegion">
+          <input type="hidden" id="commissionQuickEditStatus">
+          <input type="hidden" id="commissionQuickEditNotes">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="commissionQuickEditPaidDate" style="font-weight: 600; color: #0f172a; margin-bottom: 8px; display: block; font-size: 14px;">Paid Date</label>
+            <input type="date" id="commissionQuickEditPaidDate" class="form-control form-control-sm" required style="border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px;" />
+          </div>
+        </form>
+      </div>
+      <div style="padding: 0 24px 24px; display: flex; gap: 10px; justify-content: center;">
+        <button type="button" style="background: #e2e8f0; color: #0f172a; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;" onclick="closeCommissionEditModal()">Close</button>
+        <button type="button" style="background: #0d9488; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;" onclick="document.getElementById('commissionQuickEditForm').dispatchEvent(new Event('submit'))">Save Paid Date</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showCommissionEditModal(id, employee, date, amount, region, status, notes, paidDate) {
+  document.getElementById('commissionQuickEditId').value = id;
+  document.getElementById('commissionQuickEditEmployee').value = employee;
+  document.getElementById('commissionQuickEditDate').value = date;
+  document.getElementById('commissionQuickEditAmount').value = amount;
+  document.getElementById('commissionQuickEditRegion').value = region;
+  document.getElementById('commissionQuickEditStatus').value = status || 'Pending';
+  document.getElementById('commissionQuickEditNotes').value = notes || '';
+
+  // Auto-fill paid date: use provided paidDate, or if Paid status use commission date as default
+  const paidDateField = document.getElementById('commissionQuickEditPaidDate');
+  if (paidDate && paidDate.trim()) {
+    paidDateField.value = paidDate;
+  } else if (status === 'Paid') {
+    // If status is Paid but no paid_at date, use the commission date as default
+    paidDateField.value = date || '';
+  } else {
+    paidDateField.value = '';
+  }
+
+  const modal = new bootstrap.Modal(document.getElementById('commissionEditNoticeModal'));
+  modal.show();
+}
+
+function closeCommissionEditModal() {
+  const modal = bootstrap.Modal.getInstance(document.getElementById('commissionEditNoticeModal'));
+  if (modal) modal.hide();
+}
+
+function showToast(message, type = 'success') {
+  const toastId = 'commission-toast-' + Date.now();
+  const bgColor = type === 'success' ? '#10b981' : '#dc2626';
+  const toast = document.createElement('div');
+  toast.id = toastId;
+  toast.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: ${bgColor};
+    color: white;
+    padding: 14px 20px;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 9999;
+    animation: slideIn 0.3s ease-out;
+  `;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.animation = 'slideOut 0.3s ease-out';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+function saveCommissionQuickEdit(event) {
+  event.preventDefault();
+  const saveBtn = event.target.querySelector('button[type="submit"]') || document.querySelector('button[onclick*="commissionQuickEditForm"]');
+  const id = document.getElementById('commissionQuickEditId').value;
+  const paidDate = document.getElementById('commissionQuickEditPaidDate').value;
+
+  if (!id) {
+    showToast('Commission ID is missing', 'error');
+    return;
+  }
+
+  if (!paidDate) {
+    showToast('Please select a paid date', 'error');
+    return;
+  }
+
+  // Disable button to prevent multiple clicks
+  const buttons = document.querySelectorAll('button[onclick*="commissionQuickEditForm"]');
+  buttons.forEach(btn => {
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+    btn.style.cursor = 'not-allowed';
+  });
+
+  const data = {
+    employee_name: document.getElementById('commissionQuickEditEmployee').value,
+    date: paidDate,  // Use paid date as the transaction date
+    amount: parseFloat(document.getElementById('commissionQuickEditAmount').value),
+    region: document.getElementById('commissionQuickEditRegion').value,
+    salary_status: document.getElementById('commissionQuickEditStatus').value,
+    salary_type: 'Commission',
+    notes: document.getElementById('commissionQuickEditNotes').value
+  };
+
+  console.log('Saving commission:', data);
+
+  fetch('/api/payroll/salaries/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  })
+  .then(r => r.json())
+  .then(res => {
+    console.log('Backend response:', res);
+    if (res.success) {
+      showToast('Paid date updated successfully!');
+      closeCommissionEditModal();
+      // Reload after a short delay to show the toast
+      setTimeout(() => location.reload(), 300);
+    } else {
+      showToast('Error: ' + (res.error || 'Failed to save'), 'error');
+      // Re-enable button on error
+      buttons.forEach(btn => {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+      });
+    }
+  })
+  .catch(e => {
+    console.error('Fetch error:', e);
+    showToast('Error saving commission: ' + e.message, 'error');
+  });
+}
 </script>
 
 {% endblock %}

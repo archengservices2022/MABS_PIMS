@@ -153,11 +153,37 @@
     {% endif %}
 
     {% if 'financial' in allowed_pages %}
-    <a href="{{ url_for('financial') }}"
-       class="nav-item accent-teal {% if request.endpoint == 'financial' %}active{% endif %}">
-      <span class="nav-icon"><i class="bi bi-bar-chart-fill"></i></span>
-      <span class="nav-label">Finance</span>
-    </a>
+    {% set fin_active = request.path.startswith('/financial') %}
+    {% set fin_overview_active = request.endpoint == 'financial_overview' or (request.endpoint == 'financial' and request.args.get('tab', 'overview') == 'overview') %}
+    {% set fin_expenses_active = request.endpoint == 'financial_expenses' or (request.endpoint == 'financial' and request.args.get('tab', '') in ['expenses', 'archived-expenses']) %}
+    {% set fin_receivables_active = request.endpoint == 'financial_receivables' or (request.endpoint == 'financial' and request.args.get('tab', '') in ['ar-summary', 'aging']) %}
+    <div class="nav-group">
+      <button class="nav-item accent-teal nav-group-toggle w-100 {% if fin_active %}active{% endif %}"
+              onclick="toggleNavGroup(this)" type="button"
+              data-target="finSubNav"
+              style="border:none;background:none;text-align:left;cursor:pointer;">
+        <span class="nav-icon"><i class="bi bi-bar-chart-fill"></i></span>
+        <span class="nav-label">Finance</span>
+        <span class="nav-chevron ms-auto"><i class="bi bi-chevron-down" style="font-size:10px;transition:transform .2s;"></i></span>
+      </button>
+      <div id="finSubNav" class="nav-sub-group {% if not fin_active %}collapsed{% endif %}">
+        <a href="{{ url_for('financial_overview') }}"
+           class="nav-item nav-sub accent-teal {% if fin_overview_active %}active{% endif %}">
+          <span class="nav-icon"><i class="bi bi-graph-up"></i></span>
+          <span class="nav-label">Financial Overview</span>
+        </a>
+        <a href="{{ url_for('financial_expenses') }}"
+           class="nav-item nav-sub accent-orange {% if fin_expenses_active %}active{% endif %}">
+          <span class="nav-icon"><i class="bi bi-receipt"></i></span>
+          <span class="nav-label">Expenses</span>
+        </a>
+        <a href="{{ url_for('financial_receivables') }}"
+           class="nav-item nav-sub accent-blue {% if fin_receivables_active %}active{% endif %}">
+          <span class="nav-icon"><i class="bi bi-file-earmark-check"></i></span>
+          <span class="nav-label">Accounts Receivable</span>
+        </a>
+      </div>
+    </div>
     {% endif %}
 
     {% if 'employees' in allowed_pages or 'timesheets' in allowed_pages or 'payroll' in allowed_pages or 'reviews' in allowed_pages %}

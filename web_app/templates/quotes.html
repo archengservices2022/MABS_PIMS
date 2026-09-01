@@ -499,10 +499,10 @@
               <th class="text-center">Converted</th>
               <th class="text-center">Win Rate</th>
               <th class="text-end">Revenue Generated</th>
-              <th class="text-end" style="color:#7C3AED;">Commission Earned</th>
-              <th class="text-end" style="color:#16A34A;">Adjusted</th>
-              <th class="text-end" style="color:#2563EB;">Remaining Due</th>
-              <th class="text-end">Commission Paid</th>
+              <th class="text-end" style="color:white;">Commission Earned</th>
+              <th class="text-end" style="color:white;">Adjusted</th>
+              <th class="text-end" style="color:white;">Paid Amount</th>
+              <th class="text-end" style="color:white;">Remaining Due</th>
             </tr>
           </thead>
           <tbody>
@@ -512,9 +512,8 @@
             {% set sp_commissions = project_commissions | selectattr('salesperson', 'equalto', sp.name) | list %}
             {% set sp_total_commission = sp_commissions | sum(attribute='commission_amount') %}
             {% set sp_total_adjusted = sp_commissions | sum(attribute='adjusted_amount') %}
+            {% set sp_total_paid = sp_commissions | sum(attribute='paid_amount') %}
             {% set sp_total_remaining = sp_commissions | sum(attribute='remaining_due') %}
-            {% set sp_paid_commissions = sp_commissions | selectattr('status', 'equalto', 'Paid') | list %}
-            {% set sp_total_paid = sp_paid_commissions | sum(attribute='remaining_due') %}
             <tr style="cursor:pointer;" onclick="toggleCommissionDetails('{{ sp.name | replace(' ', '_') }}')">
               <td class="fw-semibold">{{ sp.name }}</td>
               <td>
@@ -535,9 +534,9 @@
               </td>
               <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(sp_stat.revenue_generated if sp_stat else 0) }}</td>
               <td class="text-end fw-bold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_commission) }}</td>
-              <td class="text-end fw-semibold" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_adjusted) }}</td>
-              <td class="text-end fw-semibold" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_remaining) }}</td>
-              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_paid) }}</td>
+              <td class="text-end fw-semibold" style="color:#D97706;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_adjusted) }}</td>
+              <td class="text-end fw-semibold" style="color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_paid) }}</td>
+              <td class="text-end fw-semibold" style="color:#DC2626;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_remaining) }}</td>
             </tr>
             {% endif %}
             {% endfor %}
@@ -547,9 +546,9 @@
             <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
               <td colspan="6" class="text-end text-muted small">Totals</td>
               <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='commission_amount')) }}</td>
-              <td class="text-end" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='adjusted_amount')) }}</td>
-              <td class="text-end" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='remaining_due')) }}</td>
-              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | selectattr('status', 'equalto', 'Paid') | list | sum(attribute='remaining_due')) }}</td>
+              <td class="text-end" style="color:#D97706;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='adjusted_amount')) }}</td>
+              <td class="text-end" style="color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='paid_amount')) }}</td>
+              <td class="text-end" style="color:#DC2626;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='remaining_due')) }}</td>
             </tr>
           </tfoot>
           {% endif %}
@@ -608,6 +607,7 @@
             company_name: {{ pc.get('company_name','—')|tojson }},
             commission_amount: {{ pc.get('commission_amount',0)|float }},
             adjusted_amount: {{ pc.get('adjusted_amount',0)|float }},
+            paid_amount: {{ pc.get('paid_amount',0)|float }},
             remaining_due: {{ pc.get('remaining_due',0)|float }},
             status: {{ pc.get('status','Pending')|tojson }},
             deduction_status: {{ pc.get('deduction_status','not_covered')|tojson }},
@@ -659,6 +659,22 @@
 
         const filteredData = data.filter(pc => pc.commission_amount > 0);
 
+        // Sort by project number: descending by year-month, descending by sequence
+        filteredData.sort((a, b) => {
+          const sortKey = (projNum) => {
+            const num = projNum.replace('MABS-', '').trim();
+            if (num.length >= 6) {
+              const yearMonth = num.substring(0, 6);
+              const sequence = num.substring(6);
+              return [-parseInt(yearMonth), -parseInt(sequence || 0)];
+            }
+            return [-parseInt(num || 0), 0];
+          };
+          const aKey = sortKey(a.project_number || '');
+          const bKey = sortKey(b.project_number || '');
+          return aKey[0] !== bKey[0] ? aKey[0] - bKey[0] : aKey[1] - bKey[1];
+        });
+
         if (filteredData.length > 0) {
           console.log('Building table for', filteredData.length, 'items (filtered from', data.length, ')');
           html += '<div class="table-responsive" style="width:100%;display:block;">';
@@ -667,29 +683,32 @@
           html += '<tr>';
           html += '<th>Project</th>';
           html += '<th>Client</th>';
-          html += '<th class="text-end" style="color:#7C3AED;">Commission Earned</th>';
-          html += '<th class="text-end" style="color:#16A34A;">Adjusted amount</th>';
-          html += '<th class="text-end" style="color:#2563EB;">Remaining Due</th>';
+          html += '<th class="text-end" style="color:white;">Commission Earned</th>';
+          html += '<th class="text-end" style="color:white;">Adjusted amount</th>';
+          html += '<th class="text-end" style="color:white;">Paid Amount</th>';
+          html += '<th class="text-end" style="color:white;">Remaining Due</th>';
           html += '<th>Status</th>';
           html += '</tr>';
           html += '</thead>';
           html += '<tbody>';
 
-          let totalCommission = 0, totalAdjusted = 0, totalRemaining = 0;
+          let totalCommission = 0, totalAdjusted = 0, totalPaid = 0, totalRemaining = 0;
 
           filteredData.forEach((pc, idx) => {
             console.log('Processing row', idx, ':', pc.project_number, pc.commission_amount);
             totalCommission += pc.commission_amount;
             totalAdjusted += pc.adjusted_amount;
+            totalPaid += pc.paid_amount;
             totalRemaining += pc.remaining_due;
 
+            const remaining = pc.commission_amount - pc.adjusted_amount - pc.paid_amount;
             let statusBadge = '';
-            if (pc.deduction_status === 'fully_covered') {
-              const paidDate = pc.paid_at ? new Date(pc.paid_at).toLocaleDateString('en-US', {month: '2-digit', day: '2-digit', year: 'numeric'}) : '';
-              statusBadge = `<div><span class="badge bg-success" style="font-size:10px;"><i class="bi bi-lock-fill me-1"></i>Paid (Fully Covered)</span>${paidDate ? `<div class="small text-muted mt-1">${paidDate}</div>` : ''}</div>`;
-            } else if (pc.status === 'Paid') {
-              const paidDate = pc.paid_at ? new Date(pc.paid_at).toLocaleDateString('en-US', {month: '2-digit', day: '2-digit', year: 'numeric'}) : '';
-              statusBadge = `<div><span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>${paidDate ? `<div class="small text-muted mt-1">${paidDate}</div>` : ''}</div>`;
+            if (remaining <= 0.01) {
+              if (pc.paid_amount <= 0.01 && pc.adjusted_amount > 0.01) {
+                statusBadge = '<span class="badge bg-info text-white" style="font-size:10px;"><i class="bi bi-check2 me-1"></i>Fully Adjusted</span>';
+              } else {
+                statusBadge = '<span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>';
+              }
             } else {
               statusBadge = '<span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>';
             }
@@ -698,8 +717,9 @@
             html += `<td class="fw-semibold"><a href="/projects/${pc.firebase_id}" class="text-decoration-none">${pc.project_number}</a></td>`;
             html += `<td>${pc.company_name}</td>`;
             html += `<td class="text-end fw-bold" style="color:#7C3AED;">${currencySymbol}${pc.commission_amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
-            html += `<td class="text-end fw-semibold" style="color:#16A34A;">${currencySymbol}${pc.adjusted_amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
-            html += `<td class="text-end fw-semibold" style="color:#2563EB;">${currencySymbol}${pc.remaining_due.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+            html += `<td class="text-end fw-semibold" style="color:#D97706;">${currencySymbol}${pc.adjusted_amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+            html += `<td class="text-end fw-semibold" style="color:#059669;">${currencySymbol}${pc.paid_amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+            html += `<td class="text-end fw-semibold" style="color:#DC2626;">${currencySymbol}${pc.remaining_due.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
             html += `<td>${statusBadge}</td>`;
             html += '</tr>';
           });
@@ -711,6 +731,7 @@
           html += '<td colspan="2" class="text-end text-muted small">Totals</td>';
           html += `<td class="text-end" style="color:#7C3AED;">${currencySymbol}${totalCommission.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
           html += `<td class="text-end" style="color:#16A34A;">${currencySymbol}${totalAdjusted.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+          html += `<td class="text-end" style="color:#059669;">${currencySymbol}${totalPaid.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
           html += `<td class="text-end" style="color:#2563EB;">${currencySymbol}${totalRemaining.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
           html += '<td></td>';
           html += '</tr>';

@@ -548,8 +548,8 @@ tbody tr:last-child td {
               <input type="number" id="adjAmount" step="0.01" min="0" max="{{ (amount | float) - (adjusted | float) }}" required oninput="updateAdjustmentMax()" />
             </div>
             <div class="form-group">
-              <label>Adjustment Type</label>
-              <select id="adjType">
+              <label>Adjustment Type *</label>
+              <select id="adjType" required>
                 <option value="">Select Adjustment Type</option>
                 <option value="Payroll Deduction">Payroll Deduction</option>
                 <option value="Commission Deduction">Commission Deduction</option>
@@ -886,7 +886,18 @@ function saveAdjustment(event) {
   };
 
   if (!adjustment.date || !adjustment.amount) {
-    showErrorModal('Please fill in all required fields');
+    showErrorModal('Please fill in all required fields: Date and Amount');
+    // Re-enable button on error
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.style.opacity = '1';
+      submitBtn.style.cursor = 'pointer';
+    }
+    return;
+  }
+
+  if (!adjustment.type || adjustment.type.trim() === '') {
+    showErrorModal('Please select an Adjustment Type');
     // Re-enable button on error
     if (submitBtn) {
       submitBtn.disabled = false;
@@ -901,6 +912,19 @@ function saveAdjustment(event) {
     const totalAdjusted = parseFloat(adjusted) + adjustment.amount;
     if (totalAdjusted > parseFloat(amount)) {
       showErrorModal(`Cannot add adjustment. Total adjusted ($${totalAdjusted.toFixed(2)}) would exceed advance amount ($${parseFloat(amount).toFixed(2)}). Maximum adjustment: $${(parseFloat(amount) - parseFloat(adjusted)).toFixed(2)}`);
+      // Re-enable button on error
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+        submitBtn.style.cursor = 'pointer';
+      }
+      return;
+    }
+  } else {
+    // For UPDATE: validate based on max allowed that was set in editAdjustment
+    const maxAllowed = parseFloat(document.getElementById('adjAmount').max || 0);
+    if (adjustment.amount > maxAllowed) {
+      showErrorModal(`Cannot update adjustment. New amount ($${adjustment.amount.toFixed(2)}) exceeds maximum allowed ($${maxAllowed.toFixed(2)}). The total adjusted would exceed the advance amount.`);
       // Re-enable button on error
       if (submitBtn) {
         submitBtn.disabled = false;
