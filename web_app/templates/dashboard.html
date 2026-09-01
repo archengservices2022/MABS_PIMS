@@ -108,367 +108,6 @@
   {% endif %}
 </div>
 
-<!-- ?? Financial Summary - 3 Containers (All Time, This Year, This Month) ???????? -->
-{% if 'financial' in allowed_pages %}
-<div class="row g-3 mb-4">
-
-  <!-- Container 1: All Time -->
-  <div class="col-12 col-lg-4">
-    <div class="card-panel" style="border-top:4px solid #0D9488;height:100%;">
-      <h6 class="mb-4" style="color:#0D9488;font-size:13px;font-weight:700;"><i class="bi bi-cash-coin me-1"></i>Financial Summary</h6>
-
-      <!-- Revenue and Expenses Row -->
-      <div class="row g-2 mb-3">
-        <div class="col-6">
-          <div style="background:#F0FDFA;border-radius:6px;padding:10px 12px;text-align:center;">
-            <div style="font-size:9px;color:#0D9488;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Total Revenue</div>
-            <div style="font-size:1.25rem;font-weight:800;color:#0D9488;">{{ currency_symbol }}{{ "{:,.0f}".format(total_revenue) }}</div>
-          </div>
-        </div>
-        <div class="col-6">
-          <div style="background:#FEF2F2;border-radius:6px;padding:10px 12px;text-align:center;">
-            <div style="font-size:9px;color:#DC2626;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Total Expenses</div>
-            <div style="font-size:1.25rem;font-weight:800;color:#DC2626;">{{ currency_symbol }}{{ "{:,.0f}".format(total_expenses) }}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Net Profit/Loss -->
-      <div style="background:{% if (total_revenue - total_expenses) >= 0 %}#F0FDF4{% else %}#FEF2F2{% endif %};border-radius:6px;padding:10px 12px;text-align:center;">
-        <div style="font-size:9px;color:{% if (total_revenue - total_expenses) >= 0 %}#16a34a{% else %}#DC2626{% endif %};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Net Profit/Loss</div>
-        <div style="font-size:1.25rem;font-weight:800;color:{% if (total_revenue - total_expenses) >= 0 %}#16a34a{% else %}#DC2626{% endif %};">{{ currency_symbol }}{{ "{:,.0f}".format(total_revenue - total_expenses) }}</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Container 2: This Year -->
-  <div class="col-12 col-lg-4">
-    <div class="card-panel" style="border-top:4px solid #0369A1;height:100%;">
-      <h6 class="mb-4" style="color:#0369A1;font-size:13px;font-weight:700;"><i class="bi bi-calendar-year me-1"></i>This Year</h6>
-
-      <!-- Revenue and Expenses Row -->
-      <div class="row g-2 mb-3">
-        <div class="col-6">
-          <div style="background:#EFF6FF;border-radius:6px;padding:10px 12px;text-align:center;">
-            <div style="font-size:9px;color:#0369A1;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Year Revenue</div>
-            <div style="font-size:1.25rem;font-weight:800;color:#0369A1;">{{ currency_symbol }}{{ "{:,.0f}".format(year_revenue if year_revenue else 0) }}</div>
-          </div>
-        </div>
-        <div class="col-6">
-          <div style="background:#FEF2F2;border-radius:6px;padding:10px 12px;text-align:center;">
-            <div style="font-size:9px;color:#DC2626;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Year Expenses</div>
-            <div style="font-size:1.25rem;font-weight:800;color:#DC2626;">{{ currency_symbol }}{{ "{:,.0f}".format(year_expenses if year_expenses else 0) }}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Year Net -->
-      <div style="background:{% if (year_revenue - year_expenses) >= 0 %}#F0FDF4{% else %}#FEF2F2{% endif %};border-radius:6px;padding:10px 12px;text-align:center;">
-        <div style="font-size:9px;color:{% if (year_revenue - year_expenses) >= 0 %}#16a34a{% else %}#DC2626{% endif %};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Year Net</div>
-        <div style="font-size:1.25rem;font-weight:800;color:{% if (year_revenue - year_expenses) >= 0 %}#16a34a{% else %}#DC2626{% endif %};">{{ currency_symbol }}{{ "{:,.0f}".format((year_revenue - year_expenses) if year_revenue else 0) }}</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Container 3: This Month -->
-  <div class="col-12 col-lg-4">
-    <div class="card-panel" style="border-top:4px solid #EA580C;height:100%;">
-      <h6 class="mb-4" style="color:#EA580C;font-size:13px;font-weight:700;"><i class="bi bi-calendar-month me-1"></i>This Month</h6>
-
-      <!-- Income and Expenses Row -->
-      <div class="row g-2 mb-3">
-        <div class="col-6">
-          <div style="background:#FFFBEB;border-radius:6px;padding:10px 12px;text-align:center;">
-            <div style="font-size:9px;color:#D97706;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Income</div>
-            <div style="font-size:1.25rem;font-weight:800;color:#D97706;">{{ currency_symbol }}{{ "{:,.0f}".format(current_month_income) }}</div>
-          </div>
-        </div>
-        <div class="col-6">
-          <div style="background:#FEF2F2;border-radius:6px;padding:10px 12px;text-align:center;">
-            <div style="font-size:9px;color:#DC2626;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Expenses</div>
-            <div style="font-size:1.25rem;font-weight:800;color:#DC2626;">{{ currency_symbol }}{{ "{:,.0f}".format(current_month_expenses) }}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Month Net -->
-      <div style="background:{% if (current_month_income - current_month_expenses) >= 0 %}#F0FDF4{% else %}#FEF2F2{% endif %};border-radius:6px;padding:10px 12px;text-align:center;">
-        <div style="font-size:9px;color:{% if (current_month_income - current_month_expenses) >= 0 %}#16a34a{% else %}#DC2626{% endif %};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Month Net</div>
-        <div style="font-size:1.25rem;font-weight:800;color:{% if (current_month_income - current_month_expenses) >= 0 %}#16a34a{% else %}#DC2626{% endif %};">{{ currency_symbol }}{{ "{:,.0f}".format(current_month_income - current_month_expenses) }}</div>
-      </div>
-    </div>
-  </div>
-
-</div>
-{% endif %}
-
-<!-- ?? Account Receivable Summary ??????????????????????????????????????????? -->
-{% if 'financial' in allowed_pages and ar_data %}
-{% set ar_total = ar_data.get('advanced_payment_amt', 0) + ar_data.get('partial_payment_amt', 0) + ar_data.get('invoiced_not_paid_amt', 0) + ar_data.get('invoice_disputed_amt', 0) + ar_data.get('scope_disagreement_amt', 0) + ar_data.get('incorrect_invoice_amt', 0) + ar_data.get('project_completion_issue_amt', 0) %}
-<div class="row g-3 mb-4">
-  <div class="col-12">
-    <div class="card-panel">
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <h6 style="color:#0D9488;font-size:14px;font-weight:700;margin:0;"><i class="bi bi-cash-coin me-2"></i>Account Receivable Summary</h6>
-        {% if 'invoicing' in allowed_pages %}
-        <a href="{{ url_for('invoicing') }}" class="text-teal small">View Details →</a>
-        {% endif %}
-      </div>
-
-      <div style="display:flex;gap:8px;flex-wrap:nowrap;">
-        <!-- Advanced Payment -->
-        <div style="background:#F0FDFA;border-radius:8px;padding:14px 10px;display:flex;align-items:center;gap:10px;flex:1;">
-          <div style="font-size:24px;flex-shrink:0;"><i class="bi bi-arrow-down-circle" style="color:#0D9488;"></i></div>
-          <div style="min-width:0;flex:1;">
-            <div style="font-size:9px;color:#0D9488;font-weight:700;text-transform:uppercase;letter-spacing:.04em;line-height:1.3;">Advanced Payment</div>
-            <div style="font-size:15px;font-weight:800;color:#0D9488;line-height:1.3;">{{ currency_symbol }}{{ "{:,.0f}".format(ar_data.get('advanced_payment_amt', 0)) }}</div>
-          </div>
-        </div>
-
-        <!-- Partial Payment -->
-        <div style="background:#FFFBEB;border-radius:8px;padding:14px 10px;display:flex;align-items:center;gap:10px;flex:1;">
-          <div style="font-size:24px;flex-shrink:0;"><i class="bi bi-percent" style="color:#D97706;"></i></div>
-          <div style="min-width:0;flex:1;">
-            <div style="font-size:9px;color:#D97706;font-weight:700;text-transform:uppercase;letter-spacing:.04em;line-height:1.3;">Partial Payment</div>
-            <div style="font-size:15px;font-weight:800;color:#D97706;line-height:1.3;">{{ currency_symbol }}{{ "{:,.0f}".format(ar_data.get('partial_payment_amt', 0)) }}</div>
-          </div>
-        </div>
-
-        <!-- Invoiced – Not Paid -->
-        <div style="background:#FFF7ED;border-radius:8px;padding:14px 10px;display:flex;align-items:center;gap:10px;flex:1;">
-          <div style="font-size:24px;flex-shrink:0;"><i class="bi bi-file-earmark" style="color:#EA580C;"></i></div>
-          <div style="min-width:0;flex:1;">
-            <div style="font-size:9px;color:#EA580C;font-weight:700;text-transform:uppercase;letter-spacing:.04em;line-height:1.3;">Invoiced – Not Paid</div>
-            <div style="font-size:15px;font-weight:800;color:#EA580C;line-height:1.3;">{{ currency_symbol }}{{ "{:,.0f}".format(ar_data.get('invoiced_not_paid_amt', 0)) }}</div>
-          </div>
-        </div>
-
-        <!-- Invoice Disputed -->
-        <div style="background:#FEF2F2;border-radius:8px;padding:14px 10px;display:flex;align-items:center;gap:10px;flex:1;">
-          <div style="font-size:24px;flex-shrink:0;"><i class="bi bi-exclamation-circle" style="color:#DC2626;"></i></div>
-          <div style="min-width:0;flex:1;">
-            <div style="font-size:9px;color:#DC2626;font-weight:700;text-transform:uppercase;letter-spacing:.04em;line-height:1.3;">Invoice Disputed</div>
-            <div style="font-size:15px;font-weight:800;color:#DC2626;line-height:1.3;">{{ currency_symbol }}{{ "{:,.0f}".format(ar_data.get('invoice_disputed_amt', 0)) }}</div>
-          </div>
-        </div>
-
-        <!-- Scope Disagreement -->
-        <div style="background:#FDF2F8;border-radius:8px;padding:14px 10px;display:flex;align-items:center;gap:10px;flex:1;">
-          <div style="font-size:24px;flex-shrink:0;"><i class="bi bi-chat-left-text" style="color:#EC4899;"></i></div>
-          <div style="min-width:0;flex:1;">
-            <div style="font-size:9px;color:#EC4899;font-weight:700;text-transform:uppercase;letter-spacing:.04em;line-height:1.3;">Scope Disagreement</div>
-            <div style="font-size:15px;font-weight:800;color:#EC4899;line-height:1.3;">{{ currency_symbol }}{{ "{:,.0f}".format(ar_data.get('scope_disagreement_amt', 0)) }}</div>
-          </div>
-        </div>
-
-        <!-- Incorrect Invoice -->
-        <div style="background:#F5F3FF;border-radius:8px;padding:14px 10px;display:flex;align-items:center;gap:10px;flex:1;">
-          <div style="font-size:24px;flex-shrink:0;"><i class="bi bi-file-earmark-x" style="color:#8B5CF6;"></i></div>
-          <div style="min-width:0;flex:1;">
-            <div style="font-size:9px;color:#8B5CF6;font-weight:700;text-transform:uppercase;letter-spacing:.04em;line-height:1.3;">Incorrect Invoice</div>
-            <div style="font-size:15px;font-weight:800;color:#8B5CF6;line-height:1.3;">{{ currency_symbol }}{{ "{:,.0f}".format(ar_data.get('incorrect_invoice_amt', 0)) }}</div>
-          </div>
-        </div>
-
-        <!-- Project Completion Issue -->
-        <div style="background:#EFF6FF;border-radius:8px;padding:14px 10px;display:flex;align-items:center;gap:10px;flex:1;">
-          <div style="font-size:24px;flex-shrink:0;"><i class="bi bi-clock" style="color:#3B82F6;"></i></div>
-          <div style="min-width:0;flex:1;">
-            <div style="font-size:9px;color:#3B82F6;font-weight:700;text-transform:uppercase;letter-spacing:.04em;line-height:1.3;">Completion Issue</div>
-            <div style="font-size:15px;font-weight:800;color:#3B82F6;line-height:1.3;">{{ currency_symbol }}{{ "{:,.0f}".format(ar_data.get('project_completion_issue_amt', 0)) }}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Total AR -->
-      <div style="padding-top:12px;text-align:center;">
-        <span style="color:#64748B;font-size:12px;font-weight:600;">Total Accounts Receivable:</span>
-        <span style="font-size:16px;font-weight:800;color:#0D9488;margin-left:8px;">{{ currency_symbol }}{{ "{:,.0f}".format(ar_total) }}</span>
-      </div>
-    </div>
-  </div>
-</div>
-{% endif %}
-
-<!-- ?? Projects Overview ?????????????????????????????????????????????????? -->
-{% if 'projects' in allowed_pages %}
-<div class="row g-3 mb-4">
-  <!-- Left: Summary Stats -->
-  <div class="col-12 col-lg-4">
-    <div class="card-panel" style="padding:20px;height:100%;">
-      <h6 class="mb-3" style="color:#0D9488;font-size:12px;font-weight:700;"><i class="bi bi-kanban me-1"></i>Project Summary</h6>
-
-      <!-- All Time -->
-      <div style="margin-bottom:20px;">
-        <div style="font-size:9px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">All Time</div>
-        <div class="row g-2">
-          <div class="col-6">
-            <div style="background:#F0FDFA;border-radius:8px;padding:12px;border:1px solid #A7F3D0;text-align:center;">
-              <div style="font-size:20px;font-weight:800;color:#0D9488;line-height:1;">{{ total_projects_all }}</div>
-              <div style="font-size:9px;color:#0D9488;font-weight:600;margin-top:3px;">Projects</div>
-            </div>
-          </div>
-          <div class="col-6">
-            <div style="background:#ECFDF5;border-radius:8px;padding:12px;border:1px solid #6EE7B7;text-align:center;">
-              <div style="font-size:13px;font-weight:800;color:#059669;line-height:1.2;">{{ currency_symbol }}{{ "{:,.0f}".format(proj_value_all) }}</div>
-              <div style="font-size:9px;color:#059669;font-weight:600;margin-top:3px;">Value</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div style="height:1px;background:#e2e8f0;margin:16px 0;"></div>
-
-      <!-- This Year -->
-      <div>
-        <div style="font-size:9px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">This Year</div>
-        <div class="row g-2">
-          <div class="col-6">
-            <div style="background:#EFF6FF;border-radius:8px;padding:12px;border:1px solid #BFDBFE;text-align:center;">
-              <div style="font-size:20px;font-weight:800;color:#0369A1;line-height:1;">{{ total_projects_2026 }}</div>
-              <div style="font-size:9px;color:#0369A1;font-weight:600;margin-top:3px;">Projects</div>
-            </div>
-          </div>
-          <div class="col-6">
-            <div style="background:#FFFBEB;border-radius:8px;padding:12px;border:1px solid #FCD34D;text-align:center;">
-              <div style="font-size:13px;font-weight:800;color:#D97706;line-height:1.2;">{{ currency_symbol }}{{ "{:,.0f}".format(proj_value_2026) }}</div>
-              <div style="font-size:9px;color:#D97706;font-weight:600;margin-top:3px;">Value</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Right: Chart -->
-  <div class="col-12 col-lg-8">
-    <div class="card-panel" style="padding:20px;">
-      <h6 class="mb-3" style="color:#1e293b;font-size:12px;font-weight:700;"><i class="bi bi-bar-chart me-1" style="color:#10B981;"></i>Project Count vs Value</h6>
-      <p class="text-muted mb-3" style="font-size:10px;">Monthly breakdown — all recorded data</p>
-      <div style="position:relative;height:200px;">
-        <canvas id="projectsChart"></canvas>
-      </div>
-    </div>
-  </div>
-</div>
-
-{% endif %}
-
-<!-- ?? Action Queue ???????????????????????????????????????????????????????????? -->
-{% if followup_quotes or pending_expenses_dash %}
-<div class="row g-3 mb-3">
-
-  {% if followup_quotes %}
-  <div class="col-lg-6">
-    <div class="card-panel" style="height:100%;">
-      <div class="panel-header d-flex justify-content-between align-items-center mb-2">
-        <h6 class="panel-title mb-0"><i class="bi bi-alarm text-warning me-1"></i>Follow-up Due</h6>
-        {% if 'quotes' in allowed_pages %}
-        <a href="{{ url_for('quotes') }}" class="text-teal small">All quotes</a>
-        {% endif %}
-      </div>
-      {% for q in followup_quotes %}
-      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-        <div>
-          <div class="fw-500 small">{{ q.get('job_number','—') }} — {{ q.get('project_name') or (q.get('company_name') or q.get('client_name','—')) }}</div>
-          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('company_name') or q.get('client_name','') }}{% if q.get('follow_up_date') %} — Due {{ q.get('follow_up_date') | format_date }}{% endif %}</div>
-        </div>
-        <div class="d-flex gap-1">
-          {% if 'quotes' in allowed_pages and q.get('firebase_id') %}
-          <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}" class="btn btn-xs btn-outline-secondary">View</a>
-          {% endif %}
-          {% if 'projects' in allowed_pages and q.get('job_number') %}
-          <a href="{{ url_for('project_new') }}?from_quote={{ q.get('job_number','') }}" class="btn btn-xs btn-teal">Convert</a>
-          {% endif %}
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
-
-  {% if pending_expenses_dash %}
-  <div class="col-lg-6">
-    <div class="card-panel" style="height:100%;">
-      <div class="panel-header d-flex justify-content-between align-items-center mb-2">
-        <h6 class="panel-title mb-0">
-          <i class="bi bi-receipt text-danger me-1"></i>Pending Expense Approvals
-          <span class="badge bg-danger ms-1" style="font-size:11px;">{{ pending_expenses_dash|length }}</span>
-        </h6>
-        <a href="{{ url_for('employees') }}#tab-emp-expenses" class="text-teal small">Review &#x2192;</a>
-      </div>
-      {% for e in pending_expenses_dash[:5] %}
-      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-        <div>
-          <div class="fw-500 small">{{ e.submitted_by_name or e.submitted_by_email or '—' }}</div>
-          <div class="text-muted" style="font-size:0.75rem;">{{ e.expense_name or e.description or '—' }} — {{ e.date | format_date }}</div>
-        </div>
-        <div class="fw-semibold text-success small">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
-      </div>
-      {% endfor %}
-      {% if pending_expenses_dash|length > 5 %}
-      <div class="text-muted small text-center pt-2">+{{ pending_expenses_dash|length - 5 }} more</div>
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
-
-</div>
-{% endif %}
-
-<!-- ?? KPI Cards ??????????????????????????????????????????????????????????????? -->
-<div class="row g-3 mb-3">
-
-  {% if 'financial' in allowed_pages %}
-  <div class="col-6 col-xl-3">
-    <div class="kpi-card kpi-teal">
-      <div class="kpi-top">
-        <span class="kpi-label">Total Invoiced</span>
-        <i class="bi bi-receipt-cutoff kpi-icon-sm"></i>
-      </div>
-      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.0f}".format(total_invoiced) }}</div>
-      <div class="kpi-sub">{{ total_invoices }} invoice{{ 's' if total_invoices != 1 else '' }}</div>
-    </div>
-  </div>
-
-  <div class="col-6 col-xl-3">
-    {% set rate = ((total_paid / total_invoiced * 100) if total_invoiced > 0 else 0)|round|int %}
-    <div class="kpi-card kpi-green">
-      <div class="kpi-top">
-        <span class="kpi-label">Collected</span>
-        <i class="bi bi-check-circle-fill kpi-icon-sm"></i>
-      </div>
-      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.0f}".format(total_paid) }}</div>
-      <div class="kpi-sub">{{ rate }}% collection rate</div>
-      <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ rate }}%"></div></div>
-    </div>
-  </div>
-
-  <div class="col-6 col-xl-3">
-    <div class="kpi-card kpi-amber">
-      <div class="kpi-top">
-        <span class="kpi-label">Outstanding</span>
-        <i class="bi bi-hourglass-split kpi-icon-sm"></i>
-      </div>
-      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.0f}".format(total_outstanding) }}</div>
-      <div class="kpi-sub">pending payment</div>
-    </div>
-  </div>
-  {% endif %}
-
-  <div class="col-6 col-xl-3">
-    <div class="kpi-card kpi-blue">
-      <div class="kpi-top">
-        <span class="kpi-label">Active Projects</span>
-        <i class="bi bi-kanban-fill kpi-icon-sm"></i>
-      </div>
-      <div class="kpi-value">{{ active_projects }}</div>
-      <div class="kpi-sub">{{ open_quotes }} open quote{{ 's' if open_quotes != 1 else '' }}</div>
-    </div>
-  </div>
-
-</div>
-
 <!-- ?? Module Overview ????????????????????????????????????????????????????????? -->
 <div class="row g-3 mb-4">
 
@@ -635,6 +274,160 @@
 
 </div>
 
+<!-- ?? Commission Widget ??????????????????????????????????????????????????????? -->
+{% if dash_commission %}
+<div class="row g-3 mb-4">
+  <div class="col-12">
+    <div class="card-panel" style="border-top:3px solid #7C3AED;">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="mb-0 fw-bold" style="color:#7C3AED;font-size:14px;">
+          <i class="bi bi-cash-coin me-1"></i>
+          {% if dash_commission.role == 'sales' %}My Commission{% else %}Commission Overview{% endif %}
+        </h6>
+        <a href="{{ url_for('quotes') }}?tab=salespeople" class="btn btn-xs" style="background:#EDE9FE;color:#5B21B6;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View Details →</a>
+      </div>
+
+      {% if dash_commission.role == 'sales' %}
+        {% if not dash_commission.rate_set %}
+        <div class="alert alert-warning py-2 px-3 mb-3" style="font-size:12px;">
+          <i class="bi bi-info-circle me-1"></i>Commission rate not set — contact your administrator.
+        </div>
+        {% endif %}
+        <div class="row g-2">
+          <div class="col-6 col-md-3">
+            <div style="background:#F5F3FF;border-radius:8px;padding:12px 14px;">
+              <div style="font-size:10px;color:#7C3AED;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Commission Rate</div>
+              <div style="font-size:1.5rem;font-weight:800;color:#7C3AED;line-height:1.2;">
+                {% if dash_commission.rate_set %}{{ dash_commission.commission_rate }}%{% else %}<span style="font-size:.9rem;color:#94a3b8;">Not set</span>{% endif %}
+              </div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">{{ dash_commission.employee_type or '—' }}</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div style="background:#ECFDF5;border-radius:8px;padding:12px 14px;">
+              <div style="font-size:10px;color:#059669;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Earned — This Month</div>
+              <div style="font-size:1.5rem;font-weight:800;color:#059669;line-height:1.2;">{{ currency_symbol }}{{ "{:,.0f}".format(dash_commission.earned_month) }}</div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">from {{ currency_symbol }}{{ "{:,.0f}".format(dash_commission.revenue_month) }} rev</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div style="background:#F0FDF4;border-radius:8px;padding:12px 14px;">
+              <div style="font-size:10px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Earned — All Time</div>
+              <div style="font-size:1.5rem;font-weight:800;color:#16a34a;line-height:1.2;">{{ currency_symbol }}{{ "{:,.0f}".format(dash_commission.earned_alltime) }}</div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">from {{ currency_symbol }}{{ "{:,.0f}".format(dash_commission.revenue_alltime) }} rev</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div style="background:#FFFBEB;border-radius:8px;padding:12px 14px;">
+              <div style="font-size:10px;color:#D97706;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Win Rate</div>
+              <div style="font-size:1.5rem;font-weight:800;color:#D97706;line-height:1.2;">{{ dash_commission.win_rate }}%</div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">{{ dash_commission.quotes_converted }} / {{ dash_commission.quotes_total }} quotes</div>
+            </div>
+          </div>
+        </div>
+
+      {% elif dash_commission.role in ('admin', 'finance', 'accountant') %}
+        <div class="row g-2">
+          <div class="col-6 col-md-3">
+            <div style="background:#F5F3FF;border-radius:8px;padding:12px 14px;">
+              <div style="font-size:10px;color:#7C3AED;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Total Earned</div>
+              <div style="font-size:1.5rem;font-weight:800;color:#7C3AED;line-height:1.2;">{{ currency_symbol }}{{ "{:,.0f}".format(dash_commission.earned) }}</div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">all time</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div style="background:#F5F3FF;border-radius:8px;padding:12px 14px;">
+              <div style="font-size:10px;color:#16A34A;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Adjusted</div>
+              <div style="font-size:1.5rem;font-weight:800;color:#16A34A;line-height:1.2;">{{ currency_symbol }}{{ "{:,.0f}".format(dash_commission.adjusted) }}</div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">commission adjusted</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div style="background:#F0FDF4;border-radius:8px;padding:12px 14px;">
+              <div style="font-size:10px;color:#059669;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Already Paid</div>
+              <div style="font-size:1.5rem;font-weight:800;color:#059669;line-height:1.2;">{{ currency_symbol }}{{ "{:,.0f}".format(dash_commission.paid) }}</div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">commission paid out</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div style="background:#FFF7ED;border-radius:8px;padding:12px 14px;">
+              <div style="font-size:10px;color:#EA580C;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Outstanding</div>
+              <div style="font-size:1.5rem;font-weight:800;color:#EA580C;line-height:1.2;">{{ currency_symbol }}{{ "{:,.0f}".format(dash_commission.total) }}</div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">still to be paid</div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ?? Action Queue ???????????????????????????????????????????????????????????? -->
+{% if followup_quotes or approved_quotes %}
+<div class="row g-3 mb-3">
+
+  {% if followup_quotes %}
+  <div class="col-lg-6">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center mb-2">
+        <h6 class="panel-title mb-0"><i class="bi bi-alarm text-warning me-1"></i>Follow-up Due</h6>
+        {% if 'quotes' in allowed_pages %}
+        <a href="{{ url_for('quotes') }}" class="text-teal small">All quotes ?</a>
+        {% endif %}
+      </div>
+      {% for q in followup_quotes %}
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <div class="fw-500 small">{{ q.get('job_number','—') }} — {{ q.get('project_name') or (q.get('company_name') or q.get('client_name','—')) }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('company_name') or q.get('client_name','') }}{% if q.get('follow_up_date') %} — Due {{ q.get('follow_up_date') | format_date }}{% endif %}</div>
+        </div>
+        <div class="d-flex gap-1">
+          {% if 'quotes' in allowed_pages and q.get('firebase_id') %}
+          <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}" class="btn btn-xs btn-outline-secondary">View</a>
+          {% endif %}
+          {% if 'projects' in allowed_pages and q.get('job_number') %}
+          <a href="{{ url_for('project_new') }}?from_quote={{ q.get('job_number','') }}" class="btn btn-xs btn-teal">Convert</a>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if approved_quotes %}
+  <div class="col-lg-6">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center mb-2">
+        <h6 class="panel-title mb-0"><i class="bi bi-check2-circle text-success me-1"></i>Approved — Ready to Convert</h6>
+      </div>
+      {% for q in approved_quotes %}
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <div class="fw-500 small">{{ q.get('job_number','—') }} — {{ q.get('project_name') or (q.get('company_name') or q.get('client_name','—')) }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('company_name') or q.get('client_name','') }}{% if q.get('total') %} — {{ currency_symbol }}{{ "{:,.0f}".format(q.get('total',0)|float) }}{% endif %}</div>
+        </div>
+        <div class="d-flex gap-1">
+          {% if 'quotes' in allowed_pages and q.get('firebase_id') %}
+          <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}" class="btn btn-xs btn-outline-secondary">View</a>
+          {% endif %}
+          {% if 'projects' in allowed_pages and q.get('job_number') %}
+          <a href="{{ url_for('project_new') }}?from_quote={{ q.get('job_number','') }}" class="btn btn-xs btn-teal">
+            <i class="bi bi-kanban me-1"></i>Start Project
+          </a>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+
 <!-- ?? Urgent Alerts (overdue + due in 3 days — silent when all clear) ????????? -->
 {% if reminder_overdue_invoices or reminder_due_soon %}
 <div class="card-panel mb-3" style="border-left:4px solid #DC2626;">
@@ -722,6 +515,51 @@
   </div>
   {% endif %}
 
+  {% if pending_time_off %}
+  <div class="col-lg-6">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center mb-2">
+        <h6 class="panel-title mb-0"><i class="bi bi-calendar-event text-warning me-1"></i>Pending Time Off ({{ pending_time_off|length }})</h6>
+        <a href="{{ url_for('employees') }}#tab-time-off" class="text-teal small">Review &#x2192;</a>
+      </div>
+      {% for r in pending_time_off[:5] %}
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <div class="fw-500 small">{{ r.employee_name }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ r.type }} — {{ r.start_date | format_date }} — {{ r.end_date | format_date }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if pending_expenses_dash %}
+  <div class="col-lg-6">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center mb-2">
+        <h6 class="panel-title mb-0">
+          <i class="bi bi-receipt text-danger me-1"></i>Pending Expense Approvals
+          <span class="badge bg-danger ms-1" style="font-size:11px;">{{ pending_expenses_dash|length }}</span>
+        </h6>
+        <a href="{{ url_for('employees') }}#tab-emp-expenses" class="text-teal small">Review &#x2192;</a>
+      </div>
+      {% for e in pending_expenses_dash[:5] %}
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <div class="fw-500 small">{{ e.submitted_by_name or e.submitted_by_email or '—' }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ e.expense_name or e.description or '—' }} — {{ e.date | format_date }}</div>
+        </div>
+        <div class="fw-semibold text-success small">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
+      </div>
+      {% endfor %}
+      {% if pending_expenses_dash|length > 5 %}
+      <div class="text-muted small text-center pt-2">+{{ pending_expenses_dash|length - 5 }} more</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
 </div>
 {% endif %}
 
@@ -766,18 +604,129 @@
     {% endfor %}
   </div>
 
+  <!-- Active projects mini-list (excluding Not Started / Cancelled / Completed) -->
+  {% set _active_proj = proj_list
+      | selectattr('project_number')
+      | selectattr('project_name')
+      | rejectattr('status', 'equalto', 'Not Started')
+      | rejectattr('status', 'equalto', 'Cancelled')
+      | rejectattr('status', 'equalto', 'Completed')
+      | list %}
+  {% if _active_proj %}
+  <div class="d-flex flex-wrap gap-2">
+    {% for p in _active_proj[:6] %}
+    <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}"
+       class="text-decoration-none d-flex align-items-center gap-2 px-3 py-2 rounded border bg-white"
+       style="font-size:0.82rem; min-width:0; flex:1 1 220px; max-width:340px;">
+      <i class="bi bi-circle-fill text-teal" style="font-size:.45rem; flex-shrink:0;"></i>
+      <div style="min-width:0; overflow:hidden;">
+        <div class="fw-500 text-dark text-truncate">{{ p.get('project_name','—') }}</div>
+        <div class="text-muted text-truncate" style="font-size:0.73rem;">{{ p.get('project_number','') }}{% if p.get('contract_value') and 'financial' in allowed_pages %} — {{ currency_symbol }}{{ "{:,.0f}".format(p.get('contract_value',0)|float) }}{% endif %}</div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 {% endif %}
+
+<!-- ?? Revenue Trend Strip ??????????????????????????????????????????????????? -->
+{% if 'financial' in allowed_pages %}
+{% set trend_diff = this_month_collected - last_month_collected %}
+{% set trend_pct = ((trend_diff / last_month_collected * 100) if last_month_collected > 0 else 0)|round|int %}
+<div class="d-flex align-items-center gap-3 mb-3 px-1 flex-wrap" id="revenueTrendStrip">
+  <div class="d-flex align-items-center gap-2 px-3 py-2 rounded" style="background:#F0FDFA;border:1px solid #99F6E4;">
+    <i class="bi bi-calendar-month" style="color:#0D9488;font-size:1.1rem;"></i>
+    <div>
+      <div class="text-muted" style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">This Month</div>
+      <div style="font-size:1.05rem;font-weight:700;color:#0D9488;">{{ currency_symbol }}{{ "{:,.0f}".format(this_month_collected) }}</div>
+    </div>
+  </div>
+  <div class="d-flex align-items-center gap-2 px-3 py-2 rounded" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+    <i class="bi bi-calendar-minus" style="color:#64748B;font-size:1.1rem;"></i>
+    <div>
+      <div class="text-muted" style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Last Month</div>
+      <div style="font-size:1.05rem;font-weight:700;color:#374151;">{{ currency_symbol }}{{ "{:,.0f}".format(last_month_collected) }}</div>
+    </div>
+  </div>
+  {% if last_month_collected > 0 %}
+  <div class="d-flex align-items-center gap-1 px-3 py-2 rounded"
+       style="background:{{ '#F0FDF4' if trend_diff >= 0 else '#FEF2F2' }};border:1px solid {{ '#BBF7D0' if trend_diff >= 0 else '#FECACA' }};">
+    <i class="bi {{ 'bi-arrow-up-circle-fill' if trend_diff >= 0 else 'bi-arrow-down-circle-fill' }}"
+       style="color:{{ '#16A34A' if trend_diff >= 0 else '#DC2626' }};font-size:1.1rem;"></i>
+    <div>
+      <div class="text-muted" style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">vs Last Month</div>
+      <div style="font-size:1.05rem;font-weight:700;color:{{ '#16A34A' if trend_diff >= 0 else '#DC2626' }};">
+        {{ '+' if trend_diff >= 0 else '' }}{{ trend_pct }}%
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% if this_month_collected == 0 and last_month_collected == 0 %}
+  <div class="text-muted small"><i class="bi bi-info-circle me-1"></i>No payments recorded yet this month.</div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ?? KPI Cards ??????????????????????????????????????????????????????????????? -->
+<div class="row g-3 mb-3">
+
+  {% if 'financial' in allowed_pages %}
+  <div class="col-6 col-xl-3">
+    <div class="kpi-card kpi-teal">
+      <div class="kpi-top">
+        <span class="kpi-label">Total Invoiced</span>
+        <i class="bi bi-receipt-cutoff kpi-icon-sm"></i>
+      </div>
+      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.0f}".format(total_invoiced) }}</div>
+      <div class="kpi-sub">{{ total_invoices }} invoice{{ 's' if total_invoices != 1 else '' }}</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-xl-3">
+    {% set rate = ((total_paid / total_invoiced * 100) if total_invoiced > 0 else 0)|round|int %}
+    <div class="kpi-card kpi-green">
+      <div class="kpi-top">
+        <span class="kpi-label">Collected</span>
+        <i class="bi bi-check-circle-fill kpi-icon-sm"></i>
+      </div>
+      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.0f}".format(total_paid) }}</div>
+      <div class="kpi-sub">{{ rate }}% collection rate</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ rate }}%"></div></div>
+    </div>
+  </div>
+
+  <div class="col-6 col-xl-3">
+    <div class="kpi-card kpi-amber">
+      <div class="kpi-top">
+        <span class="kpi-label">Outstanding</span>
+        <i class="bi bi-hourglass-split kpi-icon-sm"></i>
+      </div>
+      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.0f}".format(total_outstanding) }}</div>
+      <div class="kpi-sub">pending payment</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="col-6 col-xl-3">
+    <div class="kpi-card kpi-blue">
+      <div class="kpi-top">
+        <span class="kpi-label">Active Projects</span>
+        <i class="bi bi-kanban-fill kpi-icon-sm"></i>
+      </div>
+      <div class="kpi-value">{{ active_projects }}</div>
+      <div class="kpi-sub">{{ open_quotes }} open quote{{ 's' if open_quotes != 1 else '' }}</div>
+    </div>
+  </div>
+
+</div>
 
 <!-- ?? Status Donut Charts ????????????????????????????????????????????????????? -->
 <div class="row g-3 mb-3 align-items-stretch">
   <div class="col-lg-6 d-flex">
     <div class="card-panel w-100" style="padding:20px 24px;display:flex;flex-direction:column;">
       <div class="d-flex align-items-center justify-content-between mb-3">
-        <button class="btn btn-sm btn-link p-0" style="text-decoration:none;color:#0D9488;font-weight:700;font-size:14px;border:none;cursor:pointer;" onclick="toggleSection('invDonutWrap', this)" type="button">
-          <i class="bi bi-chevron-right me-1 collapse-icon" style="display:inline-block;transition:transform 0.3s;transform:rotate(90deg);"></i>
-          <i class="bi bi-pie-chart me-1" style="color:#0D9488;"></i>Invoice Status Breakdown
-        </button>
+        <h6 class="panel-title mb-0"><i class="bi bi-pie-chart me-1" style="color:#0D9488;"></i>Invoice Status Breakdown</h6>
         <span class="badge" style="background:#f0fdf4;color:#0D9488;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;" id="invTotalBadge"></span>
       </div>
       <div class="d-flex align-items-center gap-4" style="flex:1;" id="invDonutWrap">
@@ -802,13 +751,10 @@
   <div class="col-lg-6 d-flex">
     <div class="card-panel w-100" style="padding:20px 24px;display:flex;flex-direction:column;">
       <div class="d-flex align-items-center justify-content-between mb-3">
-        <button class="btn btn-sm btn-link p-0" style="text-decoration:none;color:#7C3AED;font-weight:700;font-size:14px;border:none;cursor:pointer;" onclick="toggleSection('projDonutWrap', this)" type="button">
-          <i class="bi bi-chevron-right me-1 collapse-icon" style="display:inline-block;transition:transform 0.3s;transform:rotate(90deg);"></i>
-          <i class="bi bi-kanban me-1" style="color:#7C3AED;"></i>Project Status Breakdown
-        </button>
+        <h6 class="panel-title mb-0"><i class="bi bi-kanban me-1" style="color:#7C3AED;"></i>Project Status Breakdown</h6>
         <span class="badge" style="background:#faf5ff;color:#7C3AED;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;" id="projTotalBadge"></span>
       </div>
-      <div class="d-flex align-items-center gap-4" style="flex:1;" id="projDonutWrap">
+      <div class="d-flex align-items-center gap-4" style="flex:1;">
         <div style="position:relative;width:150px;height:150px;flex-shrink:0;">
           <canvas id="projStatusChart"></canvas>
           <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;">
@@ -829,17 +775,12 @@
   <div class="col-lg-7">
     <div class="card-panel" style="height:100%;">
       <div class="panel-header d-flex justify-content-between align-items-center">
-        <button class="btn btn-sm btn-link p-0" style="text-decoration:none;color:#1e293b;font-weight:700;font-size:14px;border:none;cursor:pointer;" onclick="toggleSection('revenueChartWrap', this)" type="button">
-          <i class="bi bi-chevron-right me-1 collapse-icon" style="display:inline-block;transition:transform 0.3s;transform:rotate(90deg);"></i>
-          Revenue Overview — Last 6 Months
-        </button>
+        <h6 class="panel-title mb-0">Revenue Overview — Last 6 Months</h6>
         {% if 'invoicing' in allowed_pages %}
         <a href="{{ url_for('invoicing') }}" class="text-teal small">View invoices →</a>
         {% endif %}
       </div>
-      <div id="revenueChartWrap">
-        <canvas id="revenueChart" height="140"></canvas>
-      </div>
+      <canvas id="revenueChart" height="140"></canvas>
     </div>
   </div>
   {% endif %}
@@ -847,16 +788,12 @@
   <div class="{{ 'col-lg-5' if 'financial' in allowed_pages else 'col-lg-12' }}">
     <div class="card-panel" style="height:100%;">
       <div class="panel-header d-flex justify-content-between align-items-center">
-        <button class="btn btn-sm btn-link p-0" style="text-decoration:none;color:#1e293b;font-weight:700;font-size:14px;border:none;cursor:pointer;" onclick="toggleSection('recentInvoicesWrap', this)" type="button">
-          <i class="bi bi-chevron-right me-1 collapse-icon" style="display:inline-block;transition:transform 0.3s;transform:rotate(90deg);"></i>
-          Recent Invoices
-        </button>
+        <h6 class="panel-title mb-0">Recent Invoices</h6>
         {% if 'invoicing' in allowed_pages %}
         <a href="{{ url_for('invoicing') }}" class="text-teal small">View all →</a>
         {% endif %}
       </div>
 
-      <div id="recentInvoicesWrap">
       {% for inv in recent_invoices %}
       {% set meta = inv.get('meta', {}) %}
       {% set client_display = meta.get('company_name') or meta.get('client_name','—') %}
@@ -881,25 +818,35 @@
         <i class="bi bi-receipt fs-2 d-block mb-2"></i>No invoices yet.
       </div>
       {% endfor %}
-      </div>
     </div>
   </div>
 
 </div>
 
+<!-- ?? AI Project Health ??????????????????????????????????????????????????????? -->
+{% if ai_enabled %}
+<div class="card-panel mb-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h6 class="panel-title mb-0"><i class="bi bi-heart-pulse me-1 text-teal"></i>AI Project Health</h6>
+    <button class="btn btn-sm btn-outline-teal" id="healthBtn">
+      <i class="bi bi-magic me-1"></i>Analyse Projects
+    </button>
+  </div>
+  <div id="healthResult" class="text-muted small">
+    Click to get a one-line AI health summary for each project.
+  </div>
+</div>
+{% endif %}
+
 <!-- ?? Recent Projects ????????????????????????????????????????????????????????? -->
 <div class="card-panel">
   <div class="panel-header d-flex justify-content-between align-items-center">
-    <button class="btn btn-sm btn-link p-0" style="text-decoration:none;color:#1e293b;font-weight:700;font-size:14px;border:none;cursor:pointer;" onclick="toggleSection('recentProjectsWrap', this)" type="button">
-      <i class="bi bi-chevron-right me-1 collapse-icon" style="display:inline-block;transition:transform 0.3s;transform:rotate(90deg);"></i>
-      Recent Projects
-    </button>
+    <h6 class="panel-title mb-0">Recent Projects</h6>
     {% if 'projects' in allowed_pages %}
     <a href="{{ url_for('projects') }}" class="text-teal small">View all →</a>
     {% endif %}
   </div>
 
-  <div id="recentProjectsWrap">
   {% if recent_projects %}
   <div class="table-responsive">
     <table class="table table-hover mb-0 align-middle">
@@ -939,66 +886,12 @@
     <i class="bi bi-kanban fs-2 d-block mb-2"></i>No projects yet.
   </div>
   {% endif %}
-  </div>
 </div>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
-// Paired sections that expand/collapse together
-const sectionPairs = {
-  'invDonutWrap': 'projDonutWrap',
-  'projDonutWrap': 'invDonutWrap',
-  'revenueChartWrap': 'recentInvoicesWrap',
-  'recentInvoicesWrap': 'revenueChartWrap'
-};
-
-// Toggle section visibility with synchronized pairs
-function toggleSection(sectionId, buttonEl) {
-  const flexSections = ['invDonutWrap', 'projDonutWrap', 'revenueChartWrap'];
-  const section = document.getElementById(sectionId);
-  if (!section) return;
-
-  // Get the current computed display value to handle both inline and CSS styles
-  const computedDisplay = window.getComputedStyle(section).display;
-  const isCurrentlyHidden = computedDisplay === 'none';
-  const shouldShow = isCurrentlyHidden;
-
-  // Toggle main section visibility with correct display type
-  const displayType = flexSections.includes(sectionId) ? 'flex' : 'block';
-  section.style.display = shouldShow ? displayType : 'none';
-
-  // Toggle the chevron icon rotation
-  const icon = buttonEl.querySelector('i.collapse-icon');
-  if (icon) {
-    icon.style.transform = shouldShow ? 'rotate(90deg)' : 'rotate(0deg)';
-  }
-
-  // Find and toggle paired section
-  const pairedId = sectionPairs[sectionId];
-  if (!pairedId) return;
-
-  const pairedSection = document.getElementById(pairedId);
-  if (!pairedSection) return;
-
-  const pairedComputedDisplay = window.getComputedStyle(pairedSection).display;
-  const pairedIsHidden = pairedComputedDisplay === 'none';
-  const pairedDisplayType = flexSections.includes(pairedId) ? 'flex' : 'block';
-
-  // Sync paired section to same state
-  pairedSection.style.display = shouldShow ? pairedDisplayType : 'none';
-
-  // Find and toggle paired button's icon
-  const pairedButton = document.querySelector(`button[onclick*="${pairedId}"]`);
-  if (pairedButton) {
-    const pairedIcon = pairedButton.querySelector('i.collapse-icon');
-    if (pairedIcon) {
-      pairedIcon.style.transform = shouldShow ? 'rotate(90deg)' : 'rotate(0deg)';
-    }
-  }
-}
-
 const labels = {{ chart_labels|safe }};
 const data   = {{ chart_data|safe }};
 
@@ -1050,6 +943,25 @@ new Chart(ctx, {
     }
   }
 });
+}
+
+// ?? AI Project Health ????????????????????????????????????????????????????????
+const healthBtn = document.getElementById('healthBtn');
+if (healthBtn) {
+  healthBtn.addEventListener('click', async () => {
+    const el = document.getElementById('healthResult');
+    el.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Analysing projects...';
+    try {
+      const res  = await fetch('/ai/project-health', { method: 'POST' });
+      const data = await res.json();
+      if (data.error) { el.textContent = 'Error: ' + data.error; return; }
+      const summaries = data.summaries || {};
+      if (!Object.keys(summaries).length) { el.textContent = 'No projects found.'; return; }
+      el.innerHTML = Object.entries(summaries).map(([pnum, txt]) =>
+        `<div class="mb-1"><span class="fw-bold text-teal me-2">${pnum}</span>${txt}</div>`
+      ).join('');
+    } catch(e) { el.textContent = 'Request failed: ' + e; }
+  });
 }
 
 // ?? Status colour palette ????????????????????????????????????????????????????
@@ -1140,224 +1052,5 @@ if (projLabels.length) {
   });
   buildDonutLegend('projStatusLegend', projLabels, projData, projColors);
 }
-
-// ?? Month-wise Projects Chart - Current Year Only (2026)
-const allProjChartLabels = {{ proj_chart_labels|safe }};
-const allProjChartCounts = {{ proj_chart_counts|safe }};
-const allProjChartValues = {{ proj_chart_values|safe }};
-
-// Filter for current year (2026) only
-const currentYear = new Date().getFullYear().toString();
-const projChartLabels = [];
-const projChartCounts = [];
-const projChartValues = [];
-
-for (let i = 0; i < allProjChartLabels.length; i++) {
-  if (allProjChartLabels[i].includes(currentYear)) {
-    projChartLabels.push(allProjChartLabels[i]);
-    projChartCounts.push(allProjChartCounts[i]);
-    projChartValues.push(allProjChartValues[i]);
-  }
-}
-
-// If no data for current year, show all 12 months as empty
-if (projChartLabels.length === 0) {
-  const currentDate = new Date();
-  for (let i = 0; i < 12; i++) {
-    const monthDate = new Date(currentDate.getFullYear(), i, 1);
-    projChartLabels.push(monthDate.toLocaleDateString('en-US', { month: 'short' }));
-    projChartCounts.push(0);
-    projChartValues.push(0);
-  }
-}
-
-const projCanvas = document.getElementById('projectsChart');
-if (projCanvas) {
-  const projCtx = projCanvas.getContext('2d');
-
-  // Create professional gradients like Finance Overview
-  const barGradient = projCtx.createLinearGradient(0, 0, 0, 200);
-  barGradient.addColorStop(0, 'rgba(16, 185, 129, 0.85)');
-  barGradient.addColorStop(1, 'rgba(16, 185, 129, 0.55)');
-
-  const lineGradient = projCtx.createLinearGradient(0, 0, 0, 200);
-  lineGradient.addColorStop(0, 'rgba(59, 130, 246, 0.15)');
-  lineGradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
-
-  new Chart(projCtx, {
-    type: 'bar',
-    data: {
-      labels: projChartLabels,
-      datasets: [
-        {
-          label: 'Project Count',
-          data: projChartCounts,
-          backgroundColor: barGradient,
-          borderRadius: { topLeft: 6, topRight: 6, bottomLeft: 0, bottomRight: 0 },
-          borderSkipped: false,
-          borderWidth: 0,
-          yAxisID: 'y',
-          order: 2,
-          barThickness: 'flex',
-          maxBarThickness: 28,
-          hoverBackgroundColor: 'rgba(5, 150, 105, 0.95)',
-        },
-        {
-          label: 'Project Value',
-          data: projChartValues,
-          borderColor: '#3B82F6',
-          backgroundColor: lineGradient,
-          borderWidth: 2.5,
-          fill: true,
-          tension: 0.35,
-          yAxisID: 'y1',
-          pointBackgroundColor: '#3B82F6',
-          pointBorderColor: '#fff',
-          pointBorderWidth: 1.5,
-          pointRadius: 3.5,
-          pointHoverRadius: 5,
-          pointHoverBackgroundColor: '#1D4ED8',
-          type: 'line',
-          order: 1,
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      animation: {
-        duration: 800,
-        easing: 'easeInOutQuart',
-        delay: (ctx) => ctx.dataIndex * 30
-      },
-      plugins: {
-        filler: { propagate: true },
-        legend: {
-          display: true,
-          position: 'top',
-          labels: {
-            font: { size: 11, weight: '600' },
-            padding: 12,
-            usePointStyle: true,
-            pointStyle: 'circle',
-            color: '#1e293b',
-            boxWidth: 7,
-            boxHeight: 7
-          }
-        },
-        tooltip: {
-          backgroundColor: 'rgba(30, 41, 59, 0.95)',
-          padding: 10,
-          titleFont: { size: 11, weight: '700' },
-          bodyFont: { size: 10, weight: '600' },
-          borderColor: '#e2e8f0',
-          borderWidth: 1,
-          cornerRadius: 6,
-          displayColors: true,
-          boxPadding: 6,
-          callbacks: {
-            title: function(c) {
-              return c[0].label;
-            },
-            label: function(c) {
-              if (c.datasetIndex === 0) {
-                return 'Count: ' + c.parsed.y;
-              }
-              return 'Value: ' + CURRENCY_SYMBOL + c.parsed.y.toLocaleString(undefined, {maximumFractionDigits: 0});
-            }
-          }
-        }
-      },
-      scales: {
-        x: {
-          grid: { display: false, drawBorder: false },
-          ticks: {
-            font: { size: 10, weight: '500' },
-            color: '#64748B',
-            padding: 6,
-            maxRotation: 0,
-            minRotation: 0
-          },
-          border: { display: false }
-        },
-        y: {
-          type: 'linear',
-          position: 'left',
-          ticks: {
-            font: { size: 9, weight: '500' },
-            color: '#64748B',
-            padding: 6,
-            maxTicksLimit: 3
-          },
-          grid: {
-            color: 'rgba(0,0,0,.04)',
-            drawBorder: false,
-            drawTicks: false
-          },
-          beginAtZero: true
-        },
-        y1: {
-          type: 'linear',
-          position: 'right',
-          ticks: {
-            font: { size: 9, weight: '500' },
-            color: '#3B82F6',
-            padding: 6,
-            maxTicksLimit: 3,
-            callback: v => CURRENCY_SYMBOL + (v >= 1000 ? (v/1000).toFixed(0)+'k' : v)
-          },
-          grid: { drawOnChartArea: false, drawBorder: false, drawTicks: false },
-          beginAtZero: true
-        }
-      }
-    }
-  });
-}
-
-// Initialize collapse/expand state on page load
-document.addEventListener('DOMContentLoaded', function() {
-  // Define which sections should start collapsed (minimized)
-  const collapsedSections = ['invDonutWrap', 'revenueChartWrap', 'recentInvoicesWrap', 'recentProjectsWrap'];
-
-  collapsedSections.forEach(sectionId => {
-    const section = document.getElementById(sectionId);
-    const button = document.querySelector(`button[onclick*="${sectionId}"]`);
-
-    if (section && button) {
-      // Hide the section
-      section.style.display = 'none';
-
-      // Rotate chevron to indicate collapsed (0deg)
-      const icon = button.querySelector('i.collapse-icon');
-      if (icon) {
-        icon.style.transform = 'rotate(0deg)';
-      }
-    }
-  });
-
-  // Define which sections should start expanded (projDonutWrap only)
-  const expandedSections = ['projDonutWrap'];
-
-  expandedSections.forEach(sectionId => {
-    const section = document.getElementById(sectionId);
-    const button = document.querySelector(`button[onclick*="${sectionId}"]`);
-
-    if (section && button) {
-      // Set correct display type based on section type
-      const flexSections = ['invDonutWrap', 'projDonutWrap', 'revenueChartWrap'];
-      const displayType = flexSections.includes(sectionId) ? 'flex' : 'block';
-      section.style.display = displayType;
-
-      // Rotate chevron to indicate expanded (90deg)
-      const icon = button.querySelector('i.collapse-icon');
-      if (icon) {
-        icon.style.transform = 'rotate(90deg)';
-      }
-    }
-  });
-
-});
-
 </script>
 {% endblock %}
