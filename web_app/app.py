@@ -524,6 +524,18 @@ def _fb_cache_key(path: str) -> Optional[str]:
     p = "/" + str(path).strip("/")
     return f"fbnode:{p}" if p in _FB_CACHEABLE_NODES else None
 
+def _fb_parent_cache_key(path: str):
+    """For a sub-path like /clients/ABC, return ("fbnode:/clients", ["ABC"]) so a
+    read inside a loop can be served from an already-cached parent table instead
+    of its own round trip. Returns (None, None) if the parent isn't cacheable."""
+    if _FB_CACHE_TTL <= 0:
+        return None, None
+    p = "/" + str(path).strip("/")
+    for node in _FB_CACHEABLE_NODES:
+        if p.startswith(node + "/"):
+            return f"fbnode:{node}", p[len(node) + 1:].split("/")
+    return None, None
+
 def _fb_cache_bust_path(path: str) -> None:
     """Invalidate any cached node whose subtree this write path touches."""
     p = "/" + str(path).strip("/")
@@ -559,6 +571,19 @@ def fb_get(path: str):
         val = ref.get()
         _cache_set(ck, val, _FB_CACHE_TTL)
         return _fb_fast_copy(val)
+    # Sub-path read (e.g. /clients/ABC): if the whole parent table is already
+    # cached, walk into it instead of a separate round trip. Pure fallback —
+    # if the parent isn't cached we fetch normally, exactly as before.
+    pk, sub = _fb_parent_cache_key(path)
+    if pk:
+        cached, hit = _cache_get(pk)
+        if hit:
+            node = cached
+            for part in sub:
+                node = node.get(part) if isinstance(node, dict) else None
+                if node is None:
+                    break
+            return _fb_fast_copy(node)
     return ref.get()
 
 def fb_push(path: str, data: dict) -> Optional[str]:
