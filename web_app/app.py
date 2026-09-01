@@ -506,10 +506,12 @@ def fb_ref(path: str):
 # fb_delete that touches one of these nodes invalidates its cache entry
 # immediately, so a user always sees their own edits. Cross-worker staleness is
 # bounded by FB_CACHE_TTL seconds. Set FB_CACHE_TTL=0 to disable entirely.
-_FB_CACHE_TTL = int(os.environ.get("FB_CACHE_TTL", "10"))
+_FB_CACHE_TTL = int(os.environ.get("FB_CACHE_TTL", "45"))
 _FB_CACHEABLE_NODES = (
     "/invoices", "/projects", "/job_forms", "/quotes",
     "/balance_sheet_expenses", "/balance_sheet_revenue", "/employees",
+    "/time_entries", "/users", "/time_off_requests", "/timesheets",
+    "/expenses", "/medical_claims", "/permission_requests",
 )
 
 def _fb_cache_key(path: str) -> Optional[str]:
@@ -21517,6 +21519,12 @@ def api_approvals_count():
     if _role not in ("admin", "accountant"):
         return jsonify({"count": 0})
 
+    # Polled by base.html on every page load and every 60s. The underlying
+    # tables barely change minute-to-minute, so serve a shared 30s-cached count.
+    _cached, _hit = _cache_get("approvals_count")
+    if _hit:
+        return jsonify({"count": _cached})
+
     count = 0
 
     # Pending permission requests
@@ -21545,6 +21553,7 @@ def api_approvals_count():
     all_sheets = _load_timesheets()
     count += sum(1 for s in all_sheets if s.get("status") == "Submitted")
 
+    _cache_set("approvals_count", count, 30)
     return jsonify({"count": count})
 
 
@@ -23724,7 +23733,7 @@ def _load_time_entries() -> List[dict]:
                 tdata["firebase_id"] = tid
                 items.append(tdata)
         result = sorted(items, key=lambda x: x.get("clock_in", ""), reverse=True)
-        _cache_set("time_entries", result, 10)  # 10-second TTL
+        _cache_set("time_entries", result, 45)  # busted on clock in/out
         return result
     return []
 
