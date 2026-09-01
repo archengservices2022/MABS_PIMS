@@ -2656,7 +2656,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   }
 
   // Find the nav link that matches this tab ID
-  const targetNavLink = document.querySelector('#empTabs .nav-link[href="' + targetTabId + '"]');
+  let targetNavLink = document.querySelector('#empTabs .nav-link[href="' + targetTabId + '"]');
+
+  // Hash points to a tab this user can't see (e.g. #tab-team for a non-admin) —
+  // fall back to Time Off instead of leaving nothing selected.
+  if (!targetNavLink) {
+    targetTabId = '#tab-time-off';
+    targetNavLink = document.querySelector('#empTabs .nav-link[href="#tab-time-off"]');
+  }
 
   // Deactivate all tabs first
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {

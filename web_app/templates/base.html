@@ -199,7 +199,7 @@
       </button>
       <div id="empSubNav" class="nav-sub-group {% if not emp_active %}collapsed{% endif %}">
         {% if 'employees' in allowed_pages %}
-        <a href="{{ url_for('employees') }}#tab-time-off"
+        <a href="{{ url_for('employees') }}#tab-team"
            class="nav-item nav-sub accent-purple {% if request.endpoint in ['employees','employee_profile'] %}active{% endif %}">
           <span class="nav-icon"><i class="bi bi-person-lines-fill"></i></span>
           <span class="nav-label">Team</span>
