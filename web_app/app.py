@@ -25,6 +25,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import requests
+from urllib.parse import urlsplit
 from flask import (
     Flask, render_template, request, redirect, url_for,
     session, flash, jsonify, send_file, abort
@@ -363,8 +364,29 @@ def first_page(role: str, custom_pages=None, uid: str = "") -> str:
 
 # ── Flask app ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET", "mabs-pims-secret-2025-change-in-prod")
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
+
+# Session signing key. MUST be provided via env in production — a known key lets
+# anyone forge a session cookie for any user/role. If it is missing we fall back
+# to a random per-process key (no forgery possible) but sessions then reset on
+# every restart, so set FLASK_SECRET in the Render environment.
+_flask_secret = os.environ.get("FLASK_SECRET") or os.environ.get("SECRET_KEY")
+if not _flask_secret:
+    _flask_secret = secrets.token_hex(32)
+    log.warning(
+        "FLASK_SECRET is not set — using a random ephemeral key. All logins will "
+        "be lost on restart. Set FLASK_SECRET in the environment."
+    )
+app.secret_key = _flask_secret
+
+app.config.update(
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+    # Session cookie hardening
+    SESSION_COOKIE_HTTPONLY=True,   # not readable from JS
+    SESSION_COOKIE_SAMESITE="Lax",  # not sent on cross-site POSTs (CSRF defense)
+    SESSION_COOKIE_SECURE=os.environ.get("COOKIE_INSECURE", "0") != "1",  # HTTPS only
+    # Cap request bodies (receipt uploads etc.) to protect the instance
+    MAX_CONTENT_LENGTH=int(os.environ.get("MAX_UPLOAD_MB", "12")) * 1024 * 1024,
+)
 
 # ── Session inactivity timeout ─────────────────────────────────────────────────
 SESSION_INACTIVITY_HOURS = 8
@@ -403,6 +425,60 @@ def _touch_activity_session(sid: str):
         fb_update(f"/activity_sessions/{sid}", update)
     except Exception:
         pass
+
+_ALLOWED_UPLOAD_EXT = {
+    "pdf", "png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tif", "tiff",
+    "xlsx", "xls", "csv",  # spreadsheet imports
+}
+_ALLOWED_UPLOAD_MIME = (
+    "image/", "application/pdf", "text/csv", "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml",
+)
+
+@app.before_request
+def validate_uploads():
+    """Reject uploads that aren't a PDF, image, or spreadsheet — before any
+    handler reads them. Body size is already capped by MAX_CONTENT_LENGTH."""
+    if request.method != "POST" or not request.files:
+        return
+    for field, f in request.files.items(multi=True):
+        if not f or not f.filename:
+            continue
+        ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else ""
+        ctype = (f.content_type or "").lower()
+        if ext in _ALLOWED_UPLOAD_EXT or ctype.startswith(_ALLOWED_UPLOAD_MIME):
+            continue
+        log.warning("Rejected upload on %s field=%s name=%r type=%s",
+                    request.path, field, f.filename, ctype)
+        abort(400, description="Unsupported file type. Please upload a PDF or image.")
+
+@app.before_request
+def csrf_origin_check():
+    """Lightweight CSRF defense: reject state-changing requests whose Origin (or
+    Referer) points at a different site. Combined with SESSION_COOKIE_SAMESITE
+    this blocks cross-site form posts without needing a token in every form."""
+    if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return
+    host = request.host  # e.g. mabs-pims.onrender.com
+    origin = request.headers.get("Origin")
+    if origin:
+        try:
+            if urlsplit(origin).netloc != host:
+                log.warning("Blocked cross-origin %s %s (Origin: %s)", request.method, request.path, origin)
+                abort(403)
+            return
+        except ValueError:
+            abort(403)
+    referer = request.headers.get("Referer")
+    if referer:
+        try:
+            if urlsplit(referer).netloc != host:
+                log.warning("Blocked cross-origin %s %s (Referer: %s)", request.method, request.path, referer)
+                abort(403)
+        except ValueError:
+            abort(403)
+    # No Origin and no Referer: allow (some privacy tools strip both) — SameSite
+    # cookie is the backstop here.
 
 @app.before_request
 def check_session_timeout():
