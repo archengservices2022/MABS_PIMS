@@ -1460,8 +1460,13 @@ def index():
 @app.route("/healthz")
 def healthz():
     """Cheap, auth-free, no-DB endpoint. Point an uptime pinger here (every
-    ~10 min) to keep a sleeping free-tier instance warm and avoid cold starts."""
-    return {"status": "ok"}, 200
+    ~10 min) to keep a sleeping free-tier instance warm and avoid cold starts.
+    Also reports the deployed git commit so a redeploy can be verified."""
+    return {
+        "status": "ok",
+        "commit": (os.environ.get("RENDER_GIT_COMMIT", "") or "")[:7],
+        "cache_ttl": _FB_CACHE_TTL,
+    }, 200
 
 @app.route("/portfolio")
 def portfolio():
