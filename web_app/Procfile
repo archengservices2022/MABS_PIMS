@@ -1,1 +1,6 @@
-web: gunicorn app:app --workers 2 --threads 4 --worker-class gthread --bind 0.0.0.0:$PORT --timeout 120
+# 1 worker + threads: the workload is I/O-bound (waiting on Firebase), so threads
+# give real concurrency while the GIL is released during network waits. A single
+# worker halves memory use (critical on 512MB instances) and lets every request
+# share one warm cache. max-requests recycles the worker periodically to cap
+# memory creep.
+web: gunicorn app:app --workers 1 --threads 8 --worker-class gthread --bind 0.0.0.0:$PORT --timeout 120 --max-requests 1200 --max-requests-jitter 200
