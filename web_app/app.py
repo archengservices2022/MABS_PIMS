@@ -509,9 +509,13 @@ def fb_ref(path: str):
 _FB_CACHE_TTL = int(os.environ.get("FB_CACHE_TTL", "45"))
 _FB_CACHEABLE_NODES = (
     "/invoices", "/projects", "/job_forms", "/quotes",
-    "/balance_sheet_expenses", "/balance_sheet_revenue", "/employees",
+    "/balance_sheet_expenses", "/balance_sheet_revenue", "/balance_sheet_salary",
+    "/employees", "/employee_profiles", "/employee_advances",
     "/time_entries", "/users", "/time_off_requests", "/timesheets",
-    "/expenses", "/medical_claims", "/permission_requests",
+    "/expenses", "/medical_claims", "/medical_claim_receipts", "/permission_requests",
+    "/project_commissions", "/commission_payments", "/clients", "/sales_persons",
+    "/deleted_invoices", "/deleted_projects", "/deleted_quotes", "/notifications",
+    "/performance_reviews", "/custom_categories", "/custom_expense_categories",
 )
 
 def _fb_cache_key(path: str) -> Optional[str]:
@@ -534,6 +538,14 @@ def _fb_fast_copy(val):
     except (TypeError, ValueError):
         import copy as _copy
         return _copy.deepcopy(val)
+
+_DEBUG_VERBOSE = os.environ.get("DEBUG_VERBOSE", "0") == "1"
+
+def _dbg(*args, **kwargs):
+    """Per-item debug tracing. No-op unless DEBUG_VERBOSE=1 — these fire hundreds
+    of times per financial/revenue page load and each line is synchronous I/O."""
+    if _DEBUG_VERBOSE:
+        print(*args, **kwargs)
 
 def fb_get(path: str):
     ref = fb_ref(path)
@@ -11461,13 +11473,14 @@ def financial_byproject_export(fmt):
     invoices = inv_raw if isinstance(inv_raw, dict) else {}
     exp_raw = fb_get("/expenses") or {}
     exp_list = [v for v in (exp_raw.values() if isinstance(exp_raw, dict) else []) if isinstance(v, dict)]
+    _all_project_commissions = fb_get("/project_commissions") or {}
 
     rows = []
     for p in projects:
         pnum = p.get("project_number", "")
         pid = p.get("firebase_id", "")
         # Load commission data for this project (for accrued commission expense)
-        p_comm = fb_get(f"/project_commissions/{pid}") or {}
+        p_comm = _all_project_commissions.get(pid) or {} if isinstance(_all_project_commissions, dict) else {}
         p_invoiced = p_collected = 0.0
         for inv_id, inv_data in invoices.items():
             if not isinstance(inv_data, dict): continue
@@ -13846,12 +13859,15 @@ def financial_receivables():
 @app.route("/financial")
 @role_required("financial")
 def financial():
-    # Cleanup: Remove all advance expenses (advances no longer saved as expenses)
-    _cleanup_all_advance_expenses()
-
-    # Cleanup: Remove any unpaid commission expenses and normalize all expense names
-    _cleanup_unpaid_commissions()
-    _normalize_all_expense_names()
+    # Housekeeping sweeps over the whole balance_sheet_expenses table. They are
+    # idempotent, so run them at most once every few minutes per worker instead
+    # of on every page load.
+    _hk_done, _hk_hit = _cache_get("financial_housekeeping_ran")
+    if not _hk_hit:
+        _cache_set("financial_housekeeping_ran", True, 300)
+        _cleanup_all_advance_expenses()
+        _cleanup_unpaid_commissions()
+        _normalize_all_expense_names()
 
     # Sequential — Firebase Admin SDK shares one HTTP session; concurrent ThreadPoolExecutor calls return empty dicts
     invoices = fb_get("/invoices") or {}
@@ -14095,33 +14111,32 @@ def financial():
     # Filter to show only Paid and Partial invoices (present/active invoices only)
     # This matches the Invoicing tab display
     # Don't filter by status - revenue entries represent payments regardless of invoice status
-    print(f"[FINANCIAL_INIT] rev_list has {len(rev_list)} entries (no status filter)")
-
+    _dbg(f"[FINANCIAL_INIT] rev_list has {len(rev_list)} entries (no status filter)")
     # Enrich rev_list with current amount_paid from invoice meta (fixes stale revenue entries)
     updated_rev_list = []
     for r in rev_list:
-        print(f"[FINANCIAL_LOOP] Processing rev entry: project={r.get('project_number')}, has_inv_id={bool(r.get('invoice_id'))}, rev_inv_num={r.get('invoice_number', 'MISSING')}")
+        _dbg(f"[FINANCIAL_LOOP] Processing rev entry: project={r.get('project_number')}, has_inv_id={bool(r.get('invoice_id'))}, rev_inv_num={r.get('invoice_number', 'MISSING')}")
         inv_id = r.get("invoice_id")
         inv_data = None
 
         # Try to find invoice by invoice_id first
         if inv_id and inv_id in all_invoices:
             inv_data = all_invoices[inv_id]
-            print(f"[LOOKUP_ID] Found by invoice_id={inv_id}")
+            _dbg(f"[LOOKUP_ID] Found by invoice_id={inv_id}")
         # Fallback 1: match by invoice_number if invoice_id lookup failed
         elif r.get("invoice_number"):
-            print(f"[LOOKUP_INV_NUM] Searching for invoice with invoice_number={r.get('invoice_number')}")
+            _dbg(f"[LOOKUP_INV_NUM] Searching for invoice with invoice_number={r.get('invoice_number')}")
             for iid, inv_d in (all_invoices.items() if isinstance(all_invoices, dict) else []):
                 if isinstance(inv_d, dict):
                     inv_m = inv_d.get("meta", {}) or {}
                     if inv_m.get("invoice_number") == r.get("invoice_number"):
                         inv_data = inv_d
-                        print(f"[LOOKUP_INV_NUM_FOUND] Found invoice with invoice_number={r.get('invoice_number')}")
+                        _dbg(f"[LOOKUP_INV_NUM_FOUND] Found invoice with invoice_number={r.get('invoice_number')}")
                         break
 
         # Fallback 2: match by project_number + amount_paid + date (for old entries without invoice_id/number)
         if not inv_data and r.get("project_number") and r.get("amount_paid"):
-            print(f"[LOOKUP_FALLBACK2] Searching by project={r.get('project_number')}, amount={r.get('amount_paid')}, date={r.get('date')}")
+            _dbg(f"[LOOKUP_FALLBACK2] Searching by project={r.get('project_number')}, amount={r.get('amount_paid')}, date={r.get('date')}")
             for iid, inv_d in (all_invoices.items() if isinstance(all_invoices, dict) else []):
                 if isinstance(inv_d, dict):
                     inv_m = inv_d.get("meta", {}) or {}
@@ -14129,14 +14144,14 @@ def financial():
                         _safe_float(inv_m.get("amount_paid", 0)) == _safe_float(r.get("amount_paid", 0)) and
                         inv_m.get("invoice_date") == r.get("date")):
                         inv_data = inv_d
-                        print(f"[LOOKUP_FALLBACK2_FOUND] Found invoice with invoice_number={inv_m.get('invoice_number')}")
+                        _dbg(f"[LOOKUP_FALLBACK2_FOUND] Found invoice with invoice_number={inv_m.get('invoice_number')}")
                         break
 
         if not inv_data or not isinstance(inv_data, dict):
-            print(f"[FINANCIAL_SKIP] Skipping rev entry: project={r.get('project_number')}, inv_id={inv_id}, inv_num={r.get('invoice_number')}")
+            _dbg(f"[FINANCIAL_SKIP] Skipping rev entry: project={r.get('project_number')}, inv_id={inv_id}, inv_num={r.get('invoice_number')}")
             continue
         inv_meta = inv_data.get("meta", {}) or {}
-        print(f"[FINANCIAL_FOUND] Found invoice for revenue entry: project={r.get('project_number')}, inv_meta_num={inv_meta.get('invoice_number')}")
+        _dbg(f"[FINANCIAL_FOUND] Found invoice for revenue entry: project={r.get('project_number')}, inv_meta_num={inv_meta.get('invoice_number')}")
         inv_total = _safe_float(inv_meta.get("total", 0))
         amount_paid = _safe_float(inv_meta.get("amount_paid", 0))
         tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
@@ -14148,7 +14163,7 @@ def financial():
         r["tax_amount"]    = _safe_float(inv_meta.get("tax_amount", 0))
         # Preserve revenue entry's invoice_number if it exists; only use invoice meta if missing
         r["invoice_number"] = r.get("invoice_number", "") or inv_meta.get("invoice_number", "")
-        print(f"[FINANCIAL_SET] Set invoice_number for {r.get('project_number')}: {r.get('invoice_number')}")
+        _dbg(f"[FINANCIAL_SET] Set invoice_number for {r.get('project_number')}: {r.get('invoice_number')}")
         r["invoice_date"]  = inv_meta.get("invoice_date", "") or r.get("date", "")
         # Collection date = latest payment_log entry date, fallback to revenue record date
         pay_log = inv_data.get("payment_log", []) or []
@@ -14508,6 +14523,9 @@ def financial():
 
     # Per-project P&L
     projects_list = _load_projects_list()
+    # Load the whole commission table once, not once per project (was ~300 extra
+    # Firebase round trips on a data set this size).
+    _all_project_commissions = fb_get("/project_commissions") or {}
     project_pnl = []
     for p in projects_list:
         pnum = p.get("project_number", "")
@@ -14526,7 +14544,7 @@ def financial():
             continue
 
         # Load commission data for this project (for accrued commission expense)
-        p_comm = fb_get(f"/project_commissions/{pid}") or {}
+        p_comm = _all_project_commissions.get(pid) or {} if isinstance(_all_project_commissions, dict) else {}
 
         # Calculate INVOICED and COLLECTED based on line items and payment_log (not equal split!)
         p_invoiced = 0
@@ -14929,11 +14947,11 @@ def financial():
         ))
 
         # Debug: Log August (month 8) payment details
-        if _mk == "8":
-            log.info(f"[MONTHLY_PAYMENT_FINAL_AUG] Month {_mk} has {len(monthly_payment_details[_mk])} entries after merge")
+        if _DEBUG_VERBOSE and _mk == "8":
+            _dbg(f"[MONTHLY_PAYMENT_FINAL_AUG] Month {_mk} has {len(monthly_payment_details[_mk])} entries after merge")
             for _entry in monthly_payment_details[_mk]:
                 if _entry.get("invoice_number") == "INV-202608-001":
-                    log.info(f"  - {_entry.get('project_number')} / {_entry.get('stage')} / ${_entry.get('paid_amount')}")
+                    _dbg(f"  - {_entry.get('project_number')} / {_entry.get('stage')} / ${_entry.get('paid_amount')}")
 
     # ── Chart data for overview pie charts ────────────────────────────────────
     inv_status_counts = {}
@@ -15031,7 +15049,8 @@ def financial():
                     "paid_date": _display_date,
                 })
 
-    log.info(f"Commission Paid: Found {_paid_comm_count} paid commissions. Skipped {_skipped_deleted_commissions} commissions for deleted projects. All statuses: {_all_statuses}. monthly_commission_details[7]={len(monthly_commission_details.get('7', []))} items")
+    log.info(f"Commission Paid: Found {_paid_comm_count} paid commissions. Skipped {_skipped_deleted_commissions} commissions for deleted projects.")
+    _dbg(f"[COMMISSION] All statuses: {_all_statuses}. monthly_commission_details[7]={len(monthly_commission_details.get('7', []))} items")
 
     # Calculate annual commissions by month for the Annual Financial Summary table
     # Commissions are displayed separately in monthly breakdown, not included in EXPENSES row
@@ -23450,19 +23469,18 @@ def _upsert_revenue_entry(invoice_id: str, inv_meta: dict) -> None:
     existing_key = None
     if isinstance(raw_rev, dict):
         invoice_number = inv_meta.get("invoice_number", "")
-        print(f"[REVENUE_LOOKUP] Looking for invoice_id={invoice_id}, invoice_number={invoice_number}, total entries={len(raw_rev)}")
+        _dbg(f"[REVENUE_LOOKUP] Looking for invoice_id={invoice_id}, invoice_number={invoice_number}, total entries={len(raw_rev)}")
         for rk, rv in raw_rev.items():
             if isinstance(rv, dict):
-                print(f"[REVENUE_DEBUG] Entry: invoice_id={rv.get('invoice_id')}, invoice_number={rv.get('invoice_number')}")
-
+                _dbg(f"[REVENUE_DEBUG] Entry: invoice_id={rv.get('invoice_id')}, invoice_number={rv.get('invoice_number')}")
                 # Match by invoice_id (primary)
                 if rv.get("invoice_id") == invoice_id:
-                    print(f"[REVENUE_LOOKUP] FOUND by invoice_id in key={rk}")
+                    _dbg(f"[REVENUE_LOOKUP] FOUND by invoice_id in key={rk}")
                     existing_key = rk
                     break
                 # Fallback 1: Match by invoice_number if not empty
                 elif invoice_number and rv.get("invoice_number") == invoice_number:
-                    print(f"[REVENUE_LOOKUP] FOUND by invoice_number in key={rk}")
+                    _dbg(f"[REVENUE_LOOKUP] FOUND by invoice_number in key={rk}")
                     existing_key = rk
                     if not rv.get("invoice_id"):
                         entry["invoice_id"] = invoice_id
@@ -23470,17 +23488,17 @@ def _upsert_revenue_entry(invoice_id: str, inv_meta: dict) -> None:
                 # Fallback 2: Match by project_number + date (for entries created without invoice_id/number)
                 elif not existing_key and entry.get("project_number") and rv.get("project_number") == entry.get("project_number") and rv.get("date") == entry.get("date"):
                     if not rv.get("invoice_id"):
-                        print(f"[REVENUE_LOOKUP] FOUND by project+date in key={rk}")
+                        _dbg(f"[REVENUE_LOOKUP] FOUND by project+date in key={rk}")
                         existing_key = rk
                         entry["invoice_id"] = invoice_id
                         if invoice_number:
                             entry["invoice_number"] = invoice_number
                         break
     if existing_key:
-        print(f"[REVENUE] Updating existing entry key={existing_key} with invoice_number={entry.get('invoice_number')}")
+        _dbg(f"[REVENUE] Updating existing entry key={existing_key} with invoice_number={entry.get('invoice_number')}")
         fb_update(f"/balance_sheet_revenue/{existing_key}", entry)
     else:
-        print(f"[REVENUE] Creating new entry with invoice_number={entry.get('invoice_number')}")
+        _dbg(f"[REVENUE] Creating new entry with invoice_number={entry.get('invoice_number')}")
         fb_push("/balance_sheet_revenue", entry)
 
 def _advance_project_to_in_progress(project_number: str) -> None:
