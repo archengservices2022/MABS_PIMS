@@ -499,9 +499,53 @@ def fb_ref(path: str):
         return None
     return db.reference(path)
 
+# ── Firebase read cache ──────────────────────────────────────────────────────
+# Full-node reads of these top-level paths dominate page-load time (the whole
+# table is pulled over the network on every request). They are served from a
+# short-lived in-process cache instead. Any write through fb_push/fb_update/
+# fb_delete that touches one of these nodes invalidates its cache entry
+# immediately, so a user always sees their own edits. Cross-worker staleness is
+# bounded by FB_CACHE_TTL seconds. Set FB_CACHE_TTL=0 to disable entirely.
+_FB_CACHE_TTL = int(os.environ.get("FB_CACHE_TTL", "10"))
+_FB_CACHEABLE_NODES = (
+    "/invoices", "/projects", "/job_forms", "/quotes",
+    "/balance_sheet_expenses", "/balance_sheet_revenue", "/employees",
+)
+
+def _fb_cache_key(path: str) -> Optional[str]:
+    if _FB_CACHE_TTL <= 0:
+        return None
+    p = "/" + str(path).strip("/")
+    return f"fbnode:{p}" if p in _FB_CACHEABLE_NODES else None
+
+def _fb_cache_bust_path(path: str) -> None:
+    """Invalidate any cached node whose subtree this write path touches."""
+    p = "/" + str(path).strip("/")
+    for node in _FB_CACHEABLE_NODES:
+        if p == node or p.startswith(node + "/") or node.startswith(p + "/"):
+            cache_bust(f"fbnode:{node}")
+
+def _fb_fast_copy(val):
+    """Return a deep, independent copy so callers can mutate cached data safely."""
+    try:
+        return json.loads(json.dumps(val))
+    except (TypeError, ValueError):
+        import copy as _copy
+        return _copy.deepcopy(val)
+
 def fb_get(path: str):
     ref = fb_ref(path)
-    return ref.get() if ref else None
+    if not ref:
+        return None
+    ck = _fb_cache_key(path)
+    if ck:
+        cached, hit = _cache_get(ck)
+        if hit:
+            return _fb_fast_copy(cached)
+        val = ref.get()
+        _cache_set(ck, val, _FB_CACHE_TTL)
+        return _fb_fast_copy(val)
+    return ref.get()
 
 def fb_push(path: str, data: dict) -> Optional[str]:
     ref = fb_ref(path)
@@ -510,6 +554,7 @@ def fb_push(path: str, data: dict) -> Optional[str]:
     new_ref = ref.push()
     data["firebase_id"] = new_ref.key
     new_ref.set(data)
+    _fb_cache_bust_path(path)
     return new_ref.key
 
 def fb_get_shallow(path: str):
@@ -524,6 +569,7 @@ def fb_update(path: str, data: dict) -> bool:
     if not ref:
         return False
     ref.update(data)
+    _fb_cache_bust_path(path)
     return True
 
 def fb_delete(path: str) -> bool:
@@ -531,6 +577,7 @@ def fb_delete(path: str) -> bool:
     if not ref:
         return False
     ref.delete()
+    _fb_cache_bust_path(path)
     return True
 
 # ── Migration: Add Firebase IDs to Existing Change Orders ──────────────────────
@@ -1370,6 +1417,12 @@ def reset_password():
 @login_required
 def index():
     return redirect(url_for(first_page(session.get("user_role", "sales"))))
+
+@app.route("/healthz")
+def healthz():
+    """Cheap, auth-free, no-DB endpoint. Point an uptime pinger here (every
+    ~10 min) to keep a sleeping free-tier instance warm and avoid cold starts."""
+    return {"status": "ok"}, 200
 
 @app.route("/portfolio")
 def portfolio():
@@ -23325,10 +23378,19 @@ def _sync_project_payment(project_number: str) -> None:
 
     fb_update(f"/projects/{pid}", updates)
 
-def _auto_flag_overdue() -> int:
+def _auto_flag_overdue(force: bool = False) -> int:
     """Flip any Sent/Viewed/Partial invoice whose due_date < today to Overdue.
     Returns the number of invoices updated.
+
+    This scans every invoice and can send reminder emails synchronously, so it
+    is throttled to run at most once every ~5 minutes per worker instead of on
+    every dashboard load. Pass force=True to bypass the throttle.
     """
+    if not force:
+        _ran, hit = _cache_get("auto_flag_overdue_ran")
+        if hit:
+            return 0
+        _cache_set("auto_flag_overdue_ran", True, 300)
     today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     raw = fb_get("/invoices") or {}
     count = 0
@@ -24255,6 +24317,7 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 })
+                _fb_cache_bust_path("/balance_sheet_expenses")
 
 
 def _parse_invoice_form(form, co_number="") -> dict:
