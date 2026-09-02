@@ -210,8 +210,8 @@
     <div class="card-panel">
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h6 style="color:#0D9488;font-size:14px;font-weight:700;margin:0;"><i class="bi bi-cash-coin me-2"></i>Account Receivable Summary</h6>
-        {% if 'invoicing' in allowed_pages %}
-        <a href="{{ url_for('invoicing') }}" class="text-teal small">View Details →</a>
+        {% if 'financial' in allowed_pages %}
+        <a href="{{ url_for('financial', tab='ar-summary') }}" class="text-teal small">View Details →</a>
         {% endif %}
       </div>
 
@@ -653,7 +653,7 @@
       <span class="badge ms-1" style="background:#DC2626;color:#fff;">{{ reminder_overdue_invoices|length + reminder_due_soon|length }}</span>
     </h6>
     {% if 'invoicing' in allowed_pages %}
-    <a href="{{ url_for('invoicing') }}" class="text-muted small">All invoices ?</a>
+    <a href="{{ url_for('invoicing') }}" class="text-muted small">All invoices</a>
     {% endif %}
   </div>
 
