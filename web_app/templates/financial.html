@@ -5522,30 +5522,30 @@ function viewReceipt(expId) {
 <div class="tab-pane fade {{ 'show active' if active_tab == 'ar-summary' else '' }}" id="tab-ar-summary">
 
   <!-- Top KPI Cards -->
-  <div class="row g-3 mb-4" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
+  <div class="row g-3 mb-4" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));align-items:stretch;">
     <div>
-      <div class="kpi-card kpi-blue">
+      <div class="kpi-card kpi-blue" style="height:100%;">
         <div class="kpi-top"><span class="kpi-label">Total Market Receivable</span><i class="bi bi-cash-bag kpi-icon-sm"></i></div>
         <div class="kpi-value" id="arSummaryTopMarket">{{ currency_symbol }}0.00</div>
         <div class="kpi-sub">Total amount currently expected</div>
       </div>
     </div>
     <div>
-      <div class="kpi-card kpi-green">
-        <div class="kpi-top"><span class="kpi-label">Total Outstanding</span><i class="bi bi-arrow-up-right kpi-icon-sm"></i></div>
-        <div class="kpi-value" id="arSummaryTopOutstanding">{{ currency_symbol }}0.00</div>
-        <div class="kpi-sub">From all categories</div>
+      <div class="kpi-card kpi-green" style="height:100%;">
+        <div class="kpi-top"><span class="kpi-label">Advance Payments</span><i class="bi bi-cash-coin kpi-icon-sm"></i></div>
+        <div class="kpi-value" id="arSummaryTopAdvance">{{ currency_symbol }}0.00</div>
+        <div class="kpi-sub">Collected ahead of invoicing</div>
       </div>
     </div>
     <div>
-      <div class="kpi-card kpi-purple">
+      <div class="kpi-card kpi-purple" style="height:100%;">
         <div class="kpi-top"><span class="kpi-label">Clients Owing</span><i class="bi bi-people kpi-icon-sm"></i></div>
         <div class="kpi-value" id="arSummaryTopClients">0</div>
         <div class="kpi-sub">Total clients</div>
       </div>
     </div>
     <div>
-      <div class="kpi-card kpi-red">
+      <div class="kpi-card kpi-red" style="height:100%;">
         <div class="kpi-top"><span class="kpi-label">Overdue Amount</span><i class="bi bi-exclamation-circle kpi-icon-sm"></i></div>
         <div class="kpi-value" id="arSummaryTopOverdue">{{ currency_symbol }}0.00</div>
         <div class="kpi-sub">Overdue from all outstanding payments</div>
@@ -5965,7 +5965,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 
     // Update top KPI cards
     document.getElementById('arSummaryTopMarket').textContent = currencySymbol + totalMarket.toLocaleString('en-US', {minimumFractionDigits: 2});
-    document.getElementById('arSummaryTopOutstanding').textContent = currencySymbol + totalOutstanding.toLocaleString('en-US', {minimumFractionDigits: 2});
+    document.getElementById('arSummaryTopAdvance').textContent = currencySymbol + ((arData['Advance Payment Received'] || {}).amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2});
     document.getElementById('arSummaryTopClients').textContent = clients.size;
     document.getElementById('arSummaryTopOverdue').textContent = currencySymbol + overdueAmount.toLocaleString('en-US', {minimumFractionDigits: 2});
 

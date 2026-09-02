@@ -14145,6 +14145,29 @@ def financial_expenses():
 def financial_receivables():
     return redirect(url_for('financial', tab='ar-summary'))
 
+
+def _is_payroll_flow_commission(exp: dict) -> bool:
+    """True when a /balance_sheet_expenses entry is a commission/salary payout
+    created by the Payroll → Commission Details "mark paid" workflow.
+
+    That flow also writes a /balance_sheet_salary record (and updates the
+    /project_commissions status), so the payout is already reflected in
+    annual_commissions / annual_payroll on the Balance Sheet. Counting the
+    expense entry too would double it, so these are dropped from the regular
+    expense rows.
+
+    A commission logged through the Add Expense dialog has none of these links
+    and is treated as an ordinary expense.
+    """
+    if not isinstance(exp, dict):
+        return False
+    return bool(
+        exp.get("commission_id")
+        or exp.get("salary_id")
+        or exp.get("commission_payment_details")
+    )
+
+
 @app.route("/financial")
 @role_required("financial")
 def financial():
@@ -14327,9 +14350,12 @@ def financial():
 
     # Filter for balance sheet (only selected year)
     exp_list_raw_filtered = filter_by_year(exp_list_raw, selected_year)
-    # IMPORTANT: Exclude commission expenses from balance sheet calculation
-    # Commissions are recalculated from /project_commissions with remaining_due
-    exp_list_raw_filtered = [e for e in exp_list_raw_filtered if not e.get("is_commission")]
+    # Exclude ONLY commissions that were paid through the Payroll → Commission
+    # Details workflow. Those also create a /balance_sheet_salary record and are
+    # counted via annual_commissions / annual_payroll, so keeping them here would
+    # double-count. A commission logged through the Add Expense dialog has no
+    # salary/commission linkage and is a normal expense — keep it.
+    exp_list_raw_filtered = [e for e in exp_list_raw_filtered if not _is_payroll_flow_commission(e)]
     exp_list_filtered = group_expenses_by_name(exp_list_raw_filtered)
 
     # Filter expenses if filter_expense parameter provided (apply to both raw and grouped lists)
@@ -15726,22 +15752,14 @@ def financial():
                 # Check if this is an adjustment first
                 _is_adj = _exp.get("is_adjustment") or _exp.get("vendor") == "Advance Adjustments"
 
-                # Skip salary, bonus, and commission entries (they're handled separately)
-                # BUT: Don't skip adjustments - they should all be included
-                if not _is_adj:
-                    _category = _exp.get("category") or _exp.get("expense_type") or ""
-                    _expense_type = _exp.get("expense_type") or ""
-                    _expense_name = (_exp.get("expense_name") or _exp.get("description") or "").lower()
-
-                    # Skip if category or type contains salary, bonus, or commission
-                    if any(keyword in _category.lower() for keyword in ["salary", "bonus", "commission"]):
-                        continue
-                    if any(keyword in _expense_type.lower() for keyword in ["salary", "bonus", "commission"]):
-                        continue
-                    if any(keyword in _expense_name for keyword in ["salary", "bonus", "commission"]):
-                        continue
-                    if _exp.get("is_commission"):
-                        continue
+                # Skip only commissions paid through the Payroll → Commission
+                # Details workflow (already counted in the Payroll / Commission
+                # sections). Everything else — including commissions logged via
+                # the Add Expense dialog — stays, so this drill-down matches the
+                # Annual Financial Summary "Expenses" total.
+                # (Adjustments are always kept and handled below.)
+                if not _is_adj and _is_payroll_flow_commission(_exp):
+                    continue
 
                 _category = _exp.get("category") or _exp.get("expense_type") or ""
                 _detail = {
