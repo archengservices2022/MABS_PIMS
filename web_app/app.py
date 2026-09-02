@@ -19046,8 +19046,8 @@ def employee_profile(uid):
     # ── Cost to company & distribution ────────────────────────────────────────
     total_cost_to_company = total_salary_paid + total_bonus_paid + total_benefits + other_allowances
 
-    # Recent slices for tables
-    recent_payroll  = emp_sal_recs[:10]
+    # Recent slices for tables — 5 rows each; "View All" links to the full list
+    recent_payroll  = emp_sal_recs[:5]
     recent_advances = emp_advances[:5]
     recent_timesheets = emp_timesheets[:5]
     recent_time_off = emp_time_off[:5]
