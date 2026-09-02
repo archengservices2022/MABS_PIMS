@@ -13006,9 +13006,10 @@ def _sync_adjustment_to_expense(adjustment_id, adjustment, advance_data, advance
         project_numbers = []
         project_deductions_details = []
         if adjustment_type == "Commission Deduction":
-            project_numbers = _get_project_numbers_from_commission_deduction(employee_name, adjustment_amount)
-
-            # Get the commission deduction record to extract per-project amounts
+            # Get the commission deduction record to extract the ACTUAL per-project
+            # amounts that were applied (stored in /commission_payments by
+            # add_advance_adjustment). This is the source of truth — do not
+            # re-derive the allocation, it can diverge from what was really booked.
             all_projects = fb_get("/projects") or {}
             commission_payments = fb_get("/commission_payments") or {}
             if isinstance(commission_payments, dict):
@@ -13026,6 +13027,13 @@ def _sync_adjustment_to_expense(adjustment_id, adjustment, advance_data, advance
                                     "amount": _safe_float(deduct_amt)
                                 })
                         break
+
+            # Project numbers on the expense = exactly the projects that were
+            # deducted (so the Project Detail P&L can match this expense).
+            project_numbers = [d["project_number"] for d in project_deductions_details if d.get("project_number")]
+            if not project_numbers:
+                # Fallback for older records without a project_deductions map
+                project_numbers = _get_project_numbers_from_commission_deduction(employee_name, adjustment_amount)
 
         # Check if expense already exists for this adjustment
         existing_expense_id = adjustment.get("linked_expense_id")
