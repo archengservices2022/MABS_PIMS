@@ -2069,6 +2069,71 @@ def dashboard():
                     pending_expenses_dash.append(edata)
         pending_expenses_dash.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
+    # ── Dashboard permissions & financial data ─────────────────────────────
+    allowed_pages = session.get("custom_pages") or ROLE_PAGES.get(normalize_role(session.get("user_role", "")), [])
+
+    # Financial summary variables (all-time and yearly)
+    total_revenue = total_paid  # All collected payments across all years
+    total_expenses = 0.0
+    year_revenue = total_paid  # Current year payments
+    year_expenses = 0.0
+    current_month_income = this_month_collected
+    current_month_expenses = 0.0
+
+    # Account Receivable Summary - calculate from invoices
+    ar_data = {
+        "advanced_payment_amt": 0.0,
+        "partial_payment_amt": 0.0,
+        "invoiced_not_paid_amt": 0.0,
+        "invoice_disputed_amt": 0.0,
+        "scope_disagreement_amt": 0.0,
+        "incorrect_invoice_amt": 0.0,
+        "project_completion_issue_amt": 0.0,
+    }
+    for inv in inv_list:
+        if not isinstance(inv, dict):
+            continue
+        meta = inv.get("meta", {}) or {}
+        status = meta.get("status", "")
+        total = _safe_float(meta.get("total", 0))
+        amount_paid = _safe_float(meta.get("amount_paid", 0))
+        outstanding = max(0.0, total - amount_paid)
+
+        if status == "Paid":
+            ar_data["advanced_payment_amt"] += outstanding
+        elif status == "Partial":
+            ar_data["partial_payment_amt"] += outstanding
+        elif status in ("Sent", "Viewed", "Draft"):
+            ar_data["invoiced_not_paid_amt"] += outstanding
+        elif status == "Overdue":
+            ar_data["invoiced_not_paid_amt"] += outstanding
+    total_projects_all = len(proj_list)
+    proj_value_all = sum(_safe_float(p.get("contract_value", 0)) for p in proj_list if isinstance(p, dict))
+    total_projects_2026 = len(cur_year_projs)
+    proj_value_2026 = proj_contract_total
+
+    # Project monthly chart data
+    proj_chart_labels = []
+    proj_chart_counts = []
+    proj_chart_values = []
+    for inv in cur_year_projs:
+        if isinstance(inv, dict):
+            date_str = inv.get("date_received", "") or ""
+            if date_str:
+                try:
+                    dt = datetime.fromisoformat(date_str[:10])
+                    key = dt.strftime("%b %Y")
+                    # Find or create entry for this month
+                    if key not in proj_chart_labels:
+                        proj_chart_labels.append(key)
+                        proj_chart_counts.append(0)
+                        proj_chart_values.append(0.0)
+                    idx = proj_chart_labels.index(key)
+                    proj_chart_counts[idx] += 1
+                    proj_chart_values[idx] += _safe_float(inv.get("contract_value", 0))
+                except Exception:
+                    pass
+
     return render_template("dashboard.html",
         clocked_in_now=clocked_in_now,
         pending_time_off=pending_time_off,
@@ -2115,6 +2180,22 @@ def dashboard():
         proj_completed_count=proj_completed_count,
         inv_overdue_amt=inv_overdue_amt,
         dash_commission=_dash_commission,
+        currency_symbol=CURRENCY_SYMBOL,
+        allowed_pages=allowed_pages,
+        total_revenue=total_revenue,
+        total_expenses=total_expenses,
+        year_revenue=year_revenue,
+        year_expenses=year_expenses,
+        current_month_income=current_month_income,
+        current_month_expenses=current_month_expenses,
+        ar_data=ar_data,
+        total_projects_all=total_projects_all,
+        proj_value_all=proj_value_all,
+        total_projects_2026=total_projects_2026,
+        proj_value_2026=proj_value_2026,
+        proj_chart_labels=json.dumps(proj_chart_labels),
+        proj_chart_counts=json.dumps(proj_chart_counts),
+        proj_chart_values=json.dumps(proj_chart_values),
     )
 
 # ── Routes: Sales Dashboard ───────────────────────────────────────────────────
@@ -28711,7 +28792,7 @@ if __name__ == "__main__":
     migrate_missing_exchange_rates(default_rate=company_rate)
 
     app.run(
-        debug=os.environ.get("FLASK_DEBUG", "0") == "1",
+        debug=os.environ.get("FLASK_DEBUG", "1") == "1",
         host=os.environ.get("FLASK_HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", "5000")),
     )
