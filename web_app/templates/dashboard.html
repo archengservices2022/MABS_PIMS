@@ -954,49 +954,43 @@ const sectionPairs = {
   'recentInvoicesWrap': 'revenueChartWrap'
 };
 
+// Sections whose expanded display is flex (the rest use block).
+const flexSections = ['invDonutWrap', 'projDonutWrap', 'revenueChartWrap'];
+
+// invDonutWrap / projDonutWrap carry Bootstrap's `.d-flex` class, which sets
+// `display:flex !important` — a plain inline `style.display` can't override it,
+// so use setProperty(..., 'important') for both show and hide.
+function setSectionDisplay(section, show) {
+  if (!section) return;
+  if (show) {
+    const displayType = flexSections.includes(section.id) ? 'flex' : 'block';
+    section.style.setProperty('display', displayType, 'important');
+  } else {
+    section.style.setProperty('display', 'none', 'important');
+  }
+}
+
+function setChevron(buttonEl, show) {
+  if (!buttonEl) return;
+  const icon = buttonEl.querySelector('i.collapse-icon');
+  if (icon) icon.style.transform = show ? 'rotate(90deg)' : 'rotate(0deg)';
+}
+
 // Toggle section visibility with synchronized pairs
 function toggleSection(sectionId, buttonEl) {
-  const flexSections = ['invDonutWrap', 'projDonutWrap', 'revenueChartWrap'];
   const section = document.getElementById(sectionId);
   if (!section) return;
 
-  // Get the current computed display value to handle both inline and CSS styles
-  const computedDisplay = window.getComputedStyle(section).display;
-  const isCurrentlyHidden = computedDisplay === 'none';
-  const shouldShow = isCurrentlyHidden;
+  const shouldShow = window.getComputedStyle(section).display === 'none';
 
-  // Toggle main section visibility with correct display type
-  const displayType = flexSections.includes(sectionId) ? 'flex' : 'block';
-  section.style.display = shouldShow ? displayType : 'none';
+  setSectionDisplay(section, shouldShow);
+  setChevron(buttonEl, shouldShow);
 
-  // Toggle the chevron icon rotation
-  const icon = buttonEl.querySelector('i.collapse-icon');
-  if (icon) {
-    icon.style.transform = shouldShow ? 'rotate(90deg)' : 'rotate(0deg)';
-  }
-
-  // Find and toggle paired section
+  // Sync paired section (and its button) to the same state
   const pairedId = sectionPairs[sectionId];
   if (!pairedId) return;
-
-  const pairedSection = document.getElementById(pairedId);
-  if (!pairedSection) return;
-
-  const pairedComputedDisplay = window.getComputedStyle(pairedSection).display;
-  const pairedIsHidden = pairedComputedDisplay === 'none';
-  const pairedDisplayType = flexSections.includes(pairedId) ? 'flex' : 'block';
-
-  // Sync paired section to same state
-  pairedSection.style.display = shouldShow ? pairedDisplayType : 'none';
-
-  // Find and toggle paired button's icon
-  const pairedButton = document.querySelector(`button[onclick*="${pairedId}"]`);
-  if (pairedButton) {
-    const pairedIcon = pairedButton.querySelector('i.collapse-icon');
-    if (pairedIcon) {
-      pairedIcon.style.transform = shouldShow ? 'rotate(90deg)' : 'rotate(0deg)';
-    }
-  }
+  setSectionDisplay(document.getElementById(pairedId), shouldShow);
+  setChevron(document.querySelector(`button[onclick*="${pairedId}"]`), shouldShow);
 }
 
 const labels = {{ chart_labels|safe }};
@@ -1122,7 +1116,7 @@ if (invLabels.length) {
 } else {
   const wrap  = document.getElementById('invDonutWrap');
   const empty = document.getElementById('invEmptyState');
-  if (wrap)  wrap.style.display  = 'none';
+  setSectionDisplay(wrap, false);
   if (empty) empty.style.display = 'flex';
 }
 
@@ -1317,46 +1311,22 @@ if (projCanvas) {
 
 // Initialize collapse/expand state on page load
 document.addEventListener('DOMContentLoaded', function() {
-  // Define which sections should start collapsed (minimized)
-  const collapsedSections = ['invDonutWrap', 'revenueChartWrap', 'recentInvoicesWrap', 'recentProjectsWrap'];
+  // Sections start collapsed (minimized). Paired sections must share the same
+  // initial state, so the two status-breakdown donuts are handled together below.
+  const collapsedSections = ['revenueChartWrap', 'recentInvoicesWrap', 'recentProjectsWrap'];
 
   collapsedSections.forEach(sectionId => {
     const section = document.getElementById(sectionId);
     const button = document.querySelector(`button[onclick*="${sectionId}"]`);
-
     if (section && button) {
-      // Hide the section
-      section.style.display = 'none';
-
-      // Rotate chevron to indicate collapsed (0deg)
-      const icon = button.querySelector('i.collapse-icon');
-      if (icon) {
-        icon.style.transform = 'rotate(0deg)';
-      }
+      setSectionDisplay(section, false);
+      setChevron(button, false);
     }
   });
 
-  // Define which sections should start expanded (projDonutWrap only)
-  const expandedSections = ['projDonutWrap'];
-
-  expandedSections.forEach(sectionId => {
-    const section = document.getElementById(sectionId);
-    const button = document.querySelector(`button[onclick*="${sectionId}"]`);
-
-    if (section && button) {
-      // Set correct display type based on section type
-      const flexSections = ['invDonutWrap', 'projDonutWrap', 'revenueChartWrap'];
-      const displayType = flexSections.includes(sectionId) ? 'flex' : 'block';
-      section.style.display = displayType;
-
-      // Rotate chevron to indicate expanded (90deg)
-      const icon = button.querySelector('i.collapse-icon');
-      if (icon) {
-        icon.style.transform = 'rotate(90deg)';
-      }
-    }
-  });
-
+  // The Invoice / Project status breakdowns render expanded by default in the
+  // markup and toggle as a pair on click — no init needed. (The empty-state
+  // handler above may hide invDonutWrap when there are no invoices; leave it.)
 });
 
 </script>
