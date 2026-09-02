@@ -11795,12 +11795,30 @@ def financial_byproject_export(fmt):
         if not isinstance(p_cos, list): p_cos = list(p_cos.values()) if isinstance(p_cos, dict) else []
         p_contract = _safe_float(p.get("contract_value", 0))
 
-        # Calculate project expenses (regular expenses only, exclude commission payments)
+        # Calculate project expenses (regular expenses only, exclude commission payments).
+        # Mirror the Project Detail P&L: single-project expenses match on
+        # project_number; multi-project adjustment expenses (e.g. commission
+        # deductions) match on project_numbers and use this project's share
+        # from adjustment_payment_details.
         p_expenses = 0.0
         for e in exp_list:
+            if e.get("is_commission"):
+                continue
             exp_pnum = e.get("project_number", "")
-            if exp_pnum == pnum and not e.get("is_commission"):
+            exp_pnums = e.get("project_numbers", []) or []
+            if exp_pnum == pnum:
                 p_expenses += _safe_float(e.get("amount", 0))
+            elif pnum in exp_pnums:
+                adj_details = e.get("adjustment_payment_details", []) or []
+                _matched = False
+                if isinstance(adj_details, list):
+                    for _detail in adj_details:
+                        if isinstance(_detail, dict) and _detail.get("project_number") == pnum:
+                            p_expenses += _safe_float(_detail.get("amount", 0))
+                            _matched = True
+                            break
+                if not _matched and not adj_details:
+                    p_expenses += _safe_float(e.get("amount", 0))
 
         # Add commission expense (calculate from project's commission override settings)
         p_comm_earned = 0.0
@@ -14913,12 +14931,30 @@ def financial():
         p_not_invoiced = p_contract - p_invoiced
         p_outstanding = max(0.0, p_contract - p_collected)
 
-        # Calculate project expenses (regular expenses only, exclude commission payments)
+        # Calculate project expenses (regular expenses only, exclude commission payments).
+        # Mirror the Project Detail P&L: single-project expenses match on
+        # project_number; multi-project adjustment expenses (e.g. commission
+        # deductions) match on project_numbers and use this project's share
+        # from adjustment_payment_details.
         p_expenses = 0.0
         for e in exp_list:
+            if e.get("is_commission"):
+                continue
             exp_pnum = e.get("project_number", "")
-            if exp_pnum == pnum and not e.get("is_commission"):
+            exp_pnums = e.get("project_numbers", []) or []
+            if exp_pnum == pnum:
                 p_expenses += _safe_float(e.get("amount", 0))
+            elif pnum in exp_pnums:
+                adj_details = e.get("adjustment_payment_details", []) or []
+                _matched = False
+                if isinstance(adj_details, list):
+                    for _detail in adj_details:
+                        if isinstance(_detail, dict) and _detail.get("project_number") == pnum:
+                            p_expenses += _safe_float(_detail.get("amount", 0))
+                            _matched = True
+                            break
+                if not _matched and not adj_details:
+                    p_expenses += _safe_float(e.get("amount", 0))
 
         # Add commission expense (calculate from project's commission override settings)
         p_comm_earned = 0.0
