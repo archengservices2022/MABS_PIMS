@@ -287,7 +287,7 @@ a[href*="filter_expense"]:hover {
   <li class="nav-item">
     <a class="nav-link {{ 'active' if active_tab == 'income' else '' }}" data-bs-toggle="tab" href="#tab-income">
       <i class="bi bi-cash-stack me-1"></i>Income
-      {% if rev_list %}<span class="badge bg-secondary ms-1">{{ rev_list|length }}</span>{% endif %}
+      {% if income_summary.get('count', 0) %}<span class="badge bg-secondary ms-1">{{ income_summary.get('count', 0) }}</span>{% endif %}
     </a>
   </li>
   <li class="nav-item">
@@ -548,13 +548,13 @@ a[href*="filter_expense"]:hover {
 <div class="tab-pane fade {{ 'show active' if active_tab == 'income' else '' }}" id="tab-income">
 
   <!-- ?? Summary Cards ?? -->
-  {% set inc = namespace(subtotal=0, tax=0, total=0, paid=0) %}
-  {% for r in rev_list %}
-    {% set inc.subtotal = inc.subtotal + (r.get('total',0)|float) - (r.get('tax_amount',0)|float) %}
-    {% set inc.tax      = inc.tax      + (r.get('tax_amount',0)|float) %}
-    {% set inc.total    = inc.total    + (r.get('total',0)|float) %}
-    {% set inc.paid     = inc.paid     + (r.get('amount_paid',0)|float) + (r.get('tax_paid',0)|float) %}
-  {% endfor %}
+  {# income_summary is computed backend-side with one figure per unique invoice
+     (rev_list is expanded per payment, so summing it here would multi-count) #}
+  {% set inc = namespace(
+       subtotal = income_summary.get('subtotal', 0)|float,
+       tax      = income_summary.get('tax', 0)|float,
+       total    = income_summary.get('total', 0)|float,
+       paid     = income_summary.get('paid', 0)|float) %}
   <div class="row g-3 mb-4">
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-teal">
@@ -589,7 +589,7 @@ a[href*="filter_expense"]:hover {
   <div class="card-panel">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h6 class="panel-title mb-0">Income — Paid &amp; Partial Invoices</h6>
-      <span class="text-muted small" id="incomeCountInfo">{{ rev_list|length }} entries</span>
+      <span class="text-muted small" id="incomeCountInfo">{{ income_summary.get('count', 0) }} entries</span>
     </div>
 
     <!-- Income Filter Bar -->
@@ -692,7 +692,8 @@ a[href*="filter_expense"]:hover {
               data-year="{{ inv_date[:4] if inv_date else '' }}"
               {%- endif %}
               data-status="{{ r.get('status','') }}"
-              data-amount="{{ ((r.get('amount_paid',0)|float) + (r.get('tax_paid',0)|float))|float }}"
+              {# total paid for the whole invoice (all payments + tax), not just the first payment row #}
+              data-amount="{{ r.get('_total_amount_paid', (r.get('amount_paid',0)|float) + (r.get('tax_paid',0)|float))|float }}"
               data-subtotal="{{ ((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}"
               data-tax="{{ r.get('tax_amount',0)|float }}"
               data-total="{{ r.get('total',0)|float }}"
@@ -763,7 +764,7 @@ a[href*="filter_expense"]:hover {
         <tfoot class="table-light fw-bold">
           <tr>
             <td colspan="10" class="text-end">Total Collected (including tax)</td>
-            <td id="incomeTotalCell" class="text-end text-success">{{ currency_symbol }}{{ "{:,.2f}".format(total_collected) }}</td>
+            <td id="incomeTotalCell" class="text-end text-success">{{ currency_symbol }}{{ "{:,.2f}".format(inc.paid) }}</td>
           </tr>
         </tfoot>
       </table>
@@ -4070,7 +4071,8 @@ function viewReceipt(expId) {
           <tr class="bp-row"
               data-search="{{ (row.project_number ~ ' ' ~ row.project_name ~ ' ' ~ (row.company_name or row.client_name or ''))|lower }}"
               data-status="{{ row.status|lower }}"
-              data-date="{{ row.start_date or '' }}"
+              {# date filter is by project RECEIVED date (fall back to start date) #}
+              data-date="{{ row.date_received or row.start_date or '' }}"
               data-invoiced="{{ row.invoiced }}"
               data-paid="{{ row.paid }}"
               data-expenses="{{ row.expenses }}"
@@ -4215,6 +4217,14 @@ function viewReceipt(expId) {
   (function(){
     var PS=20, pg=1;
     var BP_SYM = {{ currency_symbol | tojson }};
+    var BP_YEAR = {{ stat_card_year | tojson }};
+    // By Project defaults to the present running year. Filters override it;
+    // Clear returns to it.
+    function bpSetYearDefault(){
+      var f=document.getElementById('bpDateFrom'), t=document.getElementById('bpDateTo');
+      if(f) f.value = BP_YEAR + '-01-01';
+      if(t) t.value = BP_YEAR + '-12-31';
+    }
     /* Index every bp-row by its position so we can look up numbers later */
     var BP_ROWS = [];
     document.querySelectorAll('#byProjectTableBody tr.bp-row').forEach(function(r,i){
@@ -4287,9 +4297,12 @@ function viewReceipt(expId) {
         if(!hide) matched++;
       });
       var total=document.querySelectorAll('#byProjectTableBody tr.bp-row').length;
+      // The current-year default is not a "filter" — don't nag about it
+      var isDefaultOnly = !q && !status && !client
+        && from===(BP_YEAR+'-01-01') && to===(BP_YEAR+'-12-31');
       var alert=document.getElementById('bpFilterAlert');
       if(alert){
-        if(matched<total){
+        if(matched<total && !isDefaultOnly){
           alert.style.display='';
           alert.textContent='Showing '+matched+' of '+total+' projects matching current filters.';
         } else { alert.style.display='none'; }
@@ -4298,20 +4311,29 @@ function viewReceipt(expId) {
       pg=1; render();
     };
     window.bpSetDateRange=function(range){
+      // Match the Projects tab (setProjRange): This Month → whole month,
+      // This Year → whole calendar year, Last 30 Days → today-30..today.
       var now=new Date(), from,to;
       var pad=function(n){return String(n).padStart(2,'0');};
       var fmt=function(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());};
-      to=fmt(now);
-      if(range==='month'){from=fmt(new Date(now.getFullYear(),now.getMonth(),1));}
-      else if(range==='year'){from=fmt(new Date(now.getFullYear(),0,1));}
-      else{var d30=new Date(now);d30.setDate(d30.getDate()-30);from=fmt(d30);}
+      if(range==='month'){
+        from=fmt(new Date(now.getFullYear(),now.getMonth(),1));
+        to=fmt(new Date(now.getFullYear(),now.getMonth()+1,0));
+      } else if(range==='year'){
+        from=now.getFullYear()+'-01-01';
+        to=now.getFullYear()+'-12-31';
+      } else {
+        var d30=new Date(now);d30.setDate(d30.getDate()-30);
+        from=fmt(d30);to=fmt(now);
+      }
       document.getElementById('bpDateFrom').value=from;
       document.getElementById('bpDateTo').value=to;
       bpApplyFilters();
     };
     window.bpClearFilters=function(){
-      ['bpSearch','bpDateFrom','bpDateTo'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+      var s=document.getElementById('bpSearch'); if(s) s.value='';
       ['bpStatusFilter','bpClientFilter'].forEach(function(id){var el=document.getElementById(id);if(el)el.selectedIndex=0;});
+      bpSetYearDefault();          // back to present running year, not "all"
       bpApplyFilters();
     };
     function render(){
@@ -4333,6 +4355,9 @@ function viewReceipt(expId) {
         +'</div></div>';
     }
     window.bpGo=function(p){var tot=rows().length;pg=Math.max(1,Math.min(p,Math.ceil(tot/PS)));render();window.scrollTo({top:document.getElementById('tab-by-project').offsetTop-80,behavior:'smooth'});};
+    // Initial view: present running year only
+    bpSetYearDefault();
+    bpApplyFilters();
     render();
     document.addEventListener('shown.bs.tab',function(e){var t=e.target.getAttribute('href')||'';if(t==='#tab-by-project'){pg=1;render();}});
   })();

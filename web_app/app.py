@@ -14694,6 +14694,31 @@ def financial():
     # Re-sort after adding missing invoices
     rev_list = sorted(rev_list, key=sort_key_invoice, reverse=True)
 
+    # Income tab summary cards — collapse to ONE figure per unique invoice.
+    # rev_list is expanded to one row per payment, so summing it directly
+    # multi-counts each invoice's total / tax. Group by invoice, take the
+    # invoice-level figures once and sum the per-payment amounts.
+    _income_by_invoice: Dict[str, dict] = {}
+    for r in rev_list:
+        _inv_key = r.get("invoice_number") or r.get("invoice_id") or f"_row{id(r)}"
+        if _inv_key not in _income_by_invoice:
+            _income_by_invoice[_inv_key] = {
+                "total":      _safe_float(r.get("total", 0)),
+                "tax_amount": _safe_float(r.get("tax_amount", 0)),
+                "tax_paid":   _safe_float(r.get("tax_paid", 0)),
+                "amount_paid": 0.0,
+            }
+        _income_by_invoice[_inv_key]["amount_paid"] += _safe_float(r.get("amount_paid", 0))
+
+    _iv = list(_income_by_invoice.values())
+    income_summary = {
+        "subtotal": sum(v["total"] - v["tax_amount"] for v in _iv),
+        "tax":      sum(v["tax_amount"] for v in _iv),
+        "total":    sum(v["total"] for v in _iv),
+        "paid":     sum(v["amount_paid"] + v["tax_paid"] for v in _iv),
+        "count":    len(_iv),
+    }
+
     # Recalculate statuses based on actual payments
     for inv in inv_list:
         inv["meta"]["status"] = _calculate_invoice_status(inv)
@@ -14867,12 +14892,31 @@ def financial():
     # Load the whole commission table once, not once per project (was ~300 extra
     # Firebase round trips on a data set this size).
     _all_project_commissions = fb_get("/project_commissions") or {}
+
+    def _iso_date(s):
+        """Best-effort normalise a date string to YYYY-MM-DD so the client-side
+        By Project date filters (which do plain ISO string comparisons) work
+        regardless of how the value was stored (ISO, MM-DD-YYYY, slashes)."""
+        if not s or not isinstance(s, str):
+            return ""
+        s = s.strip()[:10]
+        if len(s) == 10 and s[4] == "-" and s[7] == "-":
+            return s
+        for _fmt in ("%m-%d-%Y", "%d-%m-%Y", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d"):
+            try:
+                return datetime.strptime(s, _fmt).strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        return s
+
     project_pnl = []
     for p in projects_list:
         pnum = p.get("project_number", "")
         pid = p.get("firebase_id", "")
 
-        # Filter by project RECEIVED DATE (only include projects received in current running year)
+        # Filter by project RECEIVED DATE. Include the previous, current and
+        # next running year so the client-side date filter can drill into any
+        # of them (matches the Projects tab / Income tab scope).
         proj_received_date = p.get("date_received", "")
         if proj_received_date:
             proj_year = _extract_year_from_date(proj_received_date)
@@ -14880,8 +14924,7 @@ def financial():
             # Skip projects with no received date
             continue
 
-        # Only include projects received in current running year
-        if proj_year != stat_card_year:
+        if proj_year not in (prev_year, stat_card_year, stat_card_year + 1):
             continue
 
         # Load commission data for this project (for accrued commission expense)
@@ -14998,7 +15041,8 @@ def financial():
             "company_name":   p.get("company_name",""),
             "client_name":    p.get("client_name",""),
             "status":         p.get("status",""),
-            "start_date":     (p.get("start_date") or p.get("project_start_date") or p.get("created_at",""))[:10],
+            "start_date":     _iso_date(p.get("start_date") or p.get("project_start_date") or p.get("created_at","")),
+            "date_received":  _iso_date(p.get("date_received") or p.get("received_date") or ""),
             "base_contract":  p_base_contract,
             "contract_value": p_contract,
             "co_total":       p_co_total,
@@ -16146,6 +16190,7 @@ def financial():
         filter_expense=filter_expense,
         selected_year=selected_year,
         rev_list=rev_list,
+        income_summary=income_summary,
         prior_outstanding_invs=prior_outstanding_invs,
         total_collected=total_collected,
         overview_outstanding=overview_outstanding,
