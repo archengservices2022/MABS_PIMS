@@ -988,9 +988,16 @@ function toggleSection(sectionId, buttonEl) {
 
   // Sync paired section (and its button) to the same state
   const pairedId = sectionPairs[sectionId];
-  if (!pairedId) return;
-  setSectionDisplay(document.getElementById(pairedId), shouldShow);
-  setChevron(document.querySelector(`button[onclick*="${pairedId}"]`), shouldShow);
+  if (pairedId) {
+    setSectionDisplay(document.getElementById(pairedId), shouldShow);
+    setChevron(document.querySelector(`button[onclick*="${pairedId}"]`), shouldShow);
+  }
+
+  // Charts created while their container was hidden render at 0px — nudge
+  // Chart.js (responsive:true) to refit once the section becomes visible.
+  if (shouldShow) {
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
+  }
 }
 
 const labels = {{ chart_labels|safe }};
@@ -1311,9 +1318,13 @@ if (projCanvas) {
 
 // Initialize collapse/expand state on page load
 document.addEventListener('DOMContentLoaded', function() {
-  // Sections start collapsed (minimized). Paired sections must share the same
-  // initial state, so the two status-breakdown donuts are handled together below.
-  const collapsedSections = ['revenueChartWrap', 'recentInvoicesWrap', 'recentProjectsWrap'];
+  // All collapsible sections start collapsed (minimized) — the user expands the
+  // ones they want. Paired sections share this state so a click never makes the
+  // sibling jump.
+  const collapsedSections = [
+    'invDonutWrap', 'projDonutWrap',
+    'revenueChartWrap', 'recentInvoicesWrap', 'recentProjectsWrap'
+  ];
 
   collapsedSections.forEach(sectionId => {
     const section = document.getElementById(sectionId);
@@ -1323,10 +1334,6 @@ document.addEventListener('DOMContentLoaded', function() {
       setChevron(button, false);
     }
   });
-
-  // The Invoice / Project status breakdowns render expanded by default in the
-  // markup and toggle as a pair on click — no init needed. (The empty-state
-  // handler above may hide invDonutWrap when there are no invoices; leave it.)
 });
 
 </script>
