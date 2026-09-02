@@ -2072,15 +2072,59 @@ def dashboard():
     # ── Dashboard permissions & financial data ─────────────────────────────
     allowed_pages = session.get("custom_pages") or ROLE_PAGES.get(normalize_role(session.get("user_role", "")), [])
 
-    # Financial summary variables (all-time and yearly)
-    total_revenue = total_paid  # All collected payments across all years
-    total_expenses = 0.0
-    year_revenue = total_paid  # Current year payments
-    year_expenses = 0.0
-    current_month_income = this_month_collected
-    current_month_expenses = 0.0
+    # ── Financial summary (All-time / This-year / This-month) ─────────────────
+    # Revenue = collected invoice payments by PAYMENT DATE — mirrors the
+    #   Invoicing "Collected" KPI (all payments when unfiltered; year/month
+    #   slices when the date range is a calendar year / month).
+    # Expenses = balance_sheet_expenses by EXPENSE DATE — mirrors the
+    #   Financial → Expenses tab cards ("Across All Expenses" / "This Month",
+    #   and the "This Year" filter).
+    _fin_year   = cur_year                       # "YYYY" string
+    _fin_month  = this_month_str                 # "YYYY-MM" string
 
-    # Account Receivable Summary - calculate from invoices
+    total_revenue = 0.0   # all payment dates
+    year_revenue  = 0.0   # payments dated in the current year
+    for _inv in inv_list:
+        if not isinstance(_inv, dict):
+            continue
+        for _pay in list(_inv.get("payment_log", []) or []) + list(_inv.get("tax_payments", []) or []):
+            _amt = _safe_float(_pay.get("amount", 0))
+            _pdate = str(_pay.get("date", "") or "")
+            total_revenue += _amt
+            if _pdate.startswith(_fin_year):
+                year_revenue += _amt
+    current_month_income = this_month_collected
+
+    total_expenses = 0.0
+    year_expenses = 0.0
+    current_month_expenses = 0.0
+    if isinstance(expenses, dict):
+        for _exp in expenses.values():
+            if not isinstance(_exp, dict):
+                continue
+            _eamt = _safe_float(_exp.get("amount", 0))
+            # Skip closed / fully-adjusted employee advances, matching the
+            # Financial → Expenses tab list (exp_list_for_tab).
+            if _exp.get("expense_type") == "Employee Advance" and _eamt <= 0:
+                continue
+            _edate = str(_exp.get("date", "") or "")
+            total_expenses += _eamt
+            if _edate[:4] == _fin_year:
+                year_expenses += _eamt
+            if _edate[:7] == _fin_month:
+                current_month_expenses += _eamt
+
+    # Account Receivable Summary
+    # Mirror the Financial page's A/R Summary tab (financial.html → initArSummary)
+    # exactly so the dashboard and Financial → Receivables show identical values.
+    # Rules replicated from that JS:
+    #   • Invoice status is recalculated with _calculate_invoice_status().
+    #   • Paid / Cancelled invoices are excluded.
+    #   • Amount = (total − amount_paid) for Partial, otherwise the full total.
+    #   • Category is meta.ar_category when set, else inferred from status;
+    #     unknown/Draft invoices fall into "Others / On Hold".
+    #   • "Advance Payment Received" comes from employee advances with a
+    #     remaining balance, NOT from invoices.
     ar_data = {
         "advanced_payment_amt": 0.0,
         "partial_payment_amt": 0.0,
@@ -2089,24 +2133,61 @@ def dashboard():
         "scope_disagreement_amt": 0.0,
         "incorrect_invoice_amt": 0.0,
         "project_completion_issue_amt": 0.0,
+        "others_on_hold_amt": 0.0,
     }
+    _AR_CATEGORY_KEY = {
+        "Advance Payment Received":      "advanced_payment_amt",
+        "Invoiced - Not Paid":           "invoiced_not_paid_amt",
+        "Partial Payment - Outstanding": "partial_payment_amt",
+        "Invoice Disputed":              "invoice_disputed_amt",
+        "Scope Disagreement":            "scope_disagreement_amt",
+        "Incorrect Invoice":             "incorrect_invoice_amt",
+        "Project Completion Issue":      "project_completion_issue_amt",
+        "Others / On Hold":              "others_on_hold_amt",
+    }
+
+    def _ar_categorize(_meta):
+        _cat = (_meta.get("ar_category") or "").strip()
+        if _cat:
+            return _cat
+        _st = (_meta.get("status") or "").strip()
+        if _st == "Invoice Disputed":
+            return "Invoice Disputed"
+        if _st == "Incorrect Invoice":
+            return "Incorrect Invoice"
+        if _st == "Partial":
+            return "Partial Payment - Outstanding"
+        if _st in ("Paid", "Cancelled"):
+            return None
+        if _st in ("Sent", "Viewed", "Overdue"):
+            return "Invoiced - Not Paid"
+        return "Others / On Hold"
+
     for inv in inv_list:
         if not isinstance(inv, dict):
             continue
-        meta = inv.get("meta", {}) or {}
-        status = meta.get("status", "")
-        total = _safe_float(meta.get("total", 0))
-        amount_paid = _safe_float(meta.get("amount_paid", 0))
-        outstanding = max(0.0, total - amount_paid)
+        meta = dict(inv.get("meta", {}) or {})
+        meta["status"] = _calculate_invoice_status(inv)
+        status = meta["status"]
+        if status in ("Paid", "Cancelled"):
+            continue
+        total = _safe_float(meta.get("total", 0)) or _safe_float(inv.get("amount", 0))
+        amount = (total - _safe_float(meta.get("amount_paid", 0))) if status == "Partial" else total
+        if amount <= 0:
+            continue
+        _key = _AR_CATEGORY_KEY.get(_ar_categorize(meta))
+        if _key:
+            ar_data[_key] += amount
 
-        if status == "Paid":
-            ar_data["advanced_payment_amt"] += outstanding
-        elif status == "Partial":
-            ar_data["partial_payment_amt"] += outstanding
-        elif status in ("Sent", "Viewed", "Draft"):
-            ar_data["invoiced_not_paid_amt"] += outstanding
-        elif status == "Overdue":
-            ar_data["invoiced_not_paid_amt"] += outstanding
+    # Advance Payment Received — employee advances still carrying a balance
+    _dash_adv_raw = fb_get("/employee_advances") or {}
+    if isinstance(_dash_adv_raw, dict):
+        for _adv in _dash_adv_raw.values():
+            if not isinstance(_adv, dict):
+                continue
+            _adv_balance = _safe_float(_adv.get("amount", 0)) - _safe_float(_adv.get("adjusted", 0))
+            if _adv_balance > 0:
+                ar_data["advanced_payment_amt"] += _adv_balance
     total_projects_all = len(proj_list)
     proj_value_all = sum(_safe_float(p.get("contract_value", 0)) for p in proj_list if isinstance(p, dict))
     total_projects_2026 = len(cur_year_projs)
