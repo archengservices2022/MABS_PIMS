@@ -5596,36 +5596,6 @@ function viewReceipt(expId) {
     </div>
   </div>
 
-  <!-- Full Details Table -->
-  <div class="card-panel">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <h6 class="section-heading mb-0"><i class="bi bi-list-check me-2"></i>All Outstanding Invoices</h6>
-      <div class="d-flex gap-2 flex-wrap align-items-center">
-        <input type="text" id="arSearchBox" class="form-control form-control-sm" placeholder="Search invoices..." style="width:200px;">
-        <select id="arCategoryFilter" class="form-select form-select-sm" style="width:auto;min-width:150px;">
-          <option value="">All Categories</option>
-        </select>
-      </div>
-    </div>
-    <div id="arPaginationInfo" class="text-muted mb-2" style="font-size:12px;"></div>
-    <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0" id="arInvoicesTable" style="font-size:13px;">
-        <thead>
-          <tr>
-            <th>Invoice #</th>
-            <th>Client</th>
-            <th>Category</th>
-            <th class="text-end">Amount</th>
-            <th class="text-center">Days Pending</th>
-            <th class="text-center">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
 </div><!-- /tab-ar-summary -->
 
 </div><!-- /tab-content -->
@@ -5920,10 +5890,6 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         clients.add(adv.employee_name);
       }
 
-      if (daysPending >= 90) {
-        overdueAmount += balance;
-      }
-
       if (arData['Advance Payment Received']) {
         arData['Advance Payment Received'].amount += balance;
         arData['Advance Payment Received'].count += 1;
@@ -5973,7 +5939,10 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         clients.add(clientName);
       }
 
-      if (daysPending >= 90) {
+      // Overdue Amount = outstanding balance of invoices past their due date
+      const dueStr = meta.due_date || inv.due_date || '';
+      const dueDate = dueStr ? new Date(dueStr) : null;
+      if (status === 'Overdue' || (dueDate && !isNaN(dueDate) && dueDate < today)) {
         overdueAmount += amount;
       }
 
@@ -6037,36 +6006,6 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 
     // Update total outstanding display
     document.getElementById('arTotalOutstandingDisplay').textContent = currencySymbol + totalOutstanding.toLocaleString('en-US', {minimumFractionDigits: 2});
-
-    // Build invoices table
-    const invTable = document.getElementById('arInvoicesTable').querySelector('tbody');
-    const allInvoices = [];
-    AR_CATEGORIES.forEach(cat => {
-      arData[cat.name].invoices.forEach(inv => {
-        allInvoices.push({...inv, category: cat.name});
-      });
-    });
-    allInvoices.sort((a, b) => b.daysPending - a.daysPending);
-
-    invTable.innerHTML = allInvoices.length === 0 ?
-      '<tr><td colspan="6" class="text-center text-muted py-4">No outstanding invoices or advances</td></tr>' :
-      allInvoices.map(inv => {
-        const statusColor = inv.daysPending >= 90 ? 'danger' : inv.daysPending >= 60 ? 'warning' : 'info';
-        const categoryDisplay = inv.isAdvance ? 'Advance Payment' : inv.category;
-        return `<tr>
-          <td style="font-weight:600;">${inv.number}</td>
-          <td>${inv.client}</td>
-          <td>${categoryDisplay}</td>
-          <td class="text-end" style="color:#DC2626;font-weight:600;">${currencySymbol}${inv.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-          <td class="text-center">${inv.daysPending} days</td>
-          <td class="text-center"><span class="badge bg-${statusColor}">${inv.daysPending >= 90 ? 'Overdue' : 'Pending'}</span></td>
-        </tr>`;
-      }).join('');
-
-    // Populate category filter
-    const catFilter = document.getElementById('arCategoryFilter');
-    catFilter.innerHTML = '<option value="">All Categories</option>' +
-      AR_CATEGORIES.map(cat => `<option value="${cat.name}">${cat.name}</option>`).join('');
   }
 
   // Initialize when DOM is ready
