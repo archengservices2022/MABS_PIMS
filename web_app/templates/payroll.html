@@ -2509,11 +2509,10 @@ function renderCommissionTable() {
   const searchVal = document.getElementById('commSearchSalesperson').value.toLowerCase();
   const statusVal = document.getElementById('commFilterStatus').value;
 
-  const filtered = allCommissions.filter(comm => {
-    const salespersonMatch = (comm.salesperson || '').toLowerCase().includes(searchVal);
-    const statusMatch = !statusVal || comm.status === statusVal;
-    return salespersonMatch && statusMatch;
-  });
+  // Search filters the raw rows; the status filter is applied to the
+  // per-salesperson aggregate (below) so it matches the displayed status.
+  const filtered = allCommissions.filter(comm =>
+    (comm.salesperson || '').toLowerCase().includes(searchVal));
 
   if (filtered.length === 0) {
     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:40px;">No commissions found</td></tr>';
@@ -2525,7 +2524,7 @@ function renderCommissionTable() {
   updateFilteredCommissionSummary(filtered);
 
   // Always show salesperson summary
-  renderSalespersonSummary(filtered, tbody);
+  renderSalespersonSummary(filtered, tbody, statusVal);
 }
 
 function updateFilteredCommissionSummary(filtered) {
@@ -2557,7 +2556,7 @@ function updateFilteredCommissionSummary(filtered) {
   document.getElementById('cardCommOutstanding').textContent = CURRENCY_SYMBOL + fmt(totalOutstanding);
 }
 
-function renderSalespersonSummary(filtered, tbody) {
+function renderSalespersonSummary(filtered, tbody, statusFilter) {
   // Update table headers for salesperson summary view
   const thead = document.querySelector('#commission thead tr');
   if (thead) {
@@ -2605,9 +2604,10 @@ function renderSalespersonSummary(filtered, tbody) {
     const uniqueProjects = new Set(personComms.map(c => c.project_number || c.project_id || 'Unknown'));
     const projectCount = uniqueProjects.size;
 
-    // Get status from commissions (mostly pending or paid)
-    const isPaid = personComms.every(c => c.status === 'Paid' || c.status === 'Fully Adjusted');
-    const status = isPaid ? 'Paid' : 'Pending';
+    // Status is driven purely by the aggregate remaining balance
+    // (Commission Earned − Adjusted − Amount Paid): 0 → Paid, otherwise Pending.
+    const status = remaining <= 0.01 ? 'Paid' : 'Pending';
+    if (statusFilter && status !== statusFilter) return;  // status dropdown
     const statusBadgeClass = status === 'Paid' ? 'badge bg-success' : 'badge bg-warning text-dark';
     const statusIcon = status === 'Paid' ? '<i class="bi bi-check-circle me-1"></i>' : '';
 
@@ -2625,7 +2625,7 @@ function renderSalespersonSummary(filtered, tbody) {
     `;
   });
 
-  tbody.innerHTML = html;
+  tbody.innerHTML = html || '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:40px;">No commissions found</td></tr>';
 }
 
 function showSalespersonProjects(personName) {
