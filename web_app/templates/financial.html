@@ -5291,7 +5291,7 @@ function viewReceipt(expId) {
   {% set comm_total_earned = project_commissions|sum(attribute='commission_amount') | default(0, true) | float %}
   {% set comm_total_adjusted = project_commissions|sum(attribute='adjusted_amount') | default(0, true) | float %}
   {% set comm_total_paid = project_commissions|sum(attribute='paid_amount') | default(0, true) | float %}
-  {% set comm_total_outstanding = [comm_total_earned - comm_total_adjusted - comm_total_paid, 0] | max %}
+  {% set comm_total_outstanding = project_commissions|sum(attribute='remaining_due') | default(0, true) | float %}
   <div class="row g-3 mb-4">
     <div class="col-12 col-md-6 col-lg-3">
       <div class="card-panel text-center">
@@ -5380,21 +5380,11 @@ function viewReceipt(expId) {
         </thead>
         <tbody>
           {% for pc in project_commissions %}
-          {% set comm_amt = pc.get('commission_amount', 0) | float %}
-          {% set adj_amt = pc.get('adjusted_amount', 0) | float %}
+          {# paid / remaining / status come straight from the backend so this
+             table matches the Commission Details page exactly #}
           {% set paid = pc.get('paid_amount', 0) | float %}
-          {% set remaining = (comm_amt - adj_amt - paid) | float %}
-
-          {# Calculate status with new logic #}
-          {% if remaining <= 0.01 %}
-            {% if paid <= 0.01 and adj_amt > 0.01 %}
-              {% set display_status = 'Fully Adjusted' %}
-            {% else %}
-              {% set display_status = 'Paid' %}
-            {% endif %}
-          {% else %}
-            {% set display_status = 'Pending' %}
-          {% endif %}
+          {% set remaining = pc.get('remaining_due', 0) | float %}
+          {% set display_status = pc.get('status', 'Pending') %}
 
           <tr data-sp="{{ pc.get('salesperson','') }}" data-status="{{ display_status }}" data-amount="{{ pc.get('commission_amount',0)|float }}" data-adjusted="{{ pc.get('adjusted_amount',0)|float }}" data-paid="{{ pc.get('paid_amount',0)|float }}" data-remaining="{{ pc.get('remaining_due',0)|float }}" data-deduction-status="{{ pc.get('deduction_status','not_covered') }}">
             <td class="fw-semibold">
@@ -5429,29 +5419,9 @@ function viewReceipt(expId) {
               <strong>{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('remaining_due',0)|float) }}</strong>
             </td>
             <td class="text-center">
-              {% set commission_amt = pc.get('commission_amount', 0) | float %}
-              {% set total_adjusted = pc.get('adjusted_amount', 0) | float %}
-              {% set paid_amt = pc.get('paid_amount', 0) | float %}
-              {% set remaining = (commission_amt - total_adjusted - paid_amt) | float %}
-
-              {# Status determination logic based on remaining balance, paid amount, and adjusted amount #}
-              {% if remaining <= 0.01 %}
-                {# Remaining balance is 0 #}
-                {% if paid_amt <= 0.01 and total_adjusted > 0.01 %}
-                  {% set display_status = 'Fully Adjusted' %}
-                {% elif paid_amt > 0.01 and total_adjusted > 0.01 %}
-                  {% set display_status = 'Paid' %}
-                {% elif paid_amt > 0.01 and total_adjusted <= 0.01 %}
-                  {% set display_status = 'Paid' %}
-                {% elif paid_amt <= 0.01 and total_adjusted <= 0.01 %}
-                  {% set display_status = 'Paid' %}
-                {% else %}
-                  {% set display_status = 'Paid' %}
-                {% endif %}
-              {% else %}
-                {# Remaining balance is greater than 0 #}
-                {% set display_status = 'Pending' %}
-              {% endif %}
+              {# status comes from the backend (_calculate_commission_status),
+                 same as the Commission Details page #}
+              {% set display_status = pc.get('status', 'Pending') %}
 
               {% if display_status == 'Fully Adjusted' %}
               <div>
@@ -6486,18 +6456,19 @@ function backfillCommissions(btn) {
     var totalEarned = 0;
     var totalAdjusted = 0;
     var totalPaid = 0;
+    var totalOutstanding = 0;
 
     visibleRows.forEach(function(row) {
       var amount = parseFloat(row.dataset.amount || '0');
       var adjusted = parseFloat(row.dataset.adjusted || '0');
       var paid = parseFloat(row.dataset.paid || '0');
+      var remaining = parseFloat(row.dataset.remaining || '0');
 
       totalEarned += amount;
       totalAdjusted += adjusted;
       totalPaid += paid;
+      totalOutstanding += remaining;
     });
-
-    var totalOutstanding = totalEarned - totalAdjusted - totalPaid;
 
     // Update the summary cards
     var format = function(num) {

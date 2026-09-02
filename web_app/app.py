@@ -16002,19 +16002,19 @@ def financial():
 
         pc["adjustment_numbers"] = ", ".join(adjustment_numbers) if adjustment_numbers else "—"
 
-        # Always recalculate remaining_due to ensure accuracy
+        # Compute paid / remaining / status EXACTLY like the Commission Details
+        # page (commission_detail route, ~line 10333): remaining = commission -
+        # deducted - paid (never negative), status from the shared helper, and
+        # the stored paid_amount used as-is (no status-based fallback). Keeps
+        # both screens in lock-step.
         commission_amount = _safe_float(pc.get("commission_amount", 0))
         total_deducted = _safe_float(pc.get("total_deducted", 0))
-
-        # Get paid_amount: either from Firebase or calculate based on status
         paid_amount = _safe_float(pc.get("paid_amount", 0))
-        status = pc.get("status", "Pending")
-        if not paid_amount and status == "Paid":
-            # If no explicit paid_amount but status is Paid, calculate it
-            paid_amount = max(commission_amount - total_deducted, 0.0)
+        remaining_due = max(0.0, commission_amount - total_deducted - paid_amount)
 
         pc["paid_amount"] = paid_amount
-        pc["remaining_due"] = max(commission_amount - total_deducted - paid_amount, 0.0)
+        pc["remaining_due"] = remaining_due
+        pc["status"] = _calculate_commission_status(remaining_due, paid_amount, total_deducted)
 
 
     # Sort by project number: descending by year-month, descending by sequence
