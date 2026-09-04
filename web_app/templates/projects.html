@@ -691,7 +691,12 @@ function openLoadModal() {
         let blockedCount = 0;
         selectedProjects.forEach((proj) => {
           const pendingStages = proj.all_pending_stages || [];
-          const isFullyInvoiced = proj.next_stage === 'Fully Invoiced' || pendingStages.length === 0;
+          const pendingCOs = proj.approved_pending_cos || [];
+          // A project is only fully invoiced once BOTH its regular stages and its
+          // approved change orders are billed — pendingStages alone excludes COs
+          // (they're listed separately below), so checking it in isolation used
+          // to hide a project's CO entirely once its base stage was invoiced.
+          const isFullyInvoiced = pendingStages.length === 0 && pendingCOs.length === 0;
 
           if (isFullyInvoiced) {
             // Fully invoiced — single greyed row
@@ -778,8 +783,9 @@ function openLoadModal() {
         html += '</div>';
         modalBody.innerHTML = html;
 
-        // Check if all projects are fully invoiced
-        const allFullyInvoiced = selectedProjects.every(proj => proj.next_stage === 'Fully Invoiced' || (proj.all_pending_stages || []).length === 0);
+        // Check if all projects are fully invoiced (same rule as above: stages AND COs)
+        const allFullyInvoiced = selectedProjects.every(proj =>
+          (proj.all_pending_stages || []).length === 0 && (proj.approved_pending_cos || []).length === 0);
         const loadBtn = document.getElementById('loadToInvoiceBtn');
 
         if (allFullyInvoiced) {

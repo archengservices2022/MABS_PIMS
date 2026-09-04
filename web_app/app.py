@@ -7060,6 +7060,23 @@ def invoice_new():
                                                 "stage_index": s_idx,
                                             })
                     else:
+                        # Change orders selected via the co_<proj_id> checkbox param (parsed
+                        # below) are added exactly once, in their own block. If the stage
+                        # picked here (explicit or auto-detected) is that same CO's stage,
+                        # skip it here so it isn't added a second time.
+                        co_indices_param = request.args.get(f"co_{proj_id}", "")
+                        requested_co_numbers = set()
+                        if co_indices_param:
+                            cos_peek = proj_data.get("change_orders") or []
+                            if isinstance(cos_peek, dict):
+                                cos_peek = list(cos_peek.values())
+                            for co_idx_peek in co_indices_param.split(","):
+                                co_idx_peek = co_idx_peek.strip()
+                                if co_idx_peek.isdigit() and 0 <= int(co_idx_peek) < len(cos_peek):
+                                    peeked = cos_peek[int(co_idx_peek)]
+                                    if isinstance(peeked, dict) and peeked.get("co_number"):
+                                        requested_co_numbers.add(peeked["co_number"])
+
                         # Use provided stage index if available, otherwise auto-detect
                         if i < len(stage_indices) and stage_indices[i] is not None:
                             next_stage_idx = stage_indices[i]
@@ -7079,28 +7096,43 @@ def invoice_new():
                             stage_amount = detection.get("amount", 0)
                             log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): AUTO-DETECTED stage_idx={next_stage_idx}/{num_stages}, stage_name='{next_stage_name}'")
 
-                        # Use stage amount if available, otherwise use outstanding balance
-                        if stage_amount > 0 and next_stage_idx is not None:
-                            amount_to_invoice = stage_amount
-                        else:
-                            contract_value = _safe_float(proj_data.get("contract_value", 0))
-                            amount_paid = _safe_float(proj_data.get("amount_paid", 0))
-                            outstanding = contract_value - amount_paid
-                            amount_to_invoice = outstanding if outstanding > 0 else contract_value
+                        # Don't double-add: the CO block below already covers this stage.
+                        # (Also skip the "no stage found -> bill the outstanding balance"
+                        # fallback in that case — there IS a stage, it's just handled
+                        # elsewhere, so falling back to the full outstanding balance would
+                        # add a second, unrelated line item instead of just omitting one.)
+                        skip_stage_item = (
+                            next_stage_idx is not None and isinstance(stages, list) and
+                            0 <= next_stage_idx < len(stages) and isinstance(stages[next_stage_idx], dict) and
+                            stages[next_stage_idx].get("co_number") in requested_co_numbers and
+                            stages[next_stage_idx].get("co_number")
+                        )
+                        if skip_stage_item:
+                            log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): stage_idx={next_stage_idx} is CO '{stages[next_stage_idx].get('co_number')}', already covered by co_{proj_id} param — skipping duplicate")
 
-                        if amount_to_invoice > 0:
-                            # Include stage name in description if available
-                            description = proj_name
-                            if next_stage_name:
-                                description = f"{proj_name} — {next_stage_name}"
+                        if not skip_stage_item:
+                            # Use stage amount if available, otherwise use outstanding balance
+                            if stage_amount > 0 and next_stage_idx is not None:
+                                amount_to_invoice = stage_amount
+                            else:
+                                contract_value = _safe_float(proj_data.get("contract_value", 0))
+                                amount_paid = _safe_float(proj_data.get("amount_paid", 0))
+                                outstanding = contract_value - amount_paid
+                                amount_to_invoice = outstanding if outstanding > 0 else contract_value
 
-                            log.info(f"[PREFILL] proj={proj_num}, stage_idx={next_stage_idx}, stage_name='{next_stage_name}', description='{description}'")
-                            prefill_items.append({
-                                "description": description,
-                                "project": proj_num,
-                                "amount": f"{amount_to_invoice:.2f}",
-                                "stage_index": next_stage_idx  # Store the detected stage index
-                            })
+                            if amount_to_invoice > 0:
+                                # Include stage name in description if available
+                                description = proj_name
+                                if next_stage_name:
+                                    description = f"{proj_name} — {next_stage_name}"
+
+                                log.info(f"[PREFILL] proj={proj_num}, stage_idx={next_stage_idx}, stage_name='{next_stage_name}', description='{description}'")
+                                prefill_items.append({
+                                    "description": description,
+                                    "project": proj_num,
+                                    "amount": f"{amount_to_invoice:.2f}",
+                                    "stage_index": next_stage_idx  # Store the detected stage index
+                                })
 
                     # Add any approved COs passed via query param co_<proj_id>
                     co_indices_param = request.args.get(f"co_{proj_id}", "")
