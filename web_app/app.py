@@ -6358,6 +6358,12 @@ def api_get_projects(project_ids):
                     for li in (inv_data.get("line_items") or []):
                         if not isinstance(li, dict):
                             continue
+                        # A bulk invoice's primary project can also carry line items
+                        # for other projects (incl. their own "CO-1" lines). Only this
+                        # project's line items are evidence that its CO was billed.
+                        li_proj = li.get("project_number", "") or proj_num_for_co
+                        if li_proj != proj_num_for_co:
+                            continue
                         desc = li.get("description", "")
                         for co in cos_raw:
                             if isinstance(co, dict) and co.get("co_number") and co["co_number"] in desc:
