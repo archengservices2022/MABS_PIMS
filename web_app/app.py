@@ -19905,6 +19905,41 @@ def employees():
                     _rd = "Default"
             _pc["rate_display"] = _rd
             my_commissions.append(_pc)
+
+    # Also include projects this user sold that have no /project_commissions
+    # entry yet (never synced) so a $0 commission still shows up.
+    _seen_pids = {_c.get("firebase_id") for _c in my_commissions}
+    if isinstance(_my_proj_lookup, dict):
+        for _pid, _proj in _my_proj_lookup.items():
+            if not isinstance(_proj, dict) or _pid in _seen_pids:
+                continue
+            if _proj.get("status", "") == "Cancelled":
+                continue
+            _psp = (_proj.get("sales") or _proj.get("sales_person") or "").strip().lower().replace("_", " ")
+            if not _psp or _psp not in _my_name_variants:
+                continue
+            _ot = str(_proj.get("commission_override_type", "") or "").strip().lower()
+            _ov = _safe_float(_proj.get("commission_override_value", 0))
+            if "%" in _ot or "percent" in _ot:
+                _rd = f"{(_ov if _ov > 1 else _ov * 100):g}% (custom)"
+            elif "fixed" in _ot or "$" in _ot:
+                _rd = f"Fixed {CURRENCY_SYMBOL}{_ov:,.2f}"
+            else:
+                _rd = "Default"
+            my_commissions.append({
+                "firebase_id":       _pid,
+                "project_number":    _proj.get("project_number", "—"),
+                "company_name":      _proj.get("company_name") or _proj.get("client_name") or "—",
+                "status":            "Pending",
+                "contract_value":    _safe_float(_proj.get("contract_value", 0)),
+                "commission_amount": 0.0,
+                "total_deducted":    0.0,
+                "adjusted_amount":   0.0,
+                "paid_amount":       0.0,
+                "remaining_due":     0.0,
+                "rate_display":      _rd,
+            })
+
     my_commissions.sort(key=_project_number_sort_key, reverse=True)
     context["my_commissions"] = my_commissions
     # Projects that actually earn a commission (tab badge / KPI count)
