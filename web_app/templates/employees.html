@@ -156,7 +156,7 @@
       {% if user_role in ('admin', 'accountant') and pending_medical_claims %}<span class="badge bg-warning text-dark ms-1" style="font-size:10px;">{{ pending_medical_claims|length }}</span>{% elif my_medical_claims | selectattr('status','equalto','Pending') | list | length %}<span class="badge bg-warning text-dark ms-1" style="font-size:10px;">{{ my_medical_claims | selectattr('status','equalto','Pending') | list | length }}</span>{% endif %}
     </a>
   </li>
-  {% if my_commissions %}
+  {% if my_commissions or user_role == 'sales' %}
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-my-commission">
       <i class="bi bi-graph-up-arrow me-1"></i>Commission
