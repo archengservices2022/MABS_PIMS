@@ -156,6 +156,14 @@
       {% if user_role in ('admin', 'accountant') and pending_medical_claims %}<span class="badge bg-warning text-dark ms-1" style="font-size:10px;">{{ pending_medical_claims|length }}</span>{% elif my_medical_claims | selectattr('status','equalto','Pending') | list | length %}<span class="badge bg-warning text-dark ms-1" style="font-size:10px;">{{ my_medical_claims | selectattr('status','equalto','Pending') | list | length }}</span>{% endif %}
     </a>
   </li>
+  {% if my_commissions %}
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-my-commission">
+      <i class="bi bi-graph-up-arrow me-1"></i>Commission
+      <span class="badge bg-secondary ms-1">{{ my_commissions|length }}</span>
+    </a>
+  </li>
+  {% endif %}
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-my-reviews">
       <i class="bi bi-clipboard-check me-1"></i>My Reviews
@@ -994,6 +1002,163 @@
   </div>
   {% endif %}
 </div><!-- /tab-my-reviews -->
+
+<!-- ?? My Commission Tab ??????????????????????????????????????????????????? -->
+<div class="tab-pane fade" id="tab-my-commission">
+  {% if my_commissions %}
+  {% set ct = namespace(comm=0, adj=0, paid=0, rem=0) %}
+  {% for c in my_commissions %}
+    {% set ct.comm = ct.comm + (c.commission_amount | float) %}
+    {% set ct.adj  = ct.adj  + (c.adjusted_amount | float) %}
+    {% set ct.paid = ct.paid + (c.paid_amount | float) %}
+    {% set ct.rem  = ct.rem  + (c.remaining_due | float) %}
+  {% endfor %}
+
+  <!-- KPI strip — same layout as Finance → Commission -->
+  <div class="row g-3 mb-4">
+    <div class="col-12 col-md-6 col-lg-3">
+      <div class="card-panel text-center">
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Earned</div>
+        <div id="ecKpiEarned" style="font-size:1.6rem;font-weight:800;color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(ct.comm) }}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">All Commissions</div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3">
+      <div class="card-panel text-center">
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Adjusted</div>
+        <div id="ecKpiAdjusted" style="font-size:1.6rem;font-weight:800;color:#D97706;">{{ currency_symbol }}{{ "{:,.2f}".format(ct.adj) }}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Deductions and adjustments</div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3">
+      <div class="card-panel text-center">
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Paid</div>
+        <div id="ecKpiPaid" style="font-size:1.6rem;font-weight:800;color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(ct.paid) }}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Commission paid out</div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3">
+      <div class="card-panel text-center">
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Remaining Due</div>
+        <div id="ecKpiRemaining" style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if ct.rem > 0 else '#16a34a' }};">{{ currency_symbol }}{{ "{:,.2f}".format(ct.rem) }}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Pending commission payment</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-graph-up-arrow me-2" style="color:#059669;"></i>My Commission — per-project tracking</h6>
+        <div class="form-check form-switch mb-0" style="font-size:12px;">
+          <input class="form-check-input" type="checkbox" id="ecHideZero" checked onchange="ecFilterCommission()">
+          <label class="form-check-label text-muted" for="ecHideZero">Hide {{ currency_symbol }}0</label>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:13px;" id="ecCommTable">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Client</th>
+              <th class="text-end">Contract Value</th>
+              <th class="text-center">Rate / Type</th>
+              <th class="text-end">Commission Earned</th>
+              <th class="text-end">Adjusted</th>
+              <th class="text-end">Paid Amount</th>
+              <th class="text-end">Remaining Due</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in my_commissions %}
+            {% set _comm = c.commission_amount | float %}
+            {% set _adj  = c.adjusted_amount | float %}
+            {% set _paid = c.paid_amount | float %}
+            {% set _remd = c.remaining_due | float %}
+            {% set _rem  = (_comm - _adj - _paid) %}
+            <tr class="ec-comm-row" data-comm="{{ _comm }}" data-adj="{{ _adj }}" data-paid="{{ _paid }}" data-rem="{{ _remd }}">
+              <td class="fw-semibold">
+                <a href="{{ url_for('project_detail', project_id=c.firebase_id) }}" class="text-decoration-none">{{ c.project_number }}</a>
+              </td>
+              <td>{{ c.company_name }}</td>
+              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(c.contract_value | float) }}</td>
+              <td class="text-center"><span class="text-muted small">{{ c.rate_display or '—' }}</span></td>
+              <td class="text-end fw-bold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(_comm) }}</td>
+              <td class="text-end fw-semibold" style="color:#D97706;">{{ currency_symbol }}{{ "{:,.2f}".format(_adj) }}</td>
+              <td class="text-end fw-semibold" style="color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(_paid) }}</td>
+              <td class="text-end fw-semibold" style="color:#DC2626;">{{ currency_symbol }}{{ "{:,.2f}".format(_remd) }}</td>
+              <td>
+                {% if _rem <= 0.01 %}
+                  {% if _paid <= 0.01 and _adj > 0.01 %}
+                  <span class="badge bg-info text-white" style="font-size:10px;"><i class="bi bi-check2 me-1"></i>Fully Adjusted</span>
+                  {% else %}
+                  <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
+                  {% endif %}
+                {% else %}
+                  <span class="badge bg-warning text-dark" style="font-size:10px;"><i class="bi bi-clock me-1"></i>Pending</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            <tr id="ecCommEmpty" style="display:none;"><td colspan="9" class="text-center text-muted py-4">All projects have {{ currency_symbol }}0 commission — untick “Hide {{ currency_symbol }}0” to view them.</td></tr>
+          </tbody>
+          <tfoot>
+            <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
+              <td colspan="4" class="text-end text-muted small">Totals</td>
+              <td class="text-end" style="color:#7C3AED;" id="ecFootEarned">{{ currency_symbol }}{{ "{:,.2f}".format(ct.comm) }}</td>
+              <td class="text-end" style="color:#D97706;" id="ecFootAdjusted">{{ currency_symbol }}{{ "{:,.2f}".format(ct.adj) }}</td>
+              <td class="text-end" style="color:#059669;" id="ecFootPaid">{{ currency_symbol }}{{ "{:,.2f}".format(ct.paid) }}</td>
+              <td class="text-end" style="color:#DC2626;" id="ecFootRemaining">{{ currency_symbol }}{{ "{:,.2f}".format(ct.rem) }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var CS = {{ currency_symbol | tojson }};
+    function ecFmt(n) { return CS + n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+    window.ecFilterCommission = function () {
+      var hideZero = document.getElementById('ecHideZero').checked;
+      var rows = document.querySelectorAll('#ecCommTable tbody tr.ec-comm-row');
+      var earned = 0, adj = 0, paid = 0, rem = 0, shown = 0;
+      rows.forEach(function (r) {
+        var c = parseFloat(r.dataset.comm || '0') || 0;
+        var hide = hideZero && c <= 0.01;
+        r.style.display = hide ? 'none' : '';
+        if (!hide) {
+          shown++;
+          earned += c;
+          adj    += parseFloat(r.dataset.adj  || '0') || 0;
+          paid   += parseFloat(r.dataset.paid || '0') || 0;
+          rem    += parseFloat(r.dataset.rem  || '0') || 0;
+        }
+      });
+      var emptyRow = document.getElementById('ecCommEmpty');
+      if (emptyRow) emptyRow.style.display = (shown > 0 || rows.length === 0) ? 'none' : '';
+      var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = ecFmt(v); };
+      set('ecKpiEarned', earned);   set('ecFootEarned', earned);
+      set('ecKpiAdjusted', adj);    set('ecFootAdjusted', adj);
+      set('ecKpiPaid', paid);       set('ecFootPaid', paid);
+      set('ecKpiRemaining', rem);   set('ecFootRemaining', rem);
+      var remEl = document.getElementById('ecKpiRemaining');
+      if (remEl) remEl.style.color = rem > 0 ? '#DC2626' : '#16a34a';
+    };
+    ecFilterCommission();
+  })();
+  </script>
+  {% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-graph-up-arrow" style="font-size:40px;opacity:.3;"></i>
+    <div class="mt-2">No commission records yet.</div>
+    <div class="small mt-1">Commissions appear here once a quote you sold is converted to a project.</div>
+  </div>
+  {% endif %}
+</div><!-- /tab-my-commission -->
 
 <!-- ?? Edit Own Profile Modal ??????????????????????????????????????????? -->
 <div class="modal fade" id="editOwnProfileModal" tabindex="-1">

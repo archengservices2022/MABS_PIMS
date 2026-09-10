@@ -2377,6 +2377,30 @@ def sales_dashboard():
             _comm_rev_alltime += _qval
             if (_q.get("date", "") or "").startswith(_cur_month):
                 _comm_rev_month += _qval
+    # Real per-project commission totals from /project_commissions (same figures
+    # as the Employees → Commission and Finance → Commission tabs).
+    _sd_name_variants = set()
+    for _n in (user_name, _u_data.get("username", ""), _u_data.get("name", ""),
+               _u_data.get("display_name", "")):
+        _n = (_n or "").strip().lower().replace("_", " ")
+        if _n:
+            _sd_name_variants.add(_n)
+    _sd_comm_raw = fb_get("/project_commissions") or {}
+    _comm_total_earned = _comm_total_adjusted = _comm_total_paid = _comm_total_remaining = 0.0
+    if isinstance(_sd_comm_raw, dict):
+        for _cid, _cv in _sd_comm_raw.items():
+            if not isinstance(_cv, dict) or _cid not in _proj_raw:
+                continue
+            if (_cv.get("salesperson", "") or "").strip().lower().replace("_", " ") not in _sd_name_variants:
+                continue
+            _ca = _safe_float(_cv.get("commission_amount", 0))
+            _cd = _safe_float(_cv.get("total_deducted", 0))
+            _cp = _safe_float(_cv.get("paid_amount", 0))
+            _comm_total_earned    += _ca
+            _comm_total_adjusted  += _cd
+            _comm_total_paid      += _cp
+            _comm_total_remaining += max(_ca - _cd - _cp, 0.0)
+
     commission = {
         "rate":           _comm_rate,
         "rate_set":       _comm_rate > 0,
@@ -2386,6 +2410,10 @@ def sales_dashboard():
         "revenue_month":  _comm_rev_month,
         "revenue_alltime": _comm_rev_alltime,
         "conv_count":     _conv_count,
+        "total_earned":    _comm_total_earned,
+        "total_adjusted":  _comm_total_adjusted,
+        "total_paid":      _comm_total_paid,
+        "total_remaining": _comm_total_remaining,
     }
 
     return render_template("sales_dashboard.html",
@@ -2703,12 +2731,25 @@ def quotes():
             pc["project_number"] = pc.get("project_number", "—")
             pc["company_name"] = pc.get("company_name", "—")
             pc["status"] = pc.get("status", "Pending")
+            pc["contract_value"] = _safe_float(pc.get("contract_value", 0))
             pc["commission_amount"] = _safe_float(pc.get("commission_amount", 0))
             pc["total_deducted"] = _safe_float(pc.get("total_deducted", 0))
             pc["adjusted_amount"] = pc["total_deducted"]
             pc["paid_amount"] = _safe_float(pc.get("paid_amount", 0))
             pc["deduction_status"] = pc.get("deduction_status", "not_covered")
             pc["remaining_due"] = max(pc["commission_amount"] - pc["total_deducted"] - pc["paid_amount"], 0.0)
+            # Rate / Type label — mirror the Finance Commission tab
+            _rd = (pc.get("rate_display", "") or "").strip()
+            if not _rd:
+                _rt = str(pc.get("commission_override_type", "") or "").strip().lower()
+                _rv = _safe_float(pc.get("commission_override_value", 0))
+                if "%" in _rt and _rv:
+                    _rd = f"{_rv:g}% (custom)"
+                elif _rv:
+                    _rd = f"Fixed {CURRENCY_SYMBOL}{_rv:,.2f}"
+                else:
+                    _rd = "Default"
+            pc["rate_display"] = _rd
             project_commissions.append(pc)
 
     return render_template("quotes.html", quotes=items, statuses=statuses,
@@ -4300,23 +4341,23 @@ def project_detail(project_id):
 
     log.info(f"[PROJECT_DETAIL_COMM] proj={proj_num}: type={data.get('commission_override_type')} val={comm_override_val} contract={contract_val}")
 
-    # Try to detect and calculate commission from override settings
-    if comm_override_val > 0:
-        # Check for percentage-based commission (look for % symbol in type)
-        if "%" in comm_override_type:
-            # Percentage-based commission
+    # An explicit fixed/percent override is honoured even at 0 — it means the
+    # commission is deliberately $0, not "use the default rate".
+    _explicit_override = ("percent" in comm_override_type or "%" in comm_override_type
+                          or "fixed" in comm_override_type or "$" in comm_override_type)
+    if _explicit_override:
+        if "%" in comm_override_type or "percent" in comm_override_type:
             if contract_val > 0:
                 # Handle both decimal (0.50) and percentage (50) formats
                 pct_val = comm_override_val if comm_override_val > 1 else (comm_override_val * 100)
                 comm_earned = (contract_val * pct_val / 100)
                 log.info(f"[PROJECT_DETAIL_COMM_PCT] proj={proj_num}: pct_val={pct_val} earned={comm_earned}")
         else:
-            # Fixed amount commission (default for "fixed", "$", or anything without %)
             comm_earned = comm_override_val
             log.info(f"[PROJECT_DETAIL_COMM_FIXED] proj={proj_num}: earned={comm_earned}")
 
-    # Fallback to project_commissions if not found in project override
-    if comm_earned == 0:
+    # Fallback to project_commissions only when there is NO explicit override
+    if comm_earned == 0 and not _explicit_override:
         comm_earned = _safe_float(_comm_entry.get("commission_amount", 0))
         log.info(f"[PROJECT_DETAIL_COMM_FALLBACK] proj={proj_num}: comm_amount={comm_earned}")
 
@@ -19821,6 +19862,52 @@ def employees():
     _my_rev.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     context["my_performance_reviews"] = _my_rev
 
+    # My commissions — per-project commission tracking for the "Commission" tab
+    # (same data the Quotes → Sales People tab shows, filtered to this user).
+    _my_name_variants = set()
+    for _n in (session.get("user_name", ""), _profile_data.get("username", ""),
+               _profile_data.get("name", ""), _profile_data.get("display_name", "")):
+        _n = (_n or "").strip().lower().replace("_", " ")
+        if _n:
+            _my_name_variants.add(_n)
+
+    _raw_my_comm = fb_get("/project_commissions") or {}
+    _my_proj_lookup = fb_get("/projects") or {}
+    my_commissions = []
+    if isinstance(_raw_my_comm, dict):
+        for _cid, _cv in _raw_my_comm.items():
+            if not isinstance(_cv, dict) or _cid not in _my_proj_lookup:
+                continue
+            _sp = (_cv.get("salesperson", "") or "").strip().lower().replace("_", " ")
+            if _sp not in _my_name_variants:
+                continue
+            _pc = dict(_cv, firebase_id=_cid)
+            _pc["project_number"]    = _pc.get("project_number", "—")
+            _pc["company_name"]      = _pc.get("company_name", "—")
+            _pc["status"]            = _pc.get("status", "Pending")
+            _pc["contract_value"]    = _safe_float(_pc.get("contract_value", 0))
+            _pc["commission_amount"] = _safe_float(_pc.get("commission_amount", 0))
+            _pc["total_deducted"]    = _safe_float(_pc.get("total_deducted", 0))
+            _pc["adjusted_amount"]   = _pc["total_deducted"]
+            _pc["paid_amount"]       = _safe_float(_pc.get("paid_amount", 0))
+            _pc["remaining_due"]     = max(
+                _pc["commission_amount"] - _pc["total_deducted"] - _pc["paid_amount"], 0.0)
+            # Rate / Type label — mirror the Finance Commission tab
+            _rd = (_pc.get("rate_display", "") or "").strip()
+            if not _rd:
+                _rt = str(_pc.get("commission_override_type", "") or "").strip().lower()
+                _rv = _safe_float(_pc.get("commission_override_value", 0))
+                if "%" in _rt and _rv:
+                    _rd = f"{_rv:g}% (custom)"
+                elif _rv:
+                    _rd = f"Fixed {CURRENCY_SYMBOL}{_rv:,.2f}"
+                else:
+                    _rd = "Default"
+            _pc["rate_display"] = _rd
+            my_commissions.append(_pc)
+    my_commissions.sort(key=_project_number_sort_key, reverse=True)
+    context["my_commissions"] = my_commissions
+
     return render_template("employees.html", **context)
 
 @app.route("/employees/medical-claims/form")
@@ -24772,14 +24859,18 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
     existing_salesperson = (existing.get("salesperson") or "").strip()
     salesperson_changed = existing_salesperson and existing_salesperson != sales_name
 
-    # Handle percentage-based commission (check for "percent" keyword OR "%" symbol)
-    if ("percent" in override_type or "%" in override_type) and override_value > 0:
+    # Explicit overrides are honoured even when the value is 0 — the user is
+    # deliberately setting the commission to $0 / 0%, not asking for the default.
+    _is_percent_override = "percent" in override_type or "%" in override_type
+    _is_fixed_override   = "fixed" in override_type or "$" in override_type
+
+    if _is_percent_override:
         # Handle both decimal (0.50) and percentage (50) formats
         pct_val = override_value if override_value > 1 else (override_value * 100)
         commission_amount = contract_value * pct_val / 100
         rate_display = f"{pct_val}% (custom)"
         override_type = "percent"  # Normalize the type
-    elif ("fixed" in override_type or "$" in override_type) and override_value > 0:
+    elif _is_fixed_override:
         commission_amount = override_value
         rate_display = "Fixed amount"
         override_type = "fixed"  # Normalize the type

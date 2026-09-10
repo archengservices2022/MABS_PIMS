@@ -605,6 +605,8 @@
           {
             project_number: {{ pc.get('project_number','—')|tojson }},
             company_name: {{ pc.get('company_name','—')|tojson }},
+            contract_value: {{ pc.get('contract_value',0)|float }},
+            rate_display: {{ pc.get('rate_display','—')|tojson }},
             commission_amount: {{ pc.get('commission_amount',0)|float }},
             adjusted_amount: {{ pc.get('adjusted_amount',0)|float }},
             paid_amount: {{ pc.get('paid_amount',0)|float }},
@@ -683,6 +685,8 @@
           html += '<tr>';
           html += '<th>Project</th>';
           html += '<th>Client</th>';
+          html += '<th class="text-end">Contract Value</th>';
+          html += '<th class="text-center">Rate / Type</th>';
           html += '<th class="text-end" style="color:white;">Commission Earned</th>';
           html += '<th class="text-end" style="color:white;">Adjusted amount</th>';
           html += '<th class="text-end" style="color:white;">Paid Amount</th>';
@@ -716,6 +720,8 @@
             html += '<tr>';
             html += `<td class="fw-semibold"><a href="/projects/${pc.firebase_id}" class="text-decoration-none">${pc.project_number}</a></td>`;
             html += `<td>${pc.company_name}</td>`;
+            html += `<td class="text-end">${currencySymbol}${(pc.contract_value || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+            html += `<td class="text-center"><span class="text-muted small">${pc.rate_display || '—'}</span></td>`;
             html += `<td class="text-end fw-bold" style="color:#7C3AED;">${currencySymbol}${pc.commission_amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
             html += `<td class="text-end fw-semibold" style="color:#D97706;">${currencySymbol}${pc.adjusted_amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
             html += `<td class="text-end fw-semibold" style="color:#059669;">${currencySymbol}${pc.paid_amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
@@ -728,11 +734,11 @@
           html += '</tbody>';
           html += '<tfoot>';
           html += '<tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">';
-          html += '<td colspan="2" class="text-end text-muted small">Totals</td>';
+          html += '<td colspan="4" class="text-end text-muted small">Totals</td>';
           html += `<td class="text-end" style="color:#7C3AED;">${currencySymbol}${totalCommission.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
-          html += `<td class="text-end" style="color:#16A34A;">${currencySymbol}${totalAdjusted.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+          html += `<td class="text-end" style="color:#D97706;">${currencySymbol}${totalAdjusted.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
           html += `<td class="text-end" style="color:#059669;">${currencySymbol}${totalPaid.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
-          html += `<td class="text-end" style="color:#2563EB;">${currencySymbol}${totalRemaining.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+          html += `<td class="text-end" style="color:#DC2626;">${currencySymbol}${totalRemaining.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
           html += '<td></td>';
           html += '</tr>';
           html += '</tfoot>';
