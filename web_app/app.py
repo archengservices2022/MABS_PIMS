@@ -19907,6 +19907,9 @@ def employees():
             my_commissions.append(_pc)
     my_commissions.sort(key=_project_number_sort_key, reverse=True)
     context["my_commissions"] = my_commissions
+    # Projects that actually earn a commission (tab badge / KPI count)
+    context["my_commissions_earning"] = sum(
+        1 for _c in my_commissions if _safe_float(_c.get("commission_amount", 0)) > 0.01)
 
     return render_template("employees.html", **context)
 

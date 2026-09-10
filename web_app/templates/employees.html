@@ -156,11 +156,11 @@
       {% if user_role in ('admin', 'accountant') and pending_medical_claims %}<span class="badge bg-warning text-dark ms-1" style="font-size:10px;">{{ pending_medical_claims|length }}</span>{% elif my_medical_claims | selectattr('status','equalto','Pending') | list | length %}<span class="badge bg-warning text-dark ms-1" style="font-size:10px;">{{ my_medical_claims | selectattr('status','equalto','Pending') | list | length }}</span>{% endif %}
     </a>
   </li>
-  {% if my_commissions %}
+  {% if my_commissions_earning %}
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-my-commission">
       <i class="bi bi-graph-up-arrow me-1"></i>Commission
-      <span class="badge bg-secondary ms-1">{{ my_commissions|length }}</span>
+      <span class="badge bg-secondary ms-1">{{ my_commissions_earning }}</span>
     </a>
   </li>
   {% endif %}
@@ -1005,13 +1005,14 @@
 
 <!-- ?? My Commission Tab ??????????????????????????????????????????????????? -->
 <div class="tab-pane fade" id="tab-my-commission">
-  {% if my_commissions %}
-  {% set ct = namespace(comm=0, adj=0, paid=0, rem=0) %}
+  {% if my_commissions_earning %}
+  {% set ct = namespace(comm=0, adj=0, paid=0, rem=0, n=0) %}
   {% for c in my_commissions %}
     {% set ct.comm = ct.comm + (c.commission_amount | float) %}
     {% set ct.adj  = ct.adj  + (c.adjusted_amount | float) %}
     {% set ct.paid = ct.paid + (c.paid_amount | float) %}
     {% set ct.rem  = ct.rem  + (c.remaining_due | float) %}
+    {% if (c.commission_amount | float) > 0.01 %}{% set ct.n = ct.n + 1 %}{% endif %}
   {% endfor %}
 
   <!-- KPI strip — same layout as Finance → Commission -->
@@ -1020,7 +1021,7 @@
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Earned</div>
         <div id="ecKpiEarned" style="font-size:1.6rem;font-weight:800;color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(ct.comm) }}</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">All Commissions</div>
+        <div id="ecKpiEarnedSub" style="font-size:11px;color:#94a3b8;margin-top:6px;">Across {{ ct.n }} project{{ 's' if ct.n != 1 }}</div>
       </div>
     </div>
     <div class="col-12 col-md-6 col-lg-3">
@@ -1115,31 +1116,80 @@
           </tfoot>
         </table>
       </div>
+      <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+        <div id="ecCommPageInfo" class="text-muted" style="font-size:12px;"></div>
+        <nav><ul class="pagination pagination-sm mb-0" id="ecCommPagination"></ul></nav>
+      </div>
     </div>
   </div>
 
   <script>
   (function () {
     var CS = {{ currency_symbol | tojson }};
+    var EC_PAGE_SIZE = 20;
+    var ecPage = 1;
     function ecFmt(n) { return CS + n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
-    window.ecFilterCommission = function () {
+
+    function ecVisibleRows() {
       var hideZero = document.getElementById('ecHideZero').checked;
-      var rows = document.querySelectorAll('#ecCommTable tbody tr.ec-comm-row');
-      var earned = 0, adj = 0, paid = 0, rem = 0, shown = 0;
-      rows.forEach(function (r) {
-        var c = parseFloat(r.dataset.comm || '0') || 0;
-        var hide = hideZero && c <= 0.01;
-        r.style.display = hide ? 'none' : '';
-        if (!hide) {
-          shown++;
-          earned += c;
-          adj    += parseFloat(r.dataset.adj  || '0') || 0;
-          paid   += parseFloat(r.dataset.paid || '0') || 0;
-          rem    += parseFloat(r.dataset.rem  || '0') || 0;
+      return Array.prototype.filter.call(
+        document.querySelectorAll('#ecCommTable tbody tr.ec-comm-row'),
+        function (r) { return !(hideZero && (parseFloat(r.dataset.comm || '0') || 0) <= 0.01); });
+    }
+
+    function ecRenderPagination(total) {
+      var nav = document.getElementById('ecCommPagination');
+      if (!nav) return;
+      nav.innerHTML = '';
+      var pages = Math.ceil(total / EC_PAGE_SIZE);
+      if (pages <= 1) return;
+      var mkLi = function (label, pg, disabled, active) {
+        var li = document.createElement('li');
+        li.className = 'page-item' + (disabled ? ' disabled' : '') + (active ? ' active' : '');
+        var a = document.createElement('a');
+        a.className = 'page-link';
+        a.href = '#tab-my-commission';
+        a.innerHTML = label;
+        if (!disabled && !active) a.addEventListener('click', function (e) { e.preventDefault(); ecPage = pg; ecRender(); });
+        li.appendChild(a);
+        return li;
+      };
+      nav.appendChild(mkLi('&laquo;', ecPage - 1, ecPage === 1, false));
+      for (var p = 1; p <= pages; p++) {
+        if (pages > 7 && p > 2 && p < pages - 1 && Math.abs(p - ecPage) > 1) {
+          if (p === 3 || p === pages - 2) {
+            var dots = document.createElement('li');
+            dots.className = 'page-item disabled';
+            dots.innerHTML = '<span class="page-link">…</span>';
+            nav.appendChild(dots);
+          }
+          continue;
         }
+        nav.appendChild(mkLi(p, p, false, p === ecPage));
+      }
+      nav.appendChild(mkLi('&raquo;', ecPage + 1, ecPage === pages, false));
+    }
+
+    function ecRender() {
+      var allRows = document.querySelectorAll('#ecCommTable tbody tr.ec-comm-row');
+      allRows.forEach(function (r) { r.style.display = 'none'; });
+
+      var visible = ecVisibleRows();
+      var total = visible.length;
+      var pages = Math.max(1, Math.ceil(total / EC_PAGE_SIZE));
+      if (ecPage > pages) ecPage = pages;
+      var start = (ecPage - 1) * EC_PAGE_SIZE;
+      var end = Math.min(start + EC_PAGE_SIZE, total);
+      visible.slice(start, end).forEach(function (r) { r.style.display = ''; });
+
+      // Totals / KPI cards reflect ALL visible rows (not just this page)
+      var earned = 0, adj = 0, paid = 0, rem = 0;
+      visible.forEach(function (r) {
+        earned += parseFloat(r.dataset.comm || '0') || 0;
+        adj    += parseFloat(r.dataset.adj  || '0') || 0;
+        paid   += parseFloat(r.dataset.paid || '0') || 0;
+        rem    += parseFloat(r.dataset.rem  || '0') || 0;
       });
-      var emptyRow = document.getElementById('ecCommEmpty');
-      if (emptyRow) emptyRow.style.display = (shown > 0 || rows.length === 0) ? 'none' : '';
       var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = ecFmt(v); };
       set('ecKpiEarned', earned);   set('ecFootEarned', earned);
       set('ecKpiAdjusted', adj);    set('ecFootAdjusted', adj);
@@ -1147,8 +1197,19 @@
       set('ecKpiRemaining', rem);   set('ecFootRemaining', rem);
       var remEl = document.getElementById('ecKpiRemaining');
       if (remEl) remEl.style.color = rem > 0 ? '#DC2626' : '#16a34a';
-    };
-    ecFilterCommission();
+      var subEl = document.getElementById('ecKpiEarnedSub');
+      if (subEl) subEl.textContent = 'Across ' + total + (total === 1 ? ' project' : ' projects');
+
+      var emptyRow = document.getElementById('ecCommEmpty');
+      if (emptyRow) emptyRow.style.display = (total > 0 || allRows.length === 0) ? 'none' : '';
+      var info = document.getElementById('ecCommPageInfo');
+      if (info) info.textContent = total === 0 ? 'No projects' : 'Showing ' + (start + 1) + '–' + end + ' of ' + total + ' projects';
+
+      ecRenderPagination(total);
+    }
+
+    window.ecFilterCommission = function () { ecPage = 1; ecRender(); };
+    ecRender();
   })();
   </script>
   {% else %}
