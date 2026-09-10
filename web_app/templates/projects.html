@@ -176,9 +176,11 @@
       </div>
       <div class="d-flex gap-2 align-items-center flex-wrap">
         <span class="text-muted small" style="min-width:75px;">Start date:</span>
-        <input type="date" name="from" value="{{ date_from }}" class="form-control form-control-sm" style="width:160px;">
+        <input type="date" name="from" value="{{ date_from }}" class="form-control form-control-sm" style="width:160px;"
+               title="Matches a project whose Received Date OR any Change Order Date falls in this range">
         <span class="text-muted small">to</span>
-        <input type="date" name="to" value="{{ date_to }}" class="form-control form-control-sm" style="width:160px;">
+        <input type="date" name="to" value="{{ date_to }}" class="form-control form-control-sm" style="width:160px;"
+               title="Matches a project whose Received Date OR any Change Order Date falls in this range">
         <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setProjRange('month')">This Month</button>
         <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setProjRange('year')">This Year</button>
         <button type="submit" class="btn btn-sm btn-outline-secondary">
@@ -817,19 +819,15 @@ function loadToInvoice() {
   const projects = window.selectedProjectsForInvoice || [];
   if (projects.length === 0) return;
 
-  // Filter out fully invoiced projects
-  const readyProjects = projects.filter(p => p.next_stage !== 'Fully Invoiced');
-
-  if (readyProjects.length === 0) {
-    alert('All selected projects are fully invoiced. No projects to load.');
-    return;
-  }
-
-  // Collect checked stage indices per project from checkboxes
+  // The checkboxes rendered in the modal are the single source of truth.
+  // Don't pre-filter by p.next_stage — a project whose regular payment stages
+  // are all invoiced can still have a checked Change Order, and that CO must be
+  // carried through. A truly fully-invoiced project renders no checkbox rows,
+  // so it naturally contributes nothing below.
   const params = new URLSearchParams();
   const projectsToLoad = [];
 
-  readyProjects.forEach(p => {
+  projects.forEach(p => {
     // Gather checked payment stage indices for this project
     const checkedStages = [];
     document.querySelectorAll(`.stage-checkbox[data-proj="${p.firebase_id}"]:checked`).forEach(cb => {

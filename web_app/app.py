@@ -234,6 +234,29 @@ def _normalise_list(value) -> list:
         return list(value.values())
     return []
 
+def _project_filter_dates(project: dict) -> list:
+    """All dates (YYYY-MM-DD) a project should be matched on by the date-range
+    filter: its Project Received Date plus every Change Order Date."""
+    dates = []
+    d0 = project.get("date_received") or (project.get("created_at", "") or "")[:10]
+    if d0:
+        dates.append(str(d0)[:10])
+    for co in _normalise_list(project.get("change_orders")):
+        if isinstance(co, dict):
+            cd = (co.get("created_at", "") or "")[:10]
+            if cd:
+                dates.append(cd)
+    return dates
+
+def _project_in_date_range(project: dict, date_from: str, date_to: str) -> bool:
+    """True if the Project Received Date OR any Change Order Date falls within
+    [date_from, date_to] (either bound may be blank/open-ended)."""
+    if not date_from and not date_to:
+        return True
+    lo = date_from or "0000-00-00"
+    hi = date_to or "9999-12-31"
+    return any(lo <= d <= hi for d in _project_filter_dates(project))
+
 def _approved_co_total(change_orders) -> float:
     return sum(
         _safe_float(co.get("amount", 0))
@@ -3443,10 +3466,10 @@ def projects():
         items = [i for i in items if (i.get("company_name", "") or i.get("client_name", "")) == client_filter]
     if plant_filter:
         items = [i for i in items if i.get("_plant_display", "") == plant_filter]
-    if date_from:
-        items = [i for i in items if (i.get("date_received") or i.get("created_at","")[:10]) >= date_from]
-    if date_to:
-        items = [i for i in items if (i.get("date_received") or i.get("created_at","")[:10]) <= date_to]
+    if date_from or date_to:
+        # Match on Project Received Date OR any Change Order Date, so a project
+        # with a later change order shows up in that later period's range too.
+        items = [i for i in items if _project_in_date_range(i, date_from, date_to)]
 
     status_counts = {}
     for i in items:
@@ -5743,10 +5766,8 @@ def _filter_projects_export(items):
         items = [i for i in items if (i.get("company_name","") or i.get("client_name","")) == request.args["client"]]
     date_from = request.args.get("from","")
     date_to   = request.args.get("to","")
-    if date_from:
-        items = [i for i in items if (i.get("date_received") or i.get("created_at","")[:10]) >= date_from]
-    if date_to:
-        items = [i for i in items if (i.get("date_received") or i.get("created_at","")[:10]) <= date_to]
+    if date_from or date_to:
+        items = [i for i in items if _project_in_date_range(i, date_from, date_to)]
     return items
 
 @app.route("/projects/export/csv")
@@ -6305,22 +6326,17 @@ def api_get_projects(project_ids):
                     proj["stage_blocked"] = True
                     proj["stage_reason"] = str(e)
 
-                # Build all_pending_stages — every uninvoiced stage with is_next flag
+                # Build all_pending_stages — every uninvoiced stage with is_next flag.
+                # "Invoiced" is read from each stage's own status (the authority —
+                # set per-stage by _mark_project_stage, reverted on invoice delete),
+                # not meta.payment_stage_index which is a single guessed value on
+                # multi-project / multi-CO invoices.
                 try:
                     proj_num_s = proj.get("project_number", "")
-                    invoiced_s = set()
-                    for inv_data in all_invoices.values():
-                        if not isinstance(inv_data, dict):
-                            continue
-                        if inv_data.get("meta", {}).get("project_number", "") == proj_num_s:
-                            si = inv_data.get("meta", {}).get("payment_stage_index")
-                            if si is not None:
-                                invoiced_s.add(int(si))
-                        for lp in (inv_data.get("meta", {}).get("linked_projects") or []):
-                            if isinstance(lp, dict) and lp.get("project_number") == proj_num_s:
-                                si = lp.get("payment_stage_index")
-                                if si is not None:
-                                    invoiced_s.add(int(si))
+                    invoiced_s = {
+                        s_i for s_i, s in enumerate(proj.get("payment_stages") or [])
+                        if isinstance(s, dict) and s.get("status") == "Invoiced"
+                    }
                     all_pending = []
                     next_idx = proj.get("next_stage_index")
                     for s_idx, stage in enumerate(proj.get("payment_stages") or []):
@@ -6344,41 +6360,77 @@ def api_get_projects(project_ids):
                     log.error(f"Error building pending stages for {proj_id}: {e}")
                     proj["all_pending_stages"] = []
 
-                # Detect approved COs not yet invoiced for this project
+                # Detect approved COs not yet invoiced for this project.
+                #
+                # A CO counts as already billed only on RELIABLE signals:
+                #   1. Its own payment stage's status == "Invoiced" (set per-stage
+                #      by _mark_project_stage, reverted on invoice delete).
+                #   2. Its co_firebase_id / co_number appears on a line item of a
+                #      live invoice tied to this project (primary or linked).
+                # We deliberately do NOT use meta.payment_stage_index here: for
+                # multi-project / multi-CO invoices that field is a single guessed
+                # value and does not identify which CO stage was billed.
                 cos_raw = proj.get("change_orders") or []
                 if isinstance(cos_raw, dict):
                     cos_raw = list(cos_raw.values())
                 proj_num_for_co = proj.get("project_number", "")
+                co_pstages = proj.get("payment_stages") or []
+
                 invoiced_co_numbers = set()
+                invoiced_co_fb_ids = set()
                 for inv_data in all_invoices.values():
                     if not isinstance(inv_data, dict):
                         continue
-                    if inv_data.get("meta", {}).get("project_number", "") != proj_num_for_co:
+                    meta = inv_data.get("meta", {}) or {}
+                    if meta.get("status") == "Cancelled":
+                        continue
+                    is_primary = meta.get("project_number", "") == proj_num_for_co
+                    linked = meta.get("linked_projects") or []
+                    is_linked = any(isinstance(lp, dict) and lp.get("project_number") == proj_num_for_co
+                                    for lp in linked)
+                    if not (is_primary or is_linked):
                         continue
                     for li in (inv_data.get("line_items") or []):
                         if not isinstance(li, dict):
                             continue
-                        # A bulk invoice's primary project can also carry line items
-                        # for other projects (incl. their own "CO-1" lines). Only this
-                        # project's line items are evidence that its CO was billed.
-                        li_proj = li.get("project_number", "") or proj_num_for_co
+                        li_proj = li.get("project_number", "") or (proj_num_for_co if is_primary else "")
                         if li_proj != proj_num_for_co:
                             continue
+                        if li.get("co_firebase_id"):
+                            invoiced_co_fb_ids.add(li["co_firebase_id"])
                         desc = li.get("description", "")
                         for co in cos_raw:
                             if isinstance(co, dict) and co.get("co_number") and co["co_number"] in desc:
                                 invoiced_co_numbers.add(co["co_number"])
+
                 approved_pending_cos = []
                 for co_idx, co in enumerate(cos_raw):
-                    if isinstance(co, dict) and co.get("status") == "Approved":
-                        co_num = co.get("co_number", "")
-                        if co_num not in invoiced_co_numbers:
-                            approved_pending_cos.append({
-                                "co_number": co_num,
-                                "title":     co.get("title", ""),
-                                "amount":    _safe_float(co.get("amount", 0)),
-                                "co_idx":    co_idx,
-                            })
+                    if not (isinstance(co, dict) and co.get("status") == "Approved"):
+                        continue
+                    co_num = co.get("co_number", "")
+                    co_fb  = co.get("firebase_id", "")
+                    if co_fb and co_fb in invoiced_co_fb_ids:
+                        continue
+                    if co_num and co_num in invoiced_co_numbers:
+                        continue
+                    # The CO's own payment stage already invoiced?
+                    stage_billed = False
+                    for s2 in co_pstages:
+                        if not isinstance(s2, dict):
+                            continue
+                        matches = (co_fb and s2.get("co_firebase_id") == co_fb) or \
+                                  (co_num and s2.get("co_number") == co_num)
+                        if matches and s2.get("status") == "Invoiced":
+                            stage_billed = True
+                            break
+                    if stage_billed:
+                        continue
+                    approved_pending_cos.append({
+                        "co_number": co_num,
+                        "title":     co.get("title", ""),
+                        "amount":    _safe_float(co.get("amount", 0)),
+                        "co_idx":    co_idx,
+                    })
                 proj["approved_pending_cos"] = approved_pending_cos
 
                 projects.append(proj)
@@ -6574,17 +6626,23 @@ def invoice_new():
         item_projects = request.form.getlist("item_project[]")
         item_stage_indices = request.form.getlist("item_stage_index[]")
 
-        # Find which stages are already invoiced
+        # Which stages are already invoiced — keyed off the stage's own status.
+        # _mark_project_stage always writes "Invoiced" to the exact stage a bill
+        # covers, and invoice deletion reverts it to "Pending Invoice", so the
+        # per-stage status is the authority. (meta.payment_stage_index is only a
+        # single guessed value on multi-project / multi-CO invoices and can't be
+        # trusted to say which stage was billed.)
         invoiced_stages_map = {}  # {project_number: {stage_idx}}
-        if isinstance(raw_invoices, dict):
-            for inv_data in raw_invoices.values():
-                if isinstance(inv_data, dict):
-                    inv_proj = inv_data.get("meta", {}).get("project_number", "")
-                    stage_idx = inv_data.get("meta", {}).get("payment_stage_index")
-                    if inv_proj and stage_idx is not None:
-                        if inv_proj not in invoiced_stages_map:
-                            invoiced_stages_map[inv_proj] = set()
-                        invoiced_stages_map[inv_proj].add(int(stage_idx))
+        if isinstance(all_projects, dict):
+            for pdata in all_projects.values():
+                if not isinstance(pdata, dict):
+                    continue
+                pnum = pdata.get("project_number", "")
+                if not pnum:
+                    continue
+                for s_i, s in enumerate(pdata.get("payment_stages") or []):
+                    if isinstance(s, dict) and s.get("status") == "Invoiced":
+                        invoiced_stages_map.setdefault(pnum, set()).add(s_i)
 
         # Check if any line item's stage is already invoiced
         duplicate_stages = []
@@ -6669,8 +6727,17 @@ def invoice_new():
             if co_number:
                 data["meta"]["co_number"] = co_number
 
+        # The "Load Projects to Invoice" modal sends per-line-item stage indices
+        # via item_stage_index[] and bills through linked_projects + item marking
+        # below. Such an invoice must NOT get a single guessed meta.payment_stage_index
+        # — that records the wrong stage as invoiced and breaks pending-stage /
+        # pending-CO detection everywhere (a checked CO could hide an unchecked one,
+        # or vice versa). Only do single-stage bookkeeping for a true single-project
+        # invoice that did not carry its own stage selection.
+        _from_load_modal = bool(request.args.get("projects"))
+
         # If no stage was explicitly selected, auto-detect the first pending stage
-        if stage_idx_raw == "":
+        if stage_idx_raw == "" and not _from_load_modal:
             proj_num = data["meta"].get("project_number", "")
             if proj_num:
                 all_projects = fb_get("/projects") or {}
@@ -6693,7 +6760,7 @@ def invoice_new():
                                 return redirect(url_for("project_detail", project_id=pid))
                         break
 
-        if stage_idx_raw != "":
+        if stage_idx_raw != "" and not _from_load_modal:
             data["meta"]["payment_stage_index"] = int(stage_idx_raw)
             data["meta"]["payment_stage"]       = stage_name
 
@@ -7116,6 +7183,16 @@ def invoice_new():
                         if skip_stage_item:
                             log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): stage_idx={next_stage_idx} is CO '{stages[next_stage_idx].get('co_number')}', already covered by co_{proj_id} param — skipping duplicate")
 
+                        # Respect the modal checkboxes: a co_<proj_id> param with no
+                        # stages_<proj_id> means the user checked only change orders
+                        # and left every regular payment stage unchecked. Add exactly
+                        # the checked COs (handled by the co_<proj_id> block below) and
+                        # nothing else — never auto-detect and append another stage or
+                        # a different pending CO.
+                        if co_indices_param and not skip_stage_item:
+                            skip_stage_item = True
+                            log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): CO-only modal selection — not auto-adding stage_idx={next_stage_idx}")
+
                         if not skip_stage_item:
                             # Use stage amount if available, otherwise use outstanding balance
                             if stage_amount > 0 and next_stage_idx is not None:
@@ -7159,12 +7236,24 @@ def invoice_new():
                                         co_powo   = co.get("po_wo_number", "").strip()
                                         co_firebase_id = co.get("firebase_id", "")
                                         if co_amount > 0:
-                                            # Find the payment stage for this CO
+                                            # Find the payment stage for this CO. Match on
+                                            # co_firebase_id first — co_number alone can
+                                            # collide when a project has more than one CO
+                                            # sharing a number (or a healed duplicate),
+                                            # which would point the line item at the wrong
+                                            # (possibly already-invoiced) stage.
                                             co_stage_idx = None
-                                            for s_idx, s in enumerate(stages if isinstance(stages, list) else []):
-                                                if isinstance(s, dict) and s.get("co_number") == co_num:
-                                                    co_stage_idx = s_idx
-                                                    break
+                                            _stage_list = stages if isinstance(stages, list) else []
+                                            if co_firebase_id:
+                                                for s_idx, s in enumerate(_stage_list):
+                                                    if isinstance(s, dict) and s.get("co_firebase_id") == co_firebase_id:
+                                                        co_stage_idx = s_idx
+                                                        break
+                                            if co_stage_idx is None:
+                                                for s_idx, s in enumerate(_stage_list):
+                                                    if isinstance(s, dict) and s.get("co_number") == co_num:
+                                                        co_stage_idx = s_idx
+                                                        break
 
                                             co_desc = f"{co_title} ({co_num})" if co_title else co_num
                                             prefill_items.append({
@@ -22830,26 +22919,39 @@ def _get_next_payment_stage(project: dict, all_invoices: dict = None) -> dict:
     if not isinstance(payment_stages, list) or not payment_stages:
         return {"stage_idx": None, "stage_name": None, "amount": 0, "blocked": True, "reason": "No payment stages defined"}
 
-    # Find which stages have been invoiced
-    invoiced_stages = set()
+    # Which stages have been invoiced — the stage's own status is the authority
+    # (written per-stage by _mark_project_stage, reverted on invoice delete).
+    # meta.payment_stage_index / linked_projects are kept as a secondary signal
+    # for legacy invoices created before stage status was tracked reliably, but
+    # a single meta.payment_stage_index on a multi-project invoice is a guess.
+    invoiced_stages = {
+        i for i, s in enumerate(payment_stages)
+        if isinstance(s, dict) and s.get("status") == "Invoiced"
+    }
     if isinstance(all_invoices, dict):
         for inv_id, inv_data in all_invoices.items():
-            if isinstance(inv_data, dict):
-                # Check single-project invoices
-                inv_proj = inv_data.get("meta", {}).get("project_number", "")
-                if inv_proj == proj_num:
-                    stage_idx = inv_data.get("meta", {}).get("payment_stage_index")
-                    if stage_idx is not None:
-                        invoiced_stages.add(int(stage_idx))
-
-                # Check multi-project invoices (linked_projects field)
-                linked_projects = inv_data.get("meta", {}).get("linked_projects", [])
-                if isinstance(linked_projects, list) and len(linked_projects) > 0:
-                    for linked in linked_projects:
-                        if isinstance(linked, dict) and linked.get("project_number") == proj_num:
-                            stage_idx = linked.get("payment_stage_index")
-                            if stage_idx is not None:
+            if not isinstance(inv_data, dict):
+                continue
+            meta = inv_data.get("meta", {}) or {}
+            if meta.get("status") == "Cancelled":
+                continue
+            linked_projects = meta.get("linked_projects") or []
+            if linked_projects:
+                for linked in linked_projects:
+                    if isinstance(linked, dict) and linked.get("project_number") == proj_num:
+                        stage_idx = linked.get("payment_stage_index")
+                        if stage_idx is not None:
+                            try:
                                 invoiced_stages.add(int(stage_idx))
+                            except (TypeError, ValueError):
+                                pass
+            elif meta.get("project_number", "") == proj_num:
+                stage_idx = meta.get("payment_stage_index")
+                if stage_idx is not None:
+                    try:
+                        invoiced_stages.add(int(stage_idx))
+                    except (TypeError, ValueError):
+                        pass
 
     # Find first stage NOT invoiced
     for idx, stage in enumerate(payment_stages):
