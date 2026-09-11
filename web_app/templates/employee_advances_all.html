@@ -54,6 +54,11 @@
     <div style="font-size:11px; color:#94a3b8; margin-top:4px;">Paid back</div>
   </div>
   <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Outstanding</div>
+    <div style="font-size:20px; font-weight:800; color:#dc2626;">${{ '{:,.2f}'.format(outstanding_amount) }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">{{ outstanding_count }} advance{{ '' if outstanding_count == 1 else 's' }}</div>
+  </div>
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
     <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Open</div>
     <div style="font-size:20px; font-weight:800; color:#b45309;">{{ open_count }}</div>
     <div style="font-size:11px; color:#94a3b8; margin-top:4px;">Active advances</div>
@@ -82,11 +87,11 @@
       </thead>
       <tbody>
         {% for adv in advances %}
-        {% set balance = [adv.get('amount', 0)|float - adv.get('adjusted_amount', 0)|float, 0]|max %}
+        {% set balance = [adv.get('amount', 0)|float - adv.get('adjusted', 0)|float, 0]|max %}
         <tr>
           <td class="text-muted small"><strong>{{ (adv.get('date', '') or '—') | format_date }}</strong></td>
           <td class="text-end text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(adv.get('amount', 0)|float) }}</td>
-          <td class="text-end">{{ currency_symbol }}{{ '{:,.2f}'.format(adv.get('adjusted_amount', 0)|float) }}</td>
+          <td class="text-end">{{ currency_symbol }}{{ '{:,.2f}'.format(adv.get('adjusted', 0)|float) }}</td>
           <td class="text-end {% if balance > 0 %}text-amber{% else %}text-muted{% endif %}">
             {{ currency_symbol }}{{ '{:,.2f}'.format(balance) }}
           </td>

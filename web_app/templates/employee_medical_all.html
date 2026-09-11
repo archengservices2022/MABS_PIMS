@@ -51,8 +51,8 @@
   </div>
   <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
     <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Approved</div>
-    <div style="font-size:20px; font-weight:800; color:#16a34a;">{{ approved_count }}</div>
-    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">${{ '{:,.2f}'.format(approved_amount) }}</div>
+    <div style="font-size:20px; font-weight:800; color:#16a34a;">${{ '{:,.2f}'.format(approved_amount) }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">{{ approved_count }} claim{{ '' if approved_count == 1 else 's' }}</div>
   </div>
   <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
     <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Pending</div>

@@ -18924,7 +18924,7 @@ def api_employee_summary(uid):
             continue
         if adv.get("employee_uid") == uid or (adv.get("employee_name") or "").strip() == name:
             amt      = _safe_float(adv.get("amount", 0))
-            adjusted = _safe_float(adv.get("adjusted_amount", 0))
+            adjusted = _safe_float(adv.get("adjusted", 0))  # not "adjusted_amount" — see employee_all_advances
             if adv.get("status", "").lower() != "closed":
                 advance_balance += max(amt - adjusted, 0)
 
@@ -18998,20 +18998,13 @@ def api_employee_summary(uid):
     })
 
 
-@app.route("/employee_profile/<uid>")
-@login_required
-def employee_profile(uid):
-    """Full employee profile page — 360° view."""
-    _role = normalize_role(session.get("user_role", ""))
-    is_admin = _role in ("admin", "accountant")
-    if not is_admin and session.get("user_uid", "") != uid:
-        flash("Access denied.", "danger")
-        return redirect(url_for("employees"))
-
+def _build_employee_profile_data(uid):
+    """Compute every figure shown on an employee's 360° profile — shared by
+    the profile page and its PDF export so the two can never drift apart.
+    Returns None when the user doesn't exist."""
     user = fb_get(f"/users/{uid}") or {}
     if not user:
-        flash("Employee not found.", "danger")
-        return redirect(url_for("employees"))
+        return None
 
     name      = (user.get("username") or user.get("name") or "").strip()
     email     = user.get("email", "")
@@ -19085,8 +19078,14 @@ def employee_profile(uid):
         key=lambda x: x.get("date", ""), reverse=True
     )
     total_advance    = sum(_safe_float(a.get("amount", 0)) for a in emp_advances)
+    # The Payroll ▸ Employee Advances table computes balance as amount minus
+    # the "adjusted" field — this read "adjusted_amount" instead, a field
+    # that's never actually set on these records, so every open advance's
+    # balance silently came out equal to its full original amount here,
+    # inflating the "ADVANCE OUTSTANDING" stat tile above by however much
+    # had really already been paid back.
     advance_balance  = sum(
-        max(_safe_float(a.get("amount", 0)) - _safe_float(a.get("adjusted_amount", 0)), 0)
+        max(_safe_float(a.get("amount", 0)) - _safe_float(a.get("adjusted", 0)), 0)
         for a in emp_advances if a.get("status", "").lower() != "closed"
     )
 
@@ -19106,10 +19105,16 @@ def employee_profile(uid):
     )
 
     # ── Expenses (reimbursements, other) ──────────────────────────────────────
+    # Filtered to genuine employee-submitted claims (see
+    # _is_employee_added_expense) — this feeds the profile page's "Recent
+    # Employee Expenses" widget, the PDF, and the YTD/"Other Reimbursements"
+    # total below, so a salary/bonus/commission/medical row logged under
+    # /expenses with a free-text category no longer inflates any of them.
     all_expenses = fb_get("/expenses") or {}
     emp_expenses = sorted(
         [dict(v, firebase_id=k) for k, v in all_expenses.items() if isinstance(v, dict) and
-         (v.get("submitted_by_uid") == uid or (v.get("submitted_by_name") or "").strip() == name)],
+         (v.get("submitted_by_uid") == uid or (v.get("submitted_by_name") or "").strip() == name)
+         and _is_employee_added_expense(v)],
         key=lambda x: x.get("date", "") or x.get("expense_date", ""), reverse=True
     )
     # For YTD calculations, only count approved expenses
@@ -19214,7 +19219,9 @@ def employee_profile(uid):
     # ── Cost to company & distribution ────────────────────────────────────────
     total_cost_to_company = total_salary_paid + total_bonus_paid + total_benefits + other_allowances
 
-    # Recent slices for tables — 5 rows each; "View All" links to the full list
+    # Recent slices for the on-screen tables — 5 rows each; "View All" links to
+    # the full list. The full, unsliced lists are also returned below (as
+    # all_*) for the PDF export, which shows everything.
     recent_payroll  = emp_sal_recs[:5]
     recent_advances = emp_advances[:5]
     recent_timesheets = emp_timesheets[:5]
@@ -19223,10 +19230,10 @@ def employee_profile(uid):
     recent_expenses = emp_expenses[:5]
     recent_medical = emp_medical[:5]
 
-    # Recent projects (last 5 distinct) — look up firebase_id for linking
+    # All distinct projects worked (unlimited) — look up firebase_id for linking
     _proj_by_num = {p.get("project_number"): p for p in _load_projects_list() if p.get("project_number")}
     seen_proj = set()
-    recent_projects = []
+    all_projects_worked = []
     for sheet in emp_timesheets:
         entries = sheet.get("entries", [])
         if isinstance(entries, dict):
@@ -19238,66 +19245,925 @@ def employee_profile(uid):
             if pn and pn not in seen_proj and pn != "General / Admin":
                 seen_proj.add(pn)
                 proj_rec = _proj_by_num.get(pn, {})
-                recent_projects.append({
+                all_projects_worked.append({
                     "project_number": pn,
                     "project_name":   e.get("project_name", "") or proj_rec.get("project_name", ""),
                     "firebase_id":    proj_rec.get("firebase_id", ""),
                     "status":         proj_rec.get("status", ""),
                 })
-            if len(recent_projects) >= 5:
-                break
-        if len(recent_projects) >= 5:
-            break
+    recent_projects = all_projects_worked[:5]
 
-    return render_template("employee_profile.html",
-        emp=user,
-        uid=uid,
-        name=name,
-        email=email,
-        role=role,
-        dept=dept,
-        title=title,
-        hire_date=hire_date,
-        phone=phone,
-        region=region,
-        emp_id=emp_id,
-        tenure_label=tenure_label,
-        base_salary=base_salary,
-        salary_type=salary_type,
-        total_salary_paid=total_salary_paid,
-        total_bonus_paid=total_bonus_paid,
-        total_benefits=total_benefits,
-        total_deductions=total_deductions,
-        total_advance=total_advance,
-        advance_balance=advance_balance,
-        commission_rate=commission_rate,
-        commission_earned=commission_earned,
-        commission_paid=commission_paid,
-        expenses_ytd=expenses_ytd,
-        other_allowances=other_allowances,
-        total_cost_to_company=total_cost_to_company,
-        total_hours=total_hours,
-        billable_hours=billable_hours,
-        nonbillable_hrs=nonbillable_hrs,
-        avg_hrs_week=avg_hrs_week,
-        projects_worked=projects_worked,
-        pto_allotment=pto_allotment,
-        pto_remaining=pto_remaining,
-        pto_used=pto_used,
-        sick_allotment=sick_allotment,
-        sick_remaining=sick_remaining,
-        sick_used=sick_used,
-        leave_taken_days=leave_taken_days,
-        recent_payroll=recent_payroll,
-        recent_advances=recent_advances,
-        recent_projects=recent_projects,
-        recent_timesheets=recent_timesheets,
-        recent_time_off=recent_time_off,
-        recent_expenses=recent_expenses,
-        recent_medical=recent_medical,
-        emp_reviews=emp_reviews,
-        is_admin=is_admin,
-    )
+    return {
+        "emp": user,
+        "uid": uid,
+        "name": name,
+        "email": email,
+        "role": role,
+        "dept": dept,
+        "title": title,
+        "hire_date": hire_date,
+        "phone": phone,
+        "region": region,
+        "emp_id": emp_id,
+        "tenure_label": tenure_label,
+        "base_salary": base_salary,
+        "salary_type": salary_type,
+        "total_salary_paid": total_salary_paid,
+        "total_bonus_paid": total_bonus_paid,
+        "total_benefits": total_benefits,
+        "total_deductions": total_deductions,
+        "total_advance": total_advance,
+        "advance_balance": advance_balance,
+        "commission_rate": commission_rate,
+        "commission_earned": commission_earned,
+        "commission_paid": commission_paid,
+        "expenses_ytd": expenses_ytd,
+        "other_allowances": other_allowances,
+        "total_cost_to_company": total_cost_to_company,
+        "total_hours": total_hours,
+        "billable_hours": billable_hours,
+        "nonbillable_hrs": nonbillable_hrs,
+        "avg_hrs_week": avg_hrs_week,
+        "projects_worked": projects_worked,
+        "pto_allotment": pto_allotment,
+        "pto_remaining": pto_remaining,
+        "pto_used": pto_used,
+        "sick_allotment": sick_allotment,
+        "sick_remaining": sick_remaining,
+        "sick_used": sick_used,
+        "leave_taken_days": leave_taken_days,
+        "recent_payroll": recent_payroll,
+        "recent_advances": recent_advances,
+        "recent_projects": recent_projects,
+        "recent_timesheets": recent_timesheets,
+        "recent_time_off": recent_time_off,
+        "recent_expenses": recent_expenses,
+        "recent_medical": recent_medical,
+        "emp_reviews": emp_reviews,
+        # Full (unsliced) records — used by the PDF export, which prints the
+        # employee's complete history rather than just the last 5 of each.
+        "all_payroll": emp_sal_recs,
+        "all_advances": emp_advances,
+        "all_projects_worked": all_projects_worked,
+        "all_timesheets": emp_timesheets,
+        "all_time_off": emp_time_off,
+        "all_expenses": emp_expenses,
+        "all_medical": emp_medical,
+    }
+
+
+def _employee_profile_access_or_redirect(uid):
+    """Shared viewer-permission check for the profile page and its PDF
+    export. Returns (is_admin, None) when allowed, or (None, redirect) when
+    the caller should bail out and return that redirect."""
+    _role = normalize_role(session.get("user_role", ""))
+    is_admin = _role in ("admin", "accountant")
+    if not is_admin and session.get("user_uid", "") != uid:
+        flash("Access denied.", "danger")
+        return None, redirect(url_for("employees"))
+    return is_admin, None
+
+
+@app.route("/employee_profile/<uid>")
+@login_required
+def employee_profile(uid):
+    """Full employee profile page — 360° view."""
+    is_admin, denied = _employee_profile_access_or_redirect(uid)
+    if denied:
+        return denied
+
+    data = _build_employee_profile_data(uid)
+    if not data:
+        flash("Employee not found.", "danger")
+        return redirect(url_for("employees"))
+
+    return render_template("employee_profile.html", is_admin=is_admin, **data)
+
+
+@app.route("/employee_profile/<uid>/pdf")
+@login_required
+def employee_profile_pdf(uid):
+    """Export the employee's 360° profile as a print-ready, letterhead-branded PDF."""
+    _is_admin, denied = _employee_profile_access_or_redirect(uid)
+    if denied:
+        return denied
+
+    data = _build_employee_profile_data(uid)
+    if not data:
+        flash("Employee not found.", "danger")
+        return redirect(url_for("employees"))
+
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image, CondPageBreak, BaseDocTemplate, PageTemplate, Frame, NextPageTemplate
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_RIGHT, TA_CENTER
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+        from reportlab.pdfgen import canvas as _pdfcanvas
+        from reportlab.graphics.shapes import Drawing, Circle, Rect, Line, String, Polygon, PolyLine, Group
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+    except ImportError:
+        flash("reportlab not installed.", "danger")
+        return redirect(url_for("employee_profile", uid=uid))
+
+    import io as _io
+    co  = company_info()
+    cs  = CURRENCY_SYMBOL
+    buf = _io.BytesIO()
+    _PAGE_MARGIN = 0.25*inch  # as slim as a page can go and still print safely on
+                               # a physical printer without clipping — the letterhead,
+                               # banner and tables now run almost edge-to-edge.
+    _TOP_MARGIN_P1 = 0.15*inch     # page 1 starts with its own letterhead card right at the top
+    _TOP_MARGIN_LATER = 0.55*inch  # pages 2+ need clearance under the teal running-header bar
+                                    # (0.42in tall) plus a little breathing room — SimpleDocTemplate
+                                    # only has one topMargin for the whole document, so this uses
+                                    # two Frames/PageTemplates and switches between them instead.
+    _BOTTOM_MARGIN = 0.7*inch
+    _frame_w = A4[0] - 2*_PAGE_MARGIN
+    _frame_kwargs = dict(leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+    _frame_first = Frame(_PAGE_MARGIN, _BOTTOM_MARGIN, _frame_w, A4[1] - _TOP_MARGIN_P1 - _BOTTOM_MARGIN, id="first", **_frame_kwargs)
+    _frame_later = Frame(_PAGE_MARGIN, _BOTTOM_MARGIN, _frame_w, A4[1] - _TOP_MARGIN_LATER - _BOTTOM_MARGIN, id="later", **_frame_kwargs)
+    doc = BaseDocTemplate(buf, pagesize=A4,
+                          leftMargin=_PAGE_MARGIN, rightMargin=_PAGE_MARGIN,
+                          topMargin=_TOP_MARGIN_P1, bottomMargin=_BOTTOM_MARGIN)
+    doc.addPageTemplates([PageTemplate(id="First", frames=[_frame_first]), PageTemplate(id="Later", frames=[_frame_later])])
+    styles = getSampleStyleSheet()
+    elems = []
+    CW = A4[0] - 2*_PAGE_MARGIN  # full content width — every full-width block below fills it exactly
+    _SCALE = CW / (6.8*inch)     # every hand-tuned column width below was authored against a 6.8in
+                                  # canvas (the old margins' content width); scaling by this ratio
+                                  # keeps every table's internal proportions identical while
+                                  # stretching them out to fill the new, narrower margins.
+    def W(v):
+        """Scale a design-time inch literal to the actual (margin-driven) content width."""
+        return v * inch * _SCALE
+
+    navy   = colors.HexColor("#122A52")
+    navy2  = colors.HexColor("#0B7A73")
+    teal   = colors.HexColor("#0D9488")
+    dark   = colors.HexColor("#0F172A")
+    muted  = colors.HexColor("#64748B")
+    light  = colors.HexColor("#F8FAFC")
+    border = colors.HexColor("#E2E8F0")
+
+    # Status → (background, text) so every badge/pill reads at a glance,
+    # matching the web app's own status-color language.
+    _STATUS_BADGE = {
+        "paid": ("#DCFCE7", "#15803D"), "approved": ("#DCFCE7", "#15803D"),
+        "completed": ("#DCFCE7", "#15803D"), "active": ("#DCFCE7", "#15803D"),
+        "closed": ("#DCFCE7", "#15803D"),
+        "submitted": ("#DBEAFE", "#1D4ED8"),
+        "pending": ("#FEF3C7", "#B45309"), "open": ("#FEF3C7", "#B45309"),
+        "draft": ("#F1F5F9", "#475569"),
+        "rejected": ("#FEE2E2", "#B91C1C"), "cancelled": ("#FEE2E2", "#B91C1C"),
+        "terminated": ("#FEE2E2", "#B91C1C"),
+    }
+    _STATUS_DOT = {k: v[1] for k, v in _STATUS_BADGE.items()}
+
+    val    = ParagraphStyle("val",   parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold",  textColor=dark, leading=13)
+    sm     = ParagraphStyle("sm",    parent=styles["Normal"], fontSize=9,  fontName="Helvetica",        textColor=muted, leading=12)
+    h2     = ParagraphStyle("h2",    parent=styles["Normal"], fontSize=11.5, fontName="Helvetica-Bold", textColor=navy, spaceBefore=16, spaceAfter=2, keepWithNext=True)
+    h2side = ParagraphStyle("h2side", parent=h2, fontSize=10.5, spaceBefore=0)
+    h2sub  = ParagraphStyle("h2sub", parent=styles["Normal"], fontSize=8,  fontName="Helvetica",        textColor=muted, alignment=TA_RIGHT)
+    cell   = ParagraphStyle("cell",  parent=styles["Normal"], fontSize=8.5, fontName="Helvetica",       textColor=dark, leading=11)
+    cellR  = ParagraphStyle("cellR", parent=cell, alignment=TA_RIGHT)
+    cellC  = ParagraphStyle("cellC", parent=cell, alignment=TA_CENTER)
+    cellH  = ParagraphStyle("cellH", parent=styles["Normal"], fontSize=8.5, fontName="Helvetica-Bold",  textColor=colors.white, leading=11)
+    cellHR = ParagraphStyle("cellHR",parent=cellH, alignment=TA_RIGHT)
+    cellHC = ParagraphStyle("cellHC",parent=cellH, alignment=TA_CENTER)
+
+    def money(n):
+        return f"{cs}{_safe_float(n):,.2f}"
+
+    # ── Small vector icon library. Every "icon" here is drawn from basic
+    # shapes rather than a font glyph, so nothing depends on emoji/Unicode
+    # coverage in the base-14 PDF fonts (that's exactly what caused the
+    # mangled "?" arrows elsewhere in this app before they were fixed). ──
+    def _icon_shapes(kind, s, color_hex):
+        c = colors.HexColor(color_hex)
+        if kind == "dollar":
+            return [String(s/2, s*0.20, "$", fontName="Helvetica-Bold", fontSize=s*0.66, fillColor=c, textAnchor="middle")]
+        if kind == "gift":
+            bx, by, bw, bh = s*0.18, s*0.12, s*0.64, s*0.5
+            return [Rect(bx, by, bw, bh, fillColor=None, strokeColor=c, strokeWidth=1.4),
+                    Line(s*0.5, by, s*0.5, by+bh, strokeColor=c, strokeWidth=1.4),
+                    Line(bx, by+bh*0.55, bx+bw, by+bh*0.55, strokeColor=c, strokeWidth=1.4),
+                    Line(s*0.5, by+bh, s*0.34, by+bh+s*0.12, strokeColor=c, strokeWidth=1.4),
+                    Line(s*0.5, by+bh, s*0.66, by+bh+s*0.12, strokeColor=c, strokeWidth=1.4)]
+        if kind == "wallet":
+            bx, by, bw, bh = s*0.1, s*0.2, s*0.8, s*0.48
+            return [Rect(bx, by, bw, bh, rx=s*0.06, ry=s*0.06, fillColor=None, strokeColor=c, strokeWidth=1.4),
+                    Circle(bx+bw-s*0.15, by+bh*0.5, s*0.05, fillColor=c, strokeColor=None),
+                    Line(bx, by+bh*0.72, bx+bw, by+bh*0.72, strokeColor=c, strokeWidth=1.2)]
+        if kind == "trend_up":
+            return [PolyLine([s*0.1, s*0.26, s*0.38, s*0.48, s*0.54, s*0.34, s*0.9, s*0.76], strokeColor=c, strokeWidth=1.7),
+                    Polygon([s*0.9, s*0.76, s*0.72, s*0.78, s*0.85, s*0.6], fillColor=c, strokeColor=None)]
+        if kind == "briefcase":
+            bx, by, bw, bh = s*0.12, s*0.16, s*0.76, s*0.46
+            return [Rect(bx, by, bw, bh, fillColor=None, strokeColor=c, strokeWidth=1.4),
+                    Rect(s*0.36, by+bh, s*0.28, s*0.14, fillColor=None, strokeColor=c, strokeWidth=1.4),
+                    Line(bx, by+bh*0.55, bx+bw, by+bh*0.55, strokeColor=c, strokeWidth=1.2)]
+        if kind == "clock":
+            return [Circle(s/2, s/2, s*0.38, fillColor=None, strokeColor=c, strokeWidth=1.4),
+                    Line(s/2, s/2, s/2, s/2+s*0.22, strokeColor=c, strokeWidth=1.3),
+                    Line(s/2, s/2, s/2+s*0.18, s/2, strokeColor=c, strokeWidth=1.3)]
+        if kind == "leaf":
+            return [Circle(s*0.42, s*0.55, s*0.3, fillColor=c, strokeColor=None),
+                    Line(s*0.2, s*0.32, s*0.62, s*0.78, strokeColor=colors.white, strokeWidth=1.1)]
+        if kind == "person":
+            return [Circle(s/2, s*0.66, s*0.18, fillColor=c, strokeColor=None),
+                    Polygon([s*0.22, s*0.12, s*0.78, s*0.12, s*0.66, s*0.42, s*0.34, s*0.42], fillColor=c, strokeColor=None)]
+        if kind == "coins":
+            return [Circle(s*0.38, s*0.34, s*0.26, fillColor=None, strokeColor=c, strokeWidth=1.4),
+                    Circle(s*0.62, s*0.6, s*0.26, fillColor=None, strokeColor=c, strokeWidth=1.4)]
+        if kind == "calendar_check":
+            bx, by, bw, bh = s*0.12, s*0.1, s*0.76, s*0.64
+            return [Rect(bx, by, bw, bh, fillColor=None, strokeColor=c, strokeWidth=1.4),
+                    Line(bx, by+bh*0.72, bx+bw, by+bh*0.72, strokeColor=c, strokeWidth=1.4),
+                    PolyLine([bx+bw*0.22, by+bh*0.35, bx+bw*0.4, by+bh*0.16, bx+bw*0.78, by+bh*0.5], strokeColor=c, strokeWidth=1.4)]
+        if kind == "receipt":
+            bx, by, bw, bh = s*0.2, s*0.08, s*0.6, s*0.76
+            shapes = [Rect(bx, by, bw, bh, fillColor=None, strokeColor=c, strokeWidth=1.3)]
+            for k in range(3):
+                yy = by + bh*0.26 + k*bh*0.18
+                shapes.append(Line(bx+bw*0.16, yy, bx+bw*0.84, yy, strokeColor=c, strokeWidth=1.0))
+            return shapes
+        if kind == "envelope":
+            bx, by, bw, bh = s*0.05, s*0.18, s*0.9, s*0.5
+            return [Rect(bx, by, bw, bh, fillColor=None, strokeColor=c, strokeWidth=1.2),
+                    PolyLine([bx, by+bh, bx+bw/2, by+bh*0.42, bx+bw, by+bh], strokeColor=c, strokeWidth=1.2)]
+        if kind == "pin":
+            return [Circle(s/2, s*0.62, s*0.24, fillColor=None, strokeColor=c, strokeWidth=1.3),
+                    Polygon([s*0.3, s*0.5, s*0.7, s*0.5, s/2, s*0.08], fillColor=c, strokeColor=None)]
+        if kind == "phone":
+            # A classic telephone-handset glyph (capsule body + two rounded
+            # ends), built centred on the local origin then rotated 45° and
+            # moved into place — reads clearly as "phone" even at 8-9pt,
+            # unlike the old tall mobile-phone outline it replaced, which
+            # just looked like a thin vertical bar at that size.
+            g = Group()
+            body_w, body_h = s*0.62, s*0.24
+            g.add(Rect(-body_w/2, -body_h/2, body_w, body_h, rx=body_h/2, ry=body_h/2, fillColor=c, strokeColor=None))
+            g.add(Circle(-body_w/2, 0, body_h*0.62, fillColor=c, strokeColor=None))
+            g.add(Circle(body_w/2, 0, body_h*0.62, fillColor=c, strokeColor=None))
+            g.translate(s*0.5, s*0.5)
+            g.rotate(45)
+            return [g]
+        if kind == "medical":
+            return [Rect(s*0.4, s*0.12, s*0.2, s*0.76, fillColor=c, strokeColor=None),
+                    Rect(s*0.12, s*0.4, s*0.76, s*0.2, fillColor=c, strokeColor=None)]
+        return []
+
+    def _icon(kind, s, color_hex):
+        d = Drawing(s, s)
+        for shp in _icon_shapes(kind, s, color_hex):
+            d.add(shp)
+        return d
+
+    def _icon_badge(kind, diameter, bg_hex, fg_hex="#FFFFFF"):
+        """A filled colour circle with a small white icon centred inside —
+        used for the stat cards and every section heading."""
+        d = Drawing(diameter, diameter)
+        d.add(Circle(diameter/2, diameter/2, diameter/2, fillColor=colors.HexColor(bg_hex), strokeColor=None))
+        inner = diameter * 0.56
+        g = Group(*_icon_shapes(kind, inner, fg_hex))
+        g.translate((diameter-inner)/2, (diameter-inner)/2)
+        d.add(g)
+        return d
+
+    def _icon_badge_sq(kind, size, bg_hex, fg_hex="#FFFFFF"):
+        """A filled colour rounded-square with a small white icon centred
+        inside — used for the Joined/Tenure badges on the identity card."""
+        d = Drawing(size, size)
+        r = size * 0.28
+        d.add(Rect(0, 0, size, size, rx=r, ry=r, fillColor=colors.HexColor(bg_hex), strokeColor=None))
+        inner = size * 0.56
+        g = Group(*_icon_shapes(kind, inner, fg_hex))
+        g.translate((size-inner)/2, (size-inner)/2)
+        d.add(g)
+        return d
+
+    def pill(text, bg_hex, fg_hex, font_size=8, pad_x=7, height=14):
+        """A rounded, capsule-shaped badge — used for role/status labels."""
+        w = stringWidth(text, "Helvetica-Bold", font_size) + pad_x*2
+        d = Drawing(w, height)
+        d.add(Rect(0, 0, w, height, rx=height/2, ry=height/2, fillColor=colors.HexColor(bg_hex), strokeColor=None))
+        d.add(String(w/2, height/2 - font_size*0.36, text, fontName="Helvetica-Bold", fontSize=font_size,
+                      fillColor=colors.HexColor(fg_hex), textAnchor="middle"))
+        return d
+
+    def status_pill(s):
+        s = s or "—"
+        bg, fg = _STATUS_BADGE.get(str(s).strip().lower(), ("#F1F5F9", "#0F172A"))
+        return pill(str(s), bg, fg)
+
+    def status_dot_row(s):
+        s = s or "—"
+        c = _STATUS_DOT.get(str(s).strip().lower(), "#0F172A")
+        dot = Drawing(9, 9)
+        dot.add(Circle(4.5, 4.5, 4.5, fillColor=colors.HexColor(c), strokeColor=None))
+        row = Table([[dot, Paragraph(f"<b>{s}</b>", val)]], colWidths=[W(0.14), W(1.3)])
+        row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, 0), 4)]))
+        return row
+
+    def section_title(title, icon_kind=None, accent_hex="#0D9488", note=None):
+        """Icon-badge (colour-matched to the section) + uppercase heading +
+        an optional right-aligned note (e.g. a record count) + a rule in the
+        same accent colour underneath — the same language as the stat tiles
+        and the Compensation Summary / Employment Details headers above."""
+        if icon_kind:
+            cells = [_icon_badge(icon_kind, 0.24*inch, accent_hex), Paragraph(title, h2)]
+            widths = [W(0.3), None]
+            if note:
+                cells.append(Paragraph(note, h2sub))
+                widths = [W(0.3), W(4.6), CW - W(0.3) - W(4.6)]
+            row = Table([cells], colWidths=widths)
+            row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+            elems.append(row)
+        else:
+            elems.append(Paragraph(title, h2))
+        elems.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor(accent_hex), spaceBefore=4, spaceAfter=8))
+
+    # ── Header (page 1 letterhead) ──
+    logo_path = _get_company_logo_path()
+    logo_img = None
+    if logo_path:
+        try:
+            _lp = Path(logo_path)
+            if _lp.exists():
+                logo_img = Image(str(_lp.resolve()), width=0.58*inch, height=0.58*inch)
+        except Exception:
+            logo_img = None
+
+    addr = (co.get("address", "") or "").replace("\n", " | ")
+
+    # A letterhead card on a light grey ground — logo on the left with a
+    # vertical rule after it, then the name and (below it) one contact line
+    # with pipe separators, both left-aligned starting right after the rule.
+    # leading must be set explicitly — styles["Normal"] carries a fixed 12pt
+    # leading meant for 10pt body text, so at fontSize=17 without overriding
+    # it the line box stays 12pt tall and whatever follows on the next line
+    # overlaps into the company name's descenders.
+    name_para_l = Paragraph(f"<b>{co.get('name', '')}</b>",
+                             ParagraphStyle("cnl", parent=styles["Normal"], fontSize=17, leading=21, fontName="Helvetica-Bold", textColor=navy))
+
+    def _contact_item(icon_kind, text):
+        if not text:
+            return []
+        icon = _icon(icon_kind, 8, "#0D9488")
+        txt = Paragraph(f'<font size=8.5 color="#334155">{text}</font>', styles["Normal"])
+        return [(icon, 11), (txt, stringWidth(text, "Helvetica", 8.5) + 4)]
+    pipe = Paragraph('<font size=8.5 color="#CBD5E1">&nbsp;&nbsp;|&nbsp;&nbsp;</font>', styles["Normal"])
+    pipe_w = stringWidth("  |  ", "Helvetica", 8.5) + 4
+    parts = [p for p in (_contact_item("pin", addr), _contact_item("phone", co.get("phone", "")), _contact_item("envelope", co.get("email", ""))) if p]
+    cells, widths = [], []
+    for i, part in enumerate(parts):
+        if i > 0:
+            cells.append(pipe); widths.append(pipe_w)
+        for flow, w in part:
+            cells.append(flow); widths.append(w)
+    contact_row = Table([cells], colWidths=widths)
+    # Same default-padding trap as everywhere else here — zero it globally
+    # first so the exact-fit widths above are actually exact.
+    contact_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+    contact_row.hAlign = "LEFT"
+
+    text_content = [name_para_l, Spacer(1, 2), contact_row]
+    logo_col_w = W(0.95)
+    if logo_img:
+        logo_img.hAlign = "CENTER"
+        hdr_tbl = Table([[logo_img, text_content]], colWidths=[logo_col_w, CW - logo_col_w])
+        hdr_tbl.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BACKGROUND", (0, 0), (-1, -1), light),
+            ("BOX", (0, 0), (-1, -1), 0.75, border),
+            ("LINEAFTER", (0, 0), (0, 0), 0.75, border),
+            ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+            ("LEFTPADDING", (0, 0), (0, 0), 14), ("RIGHTPADDING", (0, 0), (0, 0), 14),
+            ("LEFTPADDING", (1, 0), (1, 0), 16), ("RIGHTPADDING", (1, 0), (1, 0), 12),
+        ]))
+    else:
+        hdr_tbl = Table([[text_content]], colWidths=[CW])
+        hdr_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), light),
+            ("BOX", (0, 0), (-1, -1), 0.75, border),
+            ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+            ("LEFTPADDING", (0, 0), (-1, -1), 16), ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ]))
+    elems.append(hdr_tbl)
+    elems.append(Spacer(1, 10))
+
+    # ── Title banner: navy plate with a layered teal diagonal accent ──
+    bw, bh = CW, 0.82*inch
+    banner = Drawing(bw, bh)
+    banner.add(Rect(0, 0, bw, bh, fillColor=navy, strokeColor=None))
+    banner.add(Polygon([bw*0.58, 0, bw, 0, bw, bh, bw*0.42, bh], fillColor=teal, strokeColor=None))
+    banner.add(Polygon([bw*0.75, 0, bw, 0, bw, bh, bw*0.63, bh], fillColor=navy2, strokeColor=None))
+    banner.add(String(12, bh*0.55, "EMPLOYEE PROFILE", fontName="Helvetica-Bold", fontSize=19, fillColor=colors.white))
+    banner.add(String(12, bh*0.24, "Employee information, compensation, work history and benefits",
+                       fontName="Helvetica", fontSize=9, fillColor=colors.HexColor("#C7D2E5")))
+    banner.add(String(bw-16, bh*0.64, "Generated on", fontName="Helvetica", fontSize=8, fillColor=colors.white, textAnchor="end"))
+    banner.add(String(bw-16, bh*0.36, datetime.now(COMPANY_TZ).strftime("%B %d, %Y"),
+                       fontName="Helvetica-Bold", fontSize=12, fillColor=colors.white, textAnchor="end"))
+    elems.append(banner)
+    elems.append(Spacer(1, 14))
+
+    # ── Employee identity card ──
+    initial = (data["name"] or "?")[:1].upper()
+    def avatar_circle(letter, diameter, bg_hex, fg_hex):
+        d = Drawing(diameter, diameter)
+        r = diameter / 2
+        d.add(Circle(r, r, r, fillColor=colors.HexColor(bg_hex), strokeColor=None))
+        d.add(String(r, r-diameter*0.16, letter, fontName="Helvetica-Bold", fontSize=diameter*0.42, fillColor=colors.HexColor(fg_hex), textAnchor="middle"))
+        return d
+    avatar = avatar_circle(initial, 0.85*inch, "#CCFBF1", "#0D9488")
+
+    role_txt = data["role"].title() if data["role"] else "—"
+    badge = pill(role_txt, "#DBEAFE", "#1D4ED8")
+    # A None-width column doesn't shrink to its content's minimum size — when
+    # more than one column is None, Table splits whatever space is left over
+    # *equally* between them, which is what was pushing the badge away from a
+    # short name. Size both columns exactly (name via stringWidth, badge via
+    # its own Drawing width) so the badge sits flush against the name.
+    _name_txt = data["name"] or "—"
+    # The column width has to include the gap before the badge too (padding
+    # eats into a cell's own width, it doesn't add to it) — leaving it out is
+    # what wrapped the name to two lines the first time round.
+    _name_w = stringWidth(_name_txt, "Helvetica-Bold", 14) + 10
+    name_row = Table([[Paragraph(f'<font size=14 color="#0F172A"><b>{_name_txt}</b></font>', styles["Normal"]), badge]],
+                      colWidths=[_name_w, badge.width])
+    name_row.hAlign = "LEFT"
+    name_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
+    sub_para = Paragraph(f'<font size=9.5 color="#64748B">{data["title"] or "&nbsp;"}</font>', styles["Normal"])
+
+    # Contact/role rows live inside the identity card itself, stacked under the
+    # name — one icon + value per line, no separate label (there's no room for
+    # one at this size) — rather than as a wide separate row below the card.
+    # Tight top/bottom padding keeps the whole stack close together instead of
+    # drifting apart from the name line above it.
+    def inline_meta_row(icon_kind, value_text):
+        icon = _icon(icon_kind, 9, "#94A3B8")
+        txt = Paragraph(f'<font size=8.5 color="#334155">{value_text or "—"}</font>', styles["Normal"])
+        t = Table([[icon, txt]], colWidths=[W(0.16), None])
+        t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 0.5)]))
+        t.hAlign = "LEFT"
+        return t
+    left_block = [name_row, sub_para,
+                  inline_meta_row("envelope", data["email"]),
+                  inline_meta_row("phone", data["phone"]),
+                  inline_meta_row("pin", data["region"]),
+                  inline_meta_row("briefcase", data["dept"])]
+
+    def meta_block(icon_kind, label, value_text):
+        # A small navy rounded-square badge (matching the reference design)
+        # instead of a bare grey glyph — same icon language as the rest of
+        # the page's icon badges, just sized down for this compact spot.
+        icon = _icon_badge_sq(icon_kind, 0.22*inch, "#122A52")
+        txt = Paragraph(f'<font size=7.5 color="#94A3B8">{label}</font><br/><font size=10 color="#0F172A"><b>{value_text or "—"}</b></font>', styles["Normal"])
+        # Value column auto-fits its text (None) instead of a fixed scaled width,
+        # so a short value like "8M" doesn't leave a dead gap before the next block.
+        # Icon column is a fixed absolute size (not scaled by W()) tight around
+        # the 0.22in badge — this zone is narrow enough that a scaled/padded
+        # icon column was eating into the room "Jan 01, 2026" needs to fit.
+        t = Table([[icon, txt]], colWidths=[0.22*inch + 4, None])
+        t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 0), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, 0), 4)]))
+        t.hAlign = "LEFT"
+        return t
+    def _pretty_date(d):
+        try:
+            return datetime.strptime(str(d)[:10], "%Y-%m-%d").strftime("%b %d, %Y")
+        except Exception:
+            return d or "—"
+    joined_block = meta_block("calendar_check", "Date Joined", _pretty_date(data["hire_date"]))
+    tenure_block = meta_block("clock", "Tenure", data["tenure_label"])
+
+    # Joined and Tenure are stacked one above the other in a single right-hand
+    # column now, rather than split into two narrower side-by-side columns —
+    # splitting them left "Jan 01, 2026" too little room and it kept wrapping
+    # onto a second line no matter how the split was rebalanced. Stacked, the
+    # value gets the whole column's width, so it always fits on one line.
+    right_col = [joined_block, Spacer(1, 10), tenure_block]
+    id_data = [[avatar, left_block, right_col]]
+    idt = Table(id_data, colWidths=[W(1.05), W(2.9), W(2.85)])
+    idt.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("VALIGN", (0, 0), (0, -1), "MIDDLE"),  # avatar centers vertically against the whole card
+        ("BACKGROUND", (0, 0), (-1, -1), light),
+        ("BOX", (0, 0), (-1, -1), 0.75, border),
+        ("LINEBEFORE", (2, 0), (2, 0), 0.75, border),
+        ("TOPPADDING", (0, 0), (-1, -1), 12), ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    elems.append(idt)
+    elems.append(Spacer(1, 14))
+
+    # ── Key stat cards — icon-badge, label, colour-coded value ──
+    tiles = [
+        ("TOTAL SALARY", money(data["total_salary_paid"]), "#16A34A", "dollar"),
+        ("TOTAL BENEFITS", money(data["total_benefits"]), "#2563EB", "gift"),
+        ("TOTAL ADVANCE", money(data["total_advance"]), "#D97706", "wallet"),
+        ("ADVANCE OUTSTANDING", money(data["advance_balance"]), "#DC2626", "trend_up"),
+        ("PROJECTS WORKED", str(data["projects_worked"]), "#7C3AED", "briefcase"),
+        ("TOTAL HOURS", f'{data["total_hours"]:.1f}', "#2563EB", "clock"),
+        ("LEAVE TAKEN", f'{data["leave_taken_days"]:.1f} days', "#16A34A", "leaf"),
+    ]
+    n_tiles = len(tiles)
+    col_w = CW / n_tiles
+    icon_cells = [_icon_badge(t[3], 0.34*inch, t[2]) for t in tiles]
+    lbl_style = ParagraphStyle("tl", parent=styles["Normal"], fontSize=6.6, fontName="Helvetica-Bold", textColor=colors.HexColor("#94A3B8"), alignment=TA_CENTER, leading=8)
+    lbl_cells = [Paragraph(t[0], lbl_style) for t in tiles]
+    val_cells = [Paragraph(f'<font color="{t[2]}"><b>{t[1]}</b></font>', ParagraphStyle("tv", parent=styles["Normal"], fontSize=11, alignment=TA_CENTER)) for t in tiles]
+    tile_tbl = Table([icon_cells, lbl_cells, val_cells], colWidths=[col_w] * n_tiles)
+    tile_cmds = [
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("BACKGROUND", (0, 0), (-1, -1), light),
+        ("TOPPADDING", (0, 0), (-1, 0), 10), ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
+        ("TOPPADDING", (0, 1), (-1, 1), 0), ("BOTTOMPADDING", (0, 1), (-1, 1), 2),
+        ("TOPPADDING", (0, 2), (-1, 2), 0), ("BOTTOMPADDING", (0, 2), (-1, 2), 10),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+    ]
+    for _i, _t in enumerate(tiles):
+        tile_cmds.append(("BOX", (_i, 0), (_i, 2), 0.75, border))
+        tile_cmds.append(("LINEABOVE", (_i, 0), (_i, 0), 2.4, colors.HexColor(_t[2])))
+    tile_tbl.setStyle(TableStyle(tile_cmds))
+    elems.append(tile_tbl)
+    elems.append(Spacer(1, 16))
+
+    # ── Compensation Summary + Employment Details, side by side ──
+    _SIDE_TITLE_AVAIL = W(3.35) - 14  # two_col's per-column content width (cell minus its 14pt inner padding)
+    def side_title(icon_kind, title, note=None):
+        icon_col = 0.22*inch + 4
+        if note:
+            # Size the note to exactly what its text needs, then hand the title
+            # column whatever's left of the row's full width — at 11.5pt a fixed
+            # 1.6in title column wraps long headings like "COMPENSATION SUMMARY";
+            # this both fits any heading and still keeps the note flush against
+            # the right edge (matching the total-row amount below it).
+            note_w = stringWidth(note, "Helvetica", 8) + 6
+            title_w = _SIDE_TITLE_AVAIL - icon_col - note_w
+            row = Table([[_icon_badge(icon_kind, 0.22*inch, "#0D9488"), Paragraph(title, h2side), Paragraph(note, h2sub)]],
+                        colWidths=[icon_col, title_w, note_w])
+        else:
+            row = Table([[_icon_badge(icon_kind, 0.22*inch, "#0D9488"), Paragraph(title, h2side)]], colWidths=[icon_col, None])
+        row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+        return row
+
+    comp_title = side_title("coins", "COMPENSATION SUMMARY", "All amounts in USD")
+    comp_rows = [
+        ["Total Salary Paid",   money(data["total_salary_paid"])],
+        ["Total Bonus Paid",    money(data["total_bonus_paid"])],
+        ["Total Commission",    money(data["commission_earned"])],
+        ["Benefits & Allowances", money(data["total_benefits"])],
+        ["Other Reimbursements", money(data["other_allowances"])],
+        ["Total Cost to Company", money(data["total_cost_to_company"])],
+    ]
+    comp_tbl = Table(comp_rows, colWidths=[W(1.7), W(1.4)])
+    comp_tbl.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica"), ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("TEXTCOLOR", (0, 0), (0, -1), muted),
+        ("FONTNAME", (1, 0), (1, -1), "Helvetica-Bold"), ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("TEXTCOLOR", (1, -1), (1, -1), teal), ("FONTSIZE", (1, -1), (1, -1), 10.5),
+        ("LINEBELOW", (0, -2), (-1, -2), 0.5, border),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#ECFDF5")),
+        ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    emp_title = side_title("person", "EMPLOYMENT DETAILS")
+    emp_rows_data = [
+        ("Employee ID", data["emp_id"] or "—", False),
+        ("Department",  data["dept"] or "—", False),
+        ("Region",      data["region"] or "—", False),
+        ("Phone",       data["phone"] or "—", False),
+        ("Status",      (data.get("emp") or {}).get("employee_status", "Active"), True),
+    ]
+    emp_rows = []
+    for _lbl_txt, _val_txt, _is_status in emp_rows_data:
+        val_flow = status_dot_row(_val_txt) if _is_status else Paragraph(f"<b>{_val_txt}</b>", val)
+        emp_rows.append([Paragraph(_lbl_txt, sm), val_flow])
+    emp_tbl = Table(emp_rows, colWidths=[W(1.3), W(1.8)])
+    emp_tbl.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.4, border),
+        ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    left_col = [comp_title, HRFlowable(width="100%", thickness=1, color=teal, spaceBefore=4, spaceAfter=8), comp_tbl]
+    right_col = [emp_title, HRFlowable(width="100%", thickness=1, color=teal, spaceBefore=4, spaceAfter=8), emp_tbl]
+    two_col = Table([[left_col, right_col]], colWidths=[W(3.35), W(3.35)])
+    two_col.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (0, 0), 0), ("RIGHTPADDING", (0, 0), (0, 0), 14),
+        ("LEFTPADDING", (1, 0), (1, 0), 14), ("RIGHTPADDING", (1, 0), (1, 0), 0),
+        ("LINEBEFORE", (1, 0), (1, 0), 0.75, border),
+    ]))
+    elems.append(two_col)
+    elems.append(Spacer(1, 4))
+
+    # ── Work & leave summary — now two independently-titled cards side by
+    # side (icon badge + heading + rule, own table each) separated by a
+    # divider, the same pattern as Compensation Summary / Employment Details
+    # above, instead of one heading spanning two plain, unlabelled columns. ──
+    work_rows = [
+        ["Projects Worked", str(data["projects_worked"])],
+        ["Total Hours Logged", f'{data["total_hours"]:.1f} hrs'],
+        ["Billable Hours", f'{data["billable_hours"]:.1f} hrs'],
+        ["Avg Hours / Week", f'{data["avg_hrs_week"]:.1f} hrs'],
+    ]
+    leave_rows = [
+        ["Annual Leave Entitlement", f'{data["pto_allotment"]:.1f} days'],
+        ["Annual Leave Remaining", f'{data["pto_remaining"]:.1f} days'],
+        ["Sick Leave Entitlement", f'{data["sick_allotment"]:.1f} days'],
+        ["Sick Leave Remaining", f'{data["sick_remaining"]:.1f} days'],
+    ]
+    def side_tbl(rows):
+        # Both sides now land in an equal-width column (matching the
+        # Compensation/Employment cells above), so one label/value split
+        # comfortably fits either side's longest row ("Annual Leave
+        # Entitlement" included) — no more per-side sizing needed.
+        t = Table(rows, colWidths=[W(1.8), W(1.3)])
+        t.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (0, -1), "Helvetica"), ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+            ("TEXTCOLOR", (0, 0), (0, -1), muted),
+            ("FONTNAME", (1, 0), (1, -1), "Helvetica-Bold"), ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        return t
+    work_title = side_title("clock", "WORK SUMMARY")
+    leave_title = side_title("calendar_check", "LEAVE SUMMARY")
+    work_col = [work_title, HRFlowable(width="100%", thickness=1, color=teal, spaceBefore=4, spaceAfter=8), side_tbl(work_rows)]
+    leave_col = [leave_title, HRFlowable(width="100%", thickness=1, color=teal, spaceBefore=4, spaceAfter=8), side_tbl(leave_rows)]
+    wl_two_col = Table([[work_col, leave_col]], colWidths=[W(3.35), W(3.35)])
+    wl_two_col.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (0, 0), 0), ("RIGHTPADDING", (0, 0), (0, 0), 14),
+        ("LEFTPADDING", (1, 0), (1, 0), 14), ("RIGHTPADDING", (1, 0), (1, 0), 0),
+        ("LINEBEFORE", (1, 0), (1, 0), 0.75, border),
+    ]))
+    elems.append(wl_two_col)
+    # Everything above this is page 1, using the tight top margin. Whatever
+    # page comes next (as soon as the ledger tables below overflow past
+    # page 1) switches to the "Later" template's taller top margin.
+    elems.append(NextPageTemplate("Later"))
+
+    def data_table(title, headers, rows, col_widths, numeric_cols=(), icon_kind="receipt", accent_hex="#0D9488", totals=None):
+        """Append a titled, full-history table (every record, not just the
+        last 5) with a leading S.No column. Headers repeat on every page; a
+        Status column (if present) renders as a colour-coded pill and
+        numeric columns are right-aligned, like a ledger. The section badge,
+        rule and (when given) a bottom TOTAL row all pick up `accent_hex`,
+        so each table reads as an extension of its matching stat tile
+        rather than a plain data dump. `totals` is an optional
+        {header_index: formatted_value} map for that highlighted row.
+
+        A CondPageBreak guards the header so it can never print alone at
+        the bottom of a page with its table stranded on the next one."""
+        elems.append(CondPageBreak(1.3*inch))
+        n = len(rows)
+        section_title(title, icon_kind, accent_hex=accent_hex, note=f"{n} record{'s' if n != 1 else ''}")
+        if not rows:
+            elems.append(Paragraph("No records.", sm))
+            elems.append(Spacer(1, 10))
+            return
+        status_idx = headers.index("Status") if "Status" in headers else None
+        # col_widths are authored (by every call site below) against the old 6.8in
+        # canvas too — scale them the same way as every other table on this page.
+        full_widths = [W(0.4)] + [w * _SCALE for w in col_widths]
+        shifted_numeric = {i + 1 for i in numeric_cols}
+        shifted_status = status_idx + 1 if status_idx is not None else None
+
+        header_row = [Paragraph("S.No", cellHC)]
+        for i, h in enumerate(headers):
+            idx = i + 1
+            header_row.append(Paragraph(h, cellHR if idx in shifted_numeric else cellH))
+        table_rows = [header_row]
+        for rn, r in enumerate(rows, start=1):
+            row_cells = [Paragraph(str(rn), cellC)]
+            for i, c in enumerate(r):
+                idx = i + 1
+                if shifted_status is not None and idx == shifted_status:
+                    row_cells.append(status_pill(c))
+                else:
+                    row_cells.append(Paragraph(str(c), cellR if idx in shifted_numeric else cell))
+            table_rows.append(row_cells)
+
+        total_row_idx = None
+        if totals:
+            total_row_idx = len(table_rows)
+            accent = colors.HexColor(accent_hex)
+            ftl = ParagraphStyle("ftl", parent=cell, fontName="Helvetica-Bold", textColor=accent)
+            # S.No stays blank; the "TOTAL" label goes in the first column that
+            # isn't itself a totalled value (avoids squeezing "TOTAL" into the
+            # 0.4in S.No column, which wraps to one letter per line).
+            footer_cells = [Paragraph("", cell)]
+            label_placed = False
+            for i in range(len(headers)):
+                idx = i + 1
+                if i in totals:
+                    base = cellR if idx in shifted_numeric else cell
+                    sty = ParagraphStyle(f"ftv{i}", parent=base, fontName="Helvetica-Bold", textColor=accent)
+                    footer_cells.append(Paragraph(str(totals[i]), sty))
+                elif not label_placed:
+                    footer_cells.append(Paragraph("TOTAL", ftl))
+                    label_placed = True
+                else:
+                    footer_cells.append(Paragraph("", cell))
+            table_rows.append(footer_cells)
+
+        t = Table(table_rows, colWidths=full_widths, repeatRows=1)
+        zebra_end = (total_row_idx - 1) if total_row_idx is not None else -1
+        cmds = [
+            ("BACKGROUND", (0, 0), (-1, 0), navy),
+            ("GRID", (0, 0), (-1, -1), 0.4, border),
+            ("ROWBACKGROUNDS", (0, 1), (-1, zebra_end), [colors.white, light]),
+            ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            # The S.No column is only ~0.4in wide — the standard 8pt/side padding
+            # leaves too little room for its own "S.No" header, wrapping it to
+            # "S.N / o"; give that one column tighter padding instead of widening
+            # it (which would have to steal width from every other column too).
+            ("LEFTPADDING", (0, 0), (0, -1), 3), ("RIGHTPADDING", (0, 0), (0, -1), 3),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN", (0, 0), (0, -1), "CENTER"),
+        ]
+        if shifted_status is not None:
+            cmds.append(("ALIGN", (shifted_status, 1), (shifted_status, -1), "CENTER"))
+        if total_row_idx is not None:
+            cmds.append(("BACKGROUND", (0, total_row_idx), (-1, total_row_idx), colors.HexColor("#ECFDF5")))
+            cmds.append(("LINEABOVE", (0, total_row_idx), (-1, total_row_idx), 1.1, colors.HexColor(accent_hex)))
+        t.setStyle(TableStyle(cmds))
+        elems.append(t)
+        elems.append(Spacer(1, 10))
+
+    # Payroll History (all records) — accent matches the "Total Salary" tile
+    _payroll_total = sum(_safe_float(s.get("amount", 0)) for s in data["all_payroll"])
+    data_table(
+        "PAYROLL HISTORY",
+        ["Date", "Type", "Amount", "Status"],
+        [[_format_date_display(s.get("date", "")), s.get("salary_type", "Salary") or "Salary",
+          money(s.get("amount", 0)), s.get("salary_status", "Paid") or "Paid"]
+         for s in data["all_payroll"]],
+        [1.5*inch, 2.0*inch, 1.5*inch, 1.4*inch], numeric_cols={2}, icon_kind="receipt",
+        accent_hex="#16A34A", totals={2: money(_payroll_total)} if data["all_payroll"] else None)
+
+    # Advances (all records) — accent matches the "Total Advance" tile.
+    # Adjusted + Balance, same calculation as Payroll ▸ Employee Advances
+    # (balance = amount − adjusted). That table reads the field as "adjusted"
+    # — this was reading "adjusted_amount" instead, a field that's never
+    # actually set on these records, so Balance always silently showed the
+    # full amount as if nothing had ever been adjusted.
+    def _adv_row(a):
+        adjusted = _safe_float(a.get("adjusted", 0))
+        bal = max(_safe_float(a.get("amount", 0)) - adjusted, 0)
+        return [_format_date_display(a.get("date", "")), money(a.get("amount", 0)),
+                money(adjusted), money(bal), a.get("status", "Open") or "Open"]
+    _adv_rows = [_adv_row(a) for a in data["all_advances"]]
+    _adv_total = sum(_safe_float(a.get("amount", 0)) for a in data["all_advances"])
+    _adv_adjusted_total = sum(_safe_float(a.get("adjusted", 0)) for a in data["all_advances"])
+    _adv_bal_total = sum(max(_safe_float(a.get("amount", 0)) - _safe_float(a.get("adjusted", 0)), 0) for a in data["all_advances"])
+    data_table(
+        "ADVANCES",
+        ["Date", "Amount", "Adjusted", "Balance", "Status"],
+        _adv_rows,
+        # col_widths (plus the fixed S.No column) sum to 6.4in on the 6.8in
+        # design canvas that data_table's internal auto-scale maps onto the
+        # full page width — matching that 6.4in total is what makes the
+        # table reach the left/right margins like every other table here;
+        # the previous, deliberately-narrower widths left it stopping well
+        # short of the right margin.
+        [1.3*inch, 1.3*inch, 1.3*inch, 1.3*inch, 1.2*inch], numeric_cols={1, 2, 3}, icon_kind="wallet",
+        accent_hex="#D97706", totals={1: money(_adv_total), 2: money(_adv_adjusted_total), 3: money(_adv_bal_total)} if _adv_rows else None)
+
+    # Projects worked (every distinct project, not just the last 5) — accent matches "Projects Worked" tile
+    data_table(
+        "PROJECTS WORKED",
+        ["Project #", "Name", "Status"],
+        [[p.get("project_number", "—") or "—", (p.get("project_name", "") or "—")[:55], p.get("status", "—") or "—"]
+         for p in data["all_projects_worked"]],
+        [1.6*inch, 3.5*inch, 1.3*inch], icon_kind="briefcase", accent_hex="#7C3AED")
+
+    # Timesheets (every submitted/approved week) — accent matches "Total Hours" tile
+    def _week_label(ws):
+        if not ws:
+            return "—"
+        try:
+            wd = datetime.strptime(str(ws)[:10], "%Y-%m-%d")
+            we = wd + timedelta(days=6)
+            return f"{wd.strftime('%m-%d-%Y')} — {we.strftime('%m-%d-%Y')}"
+        except Exception:
+            return str(ws)
+    _ts_total_hrs = sum(_safe_float(t.get("total_hours", 0)) for t in data["all_timesheets"])
+    data_table(
+        "TIMESHEETS",
+        ["Period", "Hours", "Status"],
+        [[_week_label(t.get("week_of", "")), f'{_safe_float(t.get("total_hours", 0)):.1f} hrs', t.get("status", "Pending") or "Pending"]
+         for t in data["all_timesheets"]],
+        [2.7*inch, 1.5*inch, 2.2*inch], numeric_cols={1}, icon_kind="clock",
+        accent_hex="#2563EB", totals={1: f"{_ts_total_hrs:.1f} hrs"} if data["all_timesheets"] else None)
+
+    # Time Off Requests (every request) — accent matches "Leave Taken" tile
+    _time_off_days = sum(_safe_float(t.get("working_days", 0)) for t in data["all_time_off"])
+    data_table(
+        "TIME OFF REQUESTS",
+        ["Type", "From", "To", "Days", "Status"],
+        [[t.get("type", "Leave") or "Leave",
+          _format_date_display(t.get("start_date", "")),
+          _format_date_display(t.get("end_date", "")),
+          f'{_safe_float(t.get("working_days", 0)):.1f}',
+          t.get("status", "Pending") or "Pending"]
+         for t in data["all_time_off"]],
+        [1.4*inch, 1.4*inch, 1.4*inch, 0.9*inch, 1.3*inch], numeric_cols={3}, icon_kind="calendar_check",
+        accent_hex="#16A34A", totals={3: f"{_time_off_days:.1f}"} if data["all_time_off"] else None)
+
+    # Employee Expenses (every submission) — genuine employee-submitted
+    # expenses only (see _is_employee_added_expense).
+    _real_expenses = [e for e in data["all_expenses"] if _is_employee_added_expense(e)]
+    _exp_total = sum(_safe_float(e.get("amount", 0)) for e in _real_expenses)
+    data_table(
+        "EMPLOYEE EXPENSES",
+        ["Date", "Category", "Amount", "Status"],
+        [[_format_date_display(e.get("date") or e.get("expense_date") or ""),
+          (e.get("category", "—") or "—")[:28],
+          money(e.get("amount", 0)),
+          e.get("status", "Pending") or "Pending"]
+         for e in _real_expenses],
+        [1.5*inch, 2.4*inch, 1.4*inch, 1.1*inch], numeric_cols={2}, icon_kind="receipt",
+        accent_hex="#DC2626", totals={2: money(_exp_total)} if _real_expenses else None)
+
+    # Medical Claims (every submission) — Claimed vs Approved, same two
+    # amount columns as the on-screen "Employee Medical Allowance" table.
+    # Approved falls back to the claimed amount until a claim has actually
+    # been reviewed, matching that page's own display logic.
+    def _med_approved(m):
+        return _safe_float(m.get("amount_approved", m.get("amount_claimed", 0)))
+    _med_claimed_total = sum(_safe_float(m.get("amount_claimed", 0)) for m in data["all_medical"])
+    _med_approved_total = sum(_med_approved(m) for m in data["all_medical"])
+    data_table(
+        "MEDICAL CLAIMS",
+        ["Date", "Type", "Claimed", "Approved", "Status"],
+        [[_format_date_display(m.get("claim_date", "")),
+          (m.get("expense_type", "—") or "—")[:22],
+          money(m.get("amount_claimed", 0)),
+          money(_med_approved(m)),
+          m.get("status", "Pending") or "Pending"]
+         for m in data["all_medical"]],
+        [1.3*inch, 1.7*inch, 1.2*inch, 1.2*inch, 1.0*inch], numeric_cols={2, 3}, icon_kind="medical",
+        accent_hex="#0EA5E9", totals={2: money(_med_claimed_total), 3: money(_med_approved_total)} if data["all_medical"] else None)
+
+    # ── Page furniture: running header on continuation pages + a footer with
+    # "Page X of Y" on every page (drawn via a canvas subclass so it repeats). ──
+    co_name  = co.get("name", "")
+    emp_name = data["name"] or "—"
+
+    class _NumberedCanvas(_pdfcanvas.Canvas):
+        def __init__(self, *args, **kwargs):
+            _pdfcanvas.Canvas.__init__(self, *args, **kwargs)
+            self._saved_page_states = []
+
+        def showPage(self):
+            self._saved_page_states.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total_pages = len(self._saved_page_states)
+            for state in self._saved_page_states:
+                self.__dict__.update(state)
+                self._draw_furniture(total_pages)
+                _pdfcanvas.Canvas.showPage(self)
+            _pdfcanvas.Canvas.save(self)
+
+        def _draw_furniture(self, total_pages):
+            page_w, page_h = A4
+            if self.getPageNumber() > 1:
+                # Inset to the same margins as the page-1 letterhead/banner and
+                # every table below it — this used to run full-bleed (0 to
+                # page_w) regardless of the margin, the one element on the
+                # whole page that didn't line up with everything else.
+                self.setFillColor(teal)
+                self.rect(_PAGE_MARGIN, page_h - 0.42*inch, page_w - 2*_PAGE_MARGIN, 0.42*inch, stroke=0, fill=1)
+                self.setFillColor(colors.white)
+                self.setFont("Helvetica-Bold", 9.5)
+                self.drawString(_PAGE_MARGIN + 12, page_h - 0.29*inch, f"{co_name}  ·  Employee Profile  ·  {emp_name}")
+            self.setStrokeColor(border)
+            self.setLineWidth(0.6)
+            self.line(_PAGE_MARGIN, 0.55*inch, page_w - _PAGE_MARGIN, 0.55*inch)
+            self.setFont("Helvetica", 7.5)
+            self.setFillColor(muted)
+            self.drawString(_PAGE_MARGIN, 0.38*inch,
+                             f"Confidential — internal HR record  ·  {co_name}")
+            self.drawRightString(page_w - _PAGE_MARGIN, 0.38*inch,
+                                  f"Page {self.getPageNumber()} of {total_pages}")
+
+    doc.build(elems, canvasmaker=_NumberedCanvas)
+    buf.seek(0)
+    from flask import Response
+    fname = f"Employee_{(data['name'] or 'profile').replace(' ', '_')}.pdf"
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"inline;filename={fname}"})
 
 
 @app.route("/employee/<uid>/timesheets")
@@ -19403,7 +20269,8 @@ def employee_all_expenses(uid):
     all_expenses = fb_get("/expenses") or {}
     emp_expenses = sorted(
         [dict(v, firebase_id=k) for k, v in all_expenses.items() if isinstance(v, dict) and
-         (v.get("submitted_by_uid") == uid or (v.get("submitted_by_name") or "").strip() == name)],
+         (v.get("submitted_by_uid") == uid or (v.get("submitted_by_name") or "").strip() == name)
+         and _is_employee_added_expense(v)],
         key=lambda x: x.get("date", "") or x.get("expense_date", ""), reverse=True
     )
 
@@ -19461,10 +20328,17 @@ def employee_all_medical(uid):
     end_idx = start_idx + per_page
     paginated_medical = emp_medical[start_idx:end_idx]
 
-    # Calculate stats
+    # Calculate stats. approved_amount sums the actual *approved* amount
+    # (falling back to claimed when a claim has no amount_approved of its
+    # own yet) — same "Claimed vs Approved" distinction as the Approved
+    # column in the table below; it was summing amount_claimed regardless,
+    # so a claim approved for less than it claimed wasn't reflected here.
     total_claimed = sum([float(str(m.get("amount_claimed", 0) or 0).replace(",", "")) for m in emp_medical])
     approved_count = len([m for m in emp_medical if m.get("status", "").lower() == "approved"])
-    approved_amount = sum([float(str(m.get("amount_claimed", 0) or 0).replace(",", "")) for m in emp_medical if m.get("status", "").lower() == "approved"])
+    approved_amount = sum([
+        float(str(m.get("amount_approved", m.get("amount_claimed", 0)) or 0).replace(",", ""))
+        for m in emp_medical if m.get("status", "").lower() == "approved"
+    ])
     pending_count = len([m for m in emp_medical if m.get("status", "").lower() == "pending"])
     rejected_count = len([m for m in emp_medical if m.get("status", "").lower() == "rejected"])
 
@@ -19551,16 +20425,30 @@ def employee_all_advances(uid):
     end_idx = start_idx + per_page
     paginated_advances = emp_advances[start_idx:end_idx]
 
-    # Calculate stats
+    # Calculate stats. Payroll ▸ Employee Advances reads the field as
+    # "adjusted" — this read "adjusted_amount" instead, a field that's never
+    # actually set on these records, so Total Recovered always came out $0
+    # and every row's own balance below silently equalled its full amount.
     total_advanced = sum([float(str(a.get("amount", 0) or 0).replace(",", "")) for a in emp_advances])
-    total_recovered = sum([float(str(a.get("adjusted_amount", 0) or 0).replace(",", "")) for a in emp_advances])
+    total_recovered = sum([float(str(a.get("adjusted", 0) or 0).replace(",", "")) for a in emp_advances])
     open_count = len([a for a in emp_advances if a.get("status", "").lower() == "open"])
     closed_count = len([a for a in emp_advances if a.get("status", "").lower() == "closed"])
+    # Outstanding = each advance's own remaining balance (amount − adjusted),
+    # summed — same figure as the table's "Outstanding Balance" column, just
+    # totalled. total_advanced − total_recovered gives the same number when
+    # every advance is included, but summing per-row keeps it correct even
+    # if adjusted ever exceeds amount on an individual record.
+    outstanding_amount = sum([
+        max(float(str(a.get("amount", 0) or 0).replace(",", "")) - float(str(a.get("adjusted", 0) or 0).replace(",", "")), 0)
+        for a in emp_advances
+    ])
+    outstanding_count = len([a for a in emp_advances if float(str(a.get("amount", 0) or 0).replace(",", "")) - float(str(a.get("adjusted", 0) or 0).replace(",", "")) > 0])
 
     return render_template("employee_advances_all.html",
         uid=uid, name=name, advances=paginated_advances, is_admin=is_admin,
         page=page, total_pages=total_pages, total_records=total,
         total_advanced=total_advanced, total_recovered=total_recovered,
+        outstanding_amount=outstanding_amount, outstanding_count=outstanding_count,
         open_count=open_count, closed_count=closed_count)
 
 
@@ -22977,6 +23865,23 @@ def _safe_float(val) -> float:
         return float(str(val or 0).replace(",", ""))
     except (ValueError, TypeError):
         return 0.0
+
+# Words that mark an /expenses row as something other than a genuine
+# employee-submitted expense claim. Two things leak non-expense rows into
+# that collection: (1) advance/commission/loan/tax adjustments get synced in
+# as company-ledger rows (vendor "Advance Adjustments"); (2) "Other Expenses"
+# claims take a free-text category, so a salary/bonus/medical reimbursement
+# someone logged that way ends up looking like a category named "Salary" or
+# "Bonuses" rather than a real expense type. Filtered by content (not just
+# the system marker) to catch both — shared by the employee profile PDF and
+# the "All Employee Expenses" page so the two never drift apart.
+_NON_EXPENSE_CATEGORY_WORDS = ("salary", "bonus", "commission", "deduction", "medical", "advance")
+def _is_employee_added_expense(e: dict) -> bool:
+    if (e.get("vendor") or "").strip() == "Advance Adjustments":
+        return False
+    _cat = (e.get("category") or "").lower()
+    _typ = (e.get("expense_type") or "").lower()
+    return not any(w in _cat or w in _typ for w in _NON_EXPENSE_CATEGORY_WORDS)
 
 def _format_date_display(date_str: str) -> str:
     """Convert date from YYYY-MM-DD format to MM-DD-YYYY for display."""

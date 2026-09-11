@@ -113,9 +113,15 @@
         {% endif %}
       </div>
     </div>
-    {% if is_admin %}
     <div class="d-flex gap-2 align-items-center flex-wrap">
+      {% if is_admin %}
       <span class="badge status-{{ (emp.get('employee_status','Active'))|lower }}">{{ emp.get('employee_status','Active') }}</span>
+      {% endif %}
+      <a href="{{ url_for('employee_profile_pdf', uid=uid) }}" target="_blank"
+         class="btn btn-sm btn-outline-secondary" title="Opens a print-ready PDF in a new tab">
+        <i class="bi bi-printer me-1"></i>Print / Export PDF
+      </a>
+      {% if is_admin %}
       {% if emp.get('employee_status') != 'Terminated' %}
       <button class="btn btn-sm btn-outline-danger"
               onclick="openTerminateModal('{{ uid }}','{{ name }}')">
@@ -127,8 +133,8 @@
         <i class="bi bi-person-check me-1"></i>Reactivate
       </button>
       {% endif %}
+      {% endif %}
     </div>
-    {% endif %}
   </div>
 </div>
 
@@ -397,7 +403,7 @@
         </thead>
         <tbody>
         {% for a in recent_advances %}
-        {% set bal = [a.get('amount',0)|float - a.get('adjusted_amount',0)|float, 0]|max %}
+        {% set bal = [a.get('amount',0)|float - a.get('adjusted',0)|float, 0]|max %}
         <tr onclick="window.location='{% if a.firebase_id %}{{ url_for('advance_detail', advance_id=a.firebase_id) }}{% else %}{{ url_for('payroll') }}{% endif %}'">
           <td class="text-muted small">{{ (a.get('date') or '—') | format_date }}</td>
           <td class="text-end fw-600">{{ currency_symbol }}{{ '{:,.2f}'.format(a.get('amount',0)|float) }}</td>
