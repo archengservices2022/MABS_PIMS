@@ -117,10 +117,6 @@
       {% if is_admin %}
       <span class="badge status-{{ (emp.get('employee_status','Active'))|lower }}">{{ emp.get('employee_status','Active') }}</span>
       {% endif %}
-      <a href="{{ url_for('employee_profile_pdf', uid=uid) }}" target="_blank"
-         class="btn btn-sm btn-outline-secondary" title="Opens a print-ready PDF in a new tab">
-        <i class="bi bi-printer me-1"></i>Print / Export PDF
-      </a>
       {% if is_admin %}
       {% if emp.get('employee_status') != 'Terminated' %}
       <button class="btn btn-sm btn-outline-danger"
@@ -134,6 +130,10 @@
       </button>
       {% endif %}
       {% endif %}
+      <a href="{{ url_for('employee_profile_pdf', uid=uid) }}" target="_blank"
+         class="btn btn-sm btn-outline-secondary" title="Opens a print-ready PDF in a new tab">
+        <i class="bi bi-printer me-1"></i>Export PDF
+      </a>
     </div>
   </div>
 </div>
