@@ -5606,13 +5606,13 @@ function viewReceipt(expId) {
       <table class="table table-sm align-middle mb-0">
         <thead>
           <tr>
-            <th>Invoice / Project #</th>
-            <th>Client</th>
+            <th id="arColNumber">Invoice / Project #</th>
+            <th id="arColClient">Client</th>
             <th class="text-end">Amount</th>
             <th class="text-center">Days Pending</th>
             <th>Status</th>
-            <th>Start Date</th>
-            <th>Due Date</th>
+            <th id="arColStart">Start Date</th>
+            <th id="arColDueTh">Due Date</th>
           </tr>
         </thead>
         <tbody id="arCategoryDetailsBody"></tbody>
@@ -5934,6 +5934,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         arData['Advance Payment Received'].count += 1;
         arData['Advance Payment Received'].invoices.push({
           number: adv.advance_no || adv.id,
+          href: adv.id ? ('/payroll/advance/' + adv.id) : '',
           client: adv.employee_name || '—',
           amount: balance,
           daysPending: daysPending,
@@ -6113,6 +6114,15 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     document.getElementById('arCategoryDetailsCount').textContent =
       `${catData.count} record${catData.count === 1 ? '' : 's'}`;
 
+    // Advances have no invoice/project number, client, or due date in the
+    // usual sense — swap the column headers and drop Due Date for this one
+    // category instead of showing a permanently-empty "—" column.
+    const isAdvanceCat = catName === 'Advance Payment Received';
+    document.getElementById('arColNumber').textContent = isAdvanceCat ? 'Advance #' : 'Invoice / Project #';
+    document.getElementById('arColClient').textContent = isAdvanceCat ? 'Employee' : 'Client';
+    document.getElementById('arColStart').textContent = isAdvanceCat ? 'Date' : 'Start Date';
+    document.getElementById('arColDueTh').style.display = isAdvanceCat ? 'none' : '';
+
     const rows = (catData.invoices || [])
       .slice()
       .sort((a, b) => (b.daysPending || 0) - (a.daysPending || 0))
@@ -6123,6 +6133,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         const numberCell = item.href
           ? `<a href="${item.href}" class="text-teal fw-bold text-decoration-none">${item.number || '—'}</a>`
           : (item.number || '—');
+        const dueCell = isAdvanceCat ? '' : `<td>${fmtDate(item.dueDate)}</td>`;
         return `<tr>
           <td class="fw-semibold">${numberCell}</td>
           <td>${item.client || '—'}</td>
@@ -6130,12 +6141,12 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
           <td class="text-center">${item.daysPending || 0}</td>
           <td><span class="badge status-${statusSlug}">${item.status || '—'}</span></td>
           <td>${fmtDate(item.startDate)}</td>
-          <td>${fmtDate(item.dueDate)}</td>
+          ${dueCell}
         </tr>`;
       }).join('');
 
     document.getElementById('arCategoryDetailsBody').innerHTML =
-      rows || `<tr><td colspan="7" class="text-center text-muted py-3">No records in this category.</td></tr>`;
+      rows || `<tr><td colspan="${isAdvanceCat ? 6 : 7}" class="text-center text-muted py-3">No records in this category.</td></tr>`;
 
     panel.style.display = '';
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
