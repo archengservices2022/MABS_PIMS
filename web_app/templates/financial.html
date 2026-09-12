@@ -5609,7 +5609,6 @@ function viewReceipt(expId) {
             <th id="arColNumber">Invoice / Project #</th>
             <th id="arColClient">Client</th>
             <th class="text-end">Amount</th>
-            <th class="text-center">Days Pending</th>
             <th>Status</th>
             <th id="arColStart">Start Date</th>
             <th id="arColDueTh">Due Date</th>
@@ -6138,7 +6137,6 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
           <td class="fw-semibold">${numberCell}</td>
           <td>${item.client || '—'}</td>
           <td class="text-end">${amt}</td>
-          <td class="text-center">${item.daysPending || 0}</td>
           <td><span class="badge status-${statusSlug}">${item.status || '—'}</span></td>
           <td>${fmtDate(item.startDate)}</td>
           ${dueCell}
@@ -6146,7 +6144,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       }).join('');
 
     document.getElementById('arCategoryDetailsBody').innerHTML =
-      rows || `<tr><td colspan="${isAdvanceCat ? 6 : 7}" class="text-center text-muted py-3">No records in this category.</td></tr>`;
+      rows || `<tr><td colspan="${isAdvanceCat ? 5 : 6}" class="text-center text-muted py-3">No records in this category.</td></tr>`;
 
     panel.style.display = '';
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
