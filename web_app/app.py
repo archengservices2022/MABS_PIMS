@@ -19500,7 +19500,7 @@ def employee_profile_pdf(uid):
     _PAGE_MARGIN = 0.25*inch  # as slim as a page can go and still print safely on
                                # a physical printer without clipping — the letterhead,
                                # banner and tables now run almost edge-to-edge.
-    _TOP_MARGIN_P1 = 0.15*inch     # page 1 starts with its own letterhead card right at the top
+    _TOP_MARGIN_P1 = 0.15*inch     # page 1 has no letterhead card above the banner now, so it can sit close to the top
     _TOP_MARGIN_LATER = 0.55*inch  # pages 2+ need clearance under the teal running-header bar
                                     # (0.42in tall) plus a little breathing room — SimpleDocTemplate
                                     # only has one topMargin for the whole document, so this uses
@@ -19711,74 +19711,67 @@ def employee_profile_pdf(uid):
             elems.append(Paragraph(title, h2))
         elems.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor(accent_hex), spaceBefore=4, spaceAfter=8))
 
-    # ── Header (page 1 letterhead) ──
-    logo_path = _get_company_logo_path()
-    logo_img = None
-    if logo_path:
-        try:
-            _lp = Path(logo_path)
-            if _lp.exists():
-                logo_img = Image(str(_lp.resolve()), width=0.58*inch, height=0.58*inch)
-        except Exception:
-            logo_img = None
-
-    addr = (co.get("address", "") or "").replace("\n", " | ")
-
-    # A letterhead card on a light grey ground — logo on the left with a
-    # vertical rule after it, then the name and (below it) one contact line
-    # with pipe separators, both left-aligned starting right after the rule.
-    # leading must be set explicitly — styles["Normal"] carries a fixed 12pt
-    # leading meant for 10pt body text, so at fontSize=17 without overriding
-    # it the line box stays 12pt tall and whatever follows on the next line
-    # overlaps into the company name's descenders.
-    name_para_l = Paragraph(f"<b>{co.get('name', '')}</b>",
-                             ParagraphStyle("cnl", parent=styles["Normal"], fontSize=17, leading=21, fontName="Helvetica-Bold", textColor=navy))
-
-    def _contact_item(icon_kind, text):
-        if not text:
-            return []
-        icon = _icon(icon_kind, 8, "#0D9488")
-        txt = Paragraph(f'<font size=8.5 color="#334155">{text}</font>', styles["Normal"])
-        return [(icon, 11), (txt, stringWidth(text, "Helvetica", 8.5) + 4)]
-    pipe = Paragraph('<font size=8.5 color="#CBD5E1">&nbsp;&nbsp;|&nbsp;&nbsp;</font>', styles["Normal"])
-    pipe_w = stringWidth("  |  ", "Helvetica", 8.5) + 4
-    parts = [p for p in (_contact_item("pin", addr), _contact_item("phone", co.get("phone", "")), _contact_item("envelope", co.get("email", ""))) if p]
-    cells, widths = [], []
-    for i, part in enumerate(parts):
-        if i > 0:
-            cells.append(pipe); widths.append(pipe_w)
-        for flow, w in part:
-            cells.append(flow); widths.append(w)
-    contact_row = Table([cells], colWidths=widths)
-    # Same default-padding trap as everywhere else here — zero it globally
-    # first so the exact-fit widths above are actually exact.
-    contact_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
-    contact_row.hAlign = "LEFT"
-
-    text_content = [name_para_l, Spacer(1, 2), contact_row]
-    logo_col_w = W(0.95)
-    if logo_img:
-        logo_img.hAlign = "CENTER"
-        hdr_tbl = Table([[logo_img, text_content]], colWidths=[logo_col_w, CW - logo_col_w])
-        hdr_tbl.setStyle(TableStyle([
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("BACKGROUND", (0, 0), (-1, -1), light),
-            ("BOX", (0, 0), (-1, -1), 0.75, border),
-            ("LINEAFTER", (0, 0), (0, 0), 0.75, border),
-            ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
-            ("LEFTPADDING", (0, 0), (0, 0), 14), ("RIGHTPADDING", (0, 0), (0, 0), 14),
-            ("LEFTPADDING", (1, 0), (1, 0), 16), ("RIGHTPADDING", (1, 0), (1, 0), 12),
-        ]))
-    else:
-        hdr_tbl = Table([[text_content]], colWidths=[CW])
-        hdr_tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), light),
-            ("BOX", (0, 0), (-1, -1), 0.75, border),
-            ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
-            ("LEFTPADDING", (0, 0), (-1, -1), 16), ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ]))
-    elems.append(hdr_tbl)
-    elems.append(Spacer(1, 10))
+    # ── Header (page 1 letterhead) — disabled, not deleted (see the
+    # "commented, not removed" tables further down for the same reasoning).
+    # Un-comment to bring the logo/company-name/contact-info card back. ──
+    # logo_path = _get_company_logo_path()
+    # logo_img = None
+    # if logo_path:
+    #     try:
+    #         _lp = Path(logo_path)
+    #         if _lp.exists():
+    #             logo_img = Image(str(_lp.resolve()), width=0.58*inch, height=0.58*inch)
+    #     except Exception:
+    #         logo_img = None
+    #
+    # addr = (co.get("address", "") or "").replace("\n", " | ")
+    #
+    # # A letterhead card on a light grey ground — logo on the left with a
+    # # vertical rule after it, then the name and (below it) one contact line
+    # # with pipe separators, both left-aligned starting right after the rule.
+    # # leading must be set explicitly — styles["Normal"] carries a fixed 12pt
+    # # leading meant for 10pt body text, so at fontSize=17 without overriding
+    # # it the line box stays 12pt tall and whatever follows on the next line
+    # # overlaps into the company name's descenders.
+    # name_para_l = Paragraph(f"<b>{co.get('name', '')}</b>",
+    #                          ParagraphStyle("cnl", parent=styles["Normal"], fontSize=17, leading=21, fontName="Helvetica-Bold", textColor=navy))
+    #
+    # # A single flowing Paragraph, not a row of exact-fit icon/text/pipe
+    # # cells — a Table sized to its own exact content width renders at that
+    # # width regardless of whether it actually fits in the card, so a longer
+    # # address (this company's runs long) pushed it straight past the card's
+    # # — and the page's — right margin instead of wrapping. A Paragraph wraps
+    # # to whatever width its cell actually has, so it can't overflow no
+    # # matter how long any one company's address/phone/email turns out.
+    # _contact_parts = [p for p in (addr, co.get("phone", ""), co.get("email", "")) if p]
+    # _contact_line = '<font color="#CBD5E1">&nbsp;&nbsp;|&nbsp;&nbsp;</font>'.join(_contact_parts)
+    # contact_para = Paragraph(f'<font size=8.5 color="#334155">{_contact_line}</font>',
+    #                           ParagraphStyle("cline", parent=styles["Normal"], fontSize=8.5, leading=12))
+    #
+    # text_content = [name_para_l, Spacer(1, 2), contact_para]
+    # logo_col_w = W(0.95)
+    # if logo_img:
+    #     logo_img.hAlign = "CENTER"
+    #     hdr_tbl = Table([[logo_img, text_content]], colWidths=[logo_col_w, CW - logo_col_w])
+    #     hdr_tbl.setStyle(TableStyle([
+    #         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    #         ("BACKGROUND", (0, 0), (-1, -1), light),
+    #         ("BOX", (0, 0), (-1, -1), 0.75, border),
+    #         ("LINEAFTER", (0, 0), (0, 0), 0.75, border),
+    #         ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+    #         ("LEFTPADDING", (0, 0), (0, 0), 14), ("RIGHTPADDING", (0, 0), (0, 0), 14),
+    #         ("LEFTPADDING", (1, 0), (1, 0), 16), ("RIGHTPADDING", (1, 0), (1, 0), 12),
+    #     ]))
+    # else:
+    #     hdr_tbl = Table([[text_content]], colWidths=[CW])
+    #     hdr_tbl.setStyle(TableStyle([
+    #         ("BACKGROUND", (0, 0), (-1, -1), light),
+    #         ("BOX", (0, 0), (-1, -1), 0.75, border),
+    #         ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+    #         ("LEFTPADDING", (0, 0), (-1, -1), 16), ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+    #     ]))
+    # elems.append(hdr_tbl)
+    # elems.append(Spacer(1, 10))
 
     # ── Title banner: navy plate with a layered teal diagonal accent ──
     bw, bh = CW, 0.82*inch
@@ -20268,10 +20261,10 @@ def employee_profile_pdf(uid):
         def _draw_furniture(self, total_pages):
             page_w, page_h = A4
             if self.getPageNumber() > 1:
-                # Inset to the same margins as the page-1 letterhead/banner and
-                # every table below it — this used to run full-bleed (0 to
-                # page_w) regardless of the margin, the one element on the
-                # whole page that didn't line up with everything else.
+                # Inset to the same margins as everything below it — this used
+                # to run full-bleed (0 to page_w) regardless of the margin,
+                # the one element on the page that didn't line up with
+                # everything else.
                 self.setFillColor(teal)
                 self.rect(_PAGE_MARGIN, page_h - 0.42*inch, page_w - 2*_PAGE_MARGIN, 0.42*inch, stroke=0, fill=1)
                 self.setFillColor(colors.white)
