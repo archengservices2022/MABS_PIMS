@@ -2145,15 +2145,17 @@ def dashboard():
     #   • Paid / Cancelled invoices are excluded.
     #   • Amount = (total − amount_paid) for Partial, otherwise the full total.
     #   • Category is meta.ar_category when set, else inferred from status;
-    #     unknown/Draft invoices fall into "Others / On Hold".
+    #     unknown/Draft invoices fall into "Others / On Hold". An invoice's
+    #     own ar_category (e.g. someone manually flagged it "Incorrect
+    #     Invoice") always wins — project status never overrides it.
     #   • A project flagged "Scope Disagreement", "Project Completion Issue",
-    #     or "On Hold" forces every one of its invoices into the matching AR
-    #     category (On Hold → "Others / On Hold") — the project-level flag
-    #     overrides the per-invoice heuristics, since it's the stronger signal
-    #     that something is blocking payment. Any part of the project's
-    #     outstanding balance not yet covered by an invoice (including
-    #     projects with no invoice at all) is added on top, so the category
-    #     reflects the full amount at risk.
+    #     or "On Hold" (On Hold → "Others / On Hold") additionally contributes
+    #     whatever part of its outstanding balance (contract value − amount
+    #     paid) isn't already accounted for by its own invoices' categorized
+    #     amounts — as one project-level entry, not by re-bucketing invoices
+    #     that already have a category of their own. This is what makes a
+    #     not-yet-invoiced (or under-invoiced) flagged project show up too,
+    #     without stealing invoices that are legitimately in another bucket.
     #   • "Advance Payment Received" comes from employee advances with a
     #     remaining balance, NOT from invoices.
     ar_data = {
@@ -2181,15 +2183,7 @@ def dashboard():
         "Project Completion Issue": "Project Completion Issue",
         "On Hold":                  "Others / On Hold",
     }
-    _proj_status_by_num = {
-        (p.get("project_number") or "").strip(): (p.get("status") or "").strip()
-        for p in proj_list if isinstance(p, dict) and p.get("project_number")
-    }
-
     def _ar_categorize(_meta):
-        _proj_cat = _PROJECT_STATUS_AR.get(_proj_status_by_num.get((_meta.get("project_number") or "").strip(), ""))
-        if _proj_cat:
-            return _proj_cat
         _cat = (_meta.get("ar_category") or "").strip()
         if _cat:
             return _cat
@@ -16362,11 +16356,12 @@ def financial():
     advances_list = [_ensure_json_serializable(a) for a in (advances_list or [])]
 
     # A/R Summary: projects flagged "Scope Disagreement", "Project Completion
-    # Issue", or "On Hold" force their invoices into the matching AR category
-    # (On Hold → "Others / On Hold") and top up any part of their outstanding
-    # balance not covered by an invoice — mirrors the same logic in the
-    # dashboard route's ar_data. Kept as a small lookup rather than shipping
-    # the full projects list to the AR Summary tab's JS.
+    # Issue", or "On Hold" (On Hold → "Others / On Hold") additionally
+    # contribute whatever part of their outstanding balance isn't already
+    # covered by their own invoices' categorized amounts, as one project-level
+    # entry — mirrors the same logic in the dashboard route's ar_data. Kept as
+    # a small lookup (with just enough project info to display) rather than
+    # shipping the full projects list to the AR Summary tab's JS.
     _AR_PROJECT_STATUS_CATEGORY = {
         "Scope Disagreement":       "Scope Disagreement",
         "Project Completion Issue": "Project Completion Issue",
@@ -16375,6 +16370,9 @@ def financial():
     ar_flagged_projects = [
         {
             "project_number": (p.get("project_number") or "").strip(),
+            "project_name": p.get("project_name", ""),
+            "client": p.get("company_name") or p.get("client_name") or "",
+            "status": p.get("status", ""),
             "category": _AR_PROJECT_STATUS_CATEGORY[p.get("status")],
             "outstanding": _safe_float(p.get("contract_value", 0)) - _safe_float(p.get("amount_paid", 0)),
         }

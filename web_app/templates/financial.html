@@ -5866,17 +5866,13 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
   let currentArCurrency = '$';
   let selectedArCategory = null;
 
-  function categorizeInvoice(inv, flaggedByProject) {
-    // A project flagged "Scope Disagreement" / "Project Completion Issue"
-    // overrides everything else — it's the stronger signal that something is
-    // blocking payment on that project.
-    const meta0 = inv.meta || inv;
-    const pnum = (meta0.project_number || '').trim();
-    if (flaggedByProject && pnum && flaggedByProject[pnum]) {
-      return flaggedByProject[pnum];
-    }
-
-    // Use explicit ar_category if set, otherwise infer from status and properties
+  function categorizeInvoice(inv) {
+    // Use explicit ar_category if set, otherwise infer from status and properties.
+    // Note: a project flagged "Scope Disagreement" / "Project Completion Issue" /
+    // "On Hold" does NOT override an invoice's own category here — that would
+    // steal invoices that are legitimately in their own bucket (e.g. one
+    // explicitly marked "Incorrect Invoice"). Flagged projects instead
+    // contribute their leftover uncovered balance separately, below.
     if (inv.ar_category) {
       return inv.ar_category;
     }
@@ -5910,12 +5906,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     const currencySymbol = '{{ currency_symbol }}';
     const today = new Date();
 
-    // project_number -> AR category, for projects flagged Scope Disagreement /
-    // Project Completion Issue / On Hold (mirrors the dashboard's ar_data
-    // computation; On Hold maps to the "Others / On Hold" category).
-    const flaggedByProject = {};
-    arFlaggedProjects.forEach(p => { if (p.project_number) flaggedByProject[p.project_number] = p.category; });
-    const projArAdded = {}; // project_number -> amount already counted via its invoices
+    const projArAdded = {}; // project_number -> amount already counted via its own invoices
 
     // Initialize all categories with zero data
     const arData = {};
@@ -5999,7 +5990,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         overdueAmount += amount;
       }
 
-      const category = categorizeInvoice(meta, flaggedByProject);
+      const category = categorizeInvoice(meta);
       console.log(`[AR_DEBUG_CAT] Invoice ${meta.invoice_number || inv.id} categorized as: "${category}", Amount: ${amount}`);
 
       if (category && arData[category]) {
@@ -6030,14 +6021,17 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 
       totalMarket += remainder;
       totalOutstanding += remainder;
+      if (p.client) clients.add(p.client);
       arData[category].amount += remainder;
       arData[category].count += 1;
+      // One row per project (not per invoice) — this is the part of the
+      // project's outstanding balance its own invoices don't already cover.
       arData[category].invoices.push({
-        number: pnum,
-        client: '—',
+        number: pnum + (p.project_name ? ' — ' + p.project_name : ''),
+        client: p.client || '—',
         amount: remainder,
         daysPending: 0,
-        status: category,
+        status: p.status || category,
         date: ''
       });
     });
