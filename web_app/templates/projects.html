@@ -123,9 +123,9 @@
             <div class="stat-icon {{ color }}" style="width:36px;height:36px;font-size:16px;border-radius:8px;">
               <i class="bi {{ icon }}"></i>
             </div>
-            <div>
+            <div style="min-width:0;flex:1;">
               <div class="stat-value" style="font-size:18px;">{{ count }}</div>
-              <div class="stat-label">{{ st }}</div>
+              <div class="stat-label" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;{{ 'font-size:9px;' if st|length > 14 }}" title="{{ st }}">{{ st }}</div>
             </div>
           </div>
         </a>
