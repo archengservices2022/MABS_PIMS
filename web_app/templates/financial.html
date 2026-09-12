@@ -5591,6 +5591,34 @@ function viewReceipt(expId) {
     </div>
   </div>
 
+  <!-- Category Detail Records — populated when a category above is clicked -->
+  <div class="card-panel" id="arCategoryDetailsPanel" style="display:none;">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <h6 class="section-heading mb-0" style="font-size:14px;">
+        <i class="bi bi-list-ul me-2"></i><span id="arCategoryDetailsTitle">Category Details</span>
+        <span class="badge bg-light text-dark border ms-2" id="arCategoryDetailsCount" style="font-weight:600;"></span>
+      </h6>
+      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeArCategoryDetails()">
+        <i class="bi bi-x-lg me-1"></i>Close
+      </button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Invoice / Project #</th>
+            <th>Client</th>
+            <th class="text-end">Amount</th>
+            <th class="text-center">Days Pending</th>
+            <th>Status</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody id="arCategoryDetailsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
 </div><!-- /tab-ar-summary -->
 
 </div><!-- /tab-content -->
@@ -5832,6 +5860,12 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     { name: 'Others / On Hold', icon: '▪', color: '#6366F1' }
   ];
 
+  // Populated by initArSummary and read by the click-to-drill-down handlers
+  // below, which live on window since they're wired up via inline onclick.
+  let currentArData = {};
+  let currentArCurrency = '$';
+  let selectedArCategory = null;
+
   function categorizeInvoice(inv, flaggedByProject) {
     // A project flagged "Scope Disagreement" / "Project Completion Issue"
     // overrides everything else — it's the stronger signal that something is
@@ -5862,6 +5896,13 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 
   function initArSummary() {
     if (!document.getElementById('arCategoryList')) return;
+
+    // Collapse any open drill-down before rebuilding — the underlying data
+    // is about to change (or this is a fresh load) so a stale selection
+    // would show outdated records.
+    selectedArCategory = null;
+    const detailsPanel = document.getElementById('arCategoryDetailsPanel');
+    if (detailsPanel) detailsPanel.style.display = 'none';
 
     const invList = {{ inv_list|default([])|tojson|safe }} || [];
     const advancesList = {{ advances_list|default([])|tojson|safe }} || [];
@@ -6010,6 +6051,11 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     // Update large card on right
     document.getElementById('arLargeCardAmount').textContent = currencySymbol + totalMarket.toLocaleString('en-US', {minimumFractionDigits: 2});
 
+    // Remember this run's data so the click-to-drill-down handlers (wired up
+    // via inline onclick, so they must live on window) can read it later.
+    currentArData = arData;
+    currentArCurrency = currencySymbol;
+
     // Build left side category list
     const categoryList = document.getElementById('arCategoryList');
     const categoryRows = AR_CATEGORIES.map((cat, idx) => {
@@ -6025,14 +6071,20 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         'Others / On Hold': 'bi-hourglass'
       };
       const icon = iconMap[cat.name] || 'bi-circle';
+      const clickable = catData.count > 0;
 
-      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;${idx > 0 ? 'border-top:1px solid #f3f4f6;' : ''}">
+      return `<div data-ar-cat="${cat.name.replace(/"/g, '&quot;')}"
+                   style="display:flex;align-items:center;justify-content:space-between;padding:12px 8px;margin:0 -8px;border-radius:8px;${idx > 0 ? 'border-top:1px solid #f3f4f6;' : ''}${clickable ? 'cursor:pointer;' : 'opacity:0.6;'}"
+                   ${clickable ? `onclick="showArCategoryDetails('${cat.name.replace(/'/g, "\\'")}')"` : ''}
+                   onmouseover="if(${clickable}) this.style.background='#f8fafc';"
+                   onmouseout="this.style.background='';">
         <div style="display:flex;align-items:center;gap:12px;flex:1;">
           <div style="width:32px;height:32px;border-radius:6px;background:${cat.color}20;display:flex;align-items:center;justify-content:center;">
             <i class="bi ${icon}" style="font-size:16px;color:${cat.color};"></i>
           </div>
           <div>
             <div style="font-size:13px;font-weight:600;color:#1e293b;">${cat.name}</div>
+            ${clickable ? `<div style="font-size:11px;color:#94a3b8;">${catData.count} record${catData.count === 1 ? '' : 's'} — click to view</div>` : ''}
           </div>
         </div>
         <div style="text-align:right;">
@@ -6045,6 +6097,63 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     // Update total outstanding display
     document.getElementById('arTotalOutstandingDisplay').textContent = currencySymbol + totalOutstanding.toLocaleString('en-US', {minimumFractionDigits: 2});
   }
+
+  // Renders the invoices/projects behind one AR category into the details
+  // panel below the category list. Exposed on window because it's invoked
+  // from an inline onclick attribute.
+  window.showArCategoryDetails = function (catName) {
+    const catData = currentArData[catName];
+    const panel = document.getElementById('arCategoryDetailsPanel');
+    if (!panel || !catData) return;
+
+    // Clicking the already-open category collapses it again.
+    if (selectedArCategory === catName) {
+      selectedArCategory = null;
+      panel.style.display = 'none';
+      document.querySelectorAll('#arCategoryList [data-ar-cat]').forEach(el => el.style.outline = '');
+      return;
+    }
+    selectedArCategory = catName;
+
+    document.querySelectorAll('#arCategoryList [data-ar-cat]').forEach(el => {
+      el.style.outline = el.getAttribute('data-ar-cat') === catName ? '2px solid #2563EB' : '';
+      el.style.outlineOffset = '-2px';
+    });
+
+    document.getElementById('arCategoryDetailsTitle').textContent = catName;
+    document.getElementById('arCategoryDetailsCount').textContent =
+      `${catData.count} record${catData.count === 1 ? '' : 's'}`;
+
+    const rows = (catData.invoices || [])
+      .slice()
+      .sort((a, b) => (b.daysPending || 0) - (a.daysPending || 0))
+      .map(item => {
+        const amt = currentArCurrency + (parseFloat(item.amount) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+        const dateStr = item.date ? new Date(item.date).toLocaleDateString('en-US') : '—';
+        const statusSlug = String(item.status || '').toLowerCase().replace(/\s+/g, '-');
+        return `<tr>
+          <td class="fw-semibold">${item.number || '—'}</td>
+          <td>${item.client || '—'}</td>
+          <td class="text-end">${amt}</td>
+          <td class="text-center">${item.daysPending || 0}</td>
+          <td><span class="badge status-${statusSlug}">${item.status || '—'}</span></td>
+          <td>${dateStr}</td>
+        </tr>`;
+      }).join('');
+
+    document.getElementById('arCategoryDetailsBody').innerHTML =
+      rows || `<tr><td colspan="6" class="text-center text-muted py-3">No records in this category.</td></tr>`;
+
+    panel.style.display = '';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+
+  window.closeArCategoryDetails = function () {
+    selectedArCategory = null;
+    const panel = document.getElementById('arCategoryDetailsPanel');
+    if (panel) panel.style.display = 'none';
+    document.querySelectorAll('#arCategoryList [data-ar-cat]').forEach(el => el.style.outline = '');
+  };
 
   // Initialize when DOM is ready
   document.addEventListener('DOMContentLoaded', initArSummary);
