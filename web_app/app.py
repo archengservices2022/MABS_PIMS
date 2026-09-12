@@ -3495,7 +3495,8 @@ def projects():
             _st    = pdata.get("status") or "Not Started"
             _DONE_ST   = {"invoiced_Fully paid", "Cancelled"}
             _MANUAL_ST = {"Cancelled", "On Hold", "Ready to Sent",
-                          "Sent out_Invoiced", "Sent out_Not Invoiced"}
+                          "Sent out_Invoiced", "Sent out_Not Invoiced",
+                          "Scope Disagreement", "Project Completion Issue"}
             if _st not in _DONE_ST:
                 if _cv > 0 and _amt >= _cv - 0.01:
                     # Fully paid — also migrates legacy "Completed" → "invoiced_Fully paid"
@@ -24954,7 +24955,8 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
                 updates["status"] = "invoiced_Fully paid"
             elif contract_val > 0 and 0 < total_allocated < contract_val - 0.01 and \
                     current_status not in ("On Hold", "invoiced_Fully paid", "Cancelled",
-                                          "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced"):
+                                          "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced",
+                                          "Scope Disagreement", "Project Completion Issue"):
                 updates["status"] = "invoiced_Partially paid"
             elif total_allocated > 0 and current_status == "Not Started":
                 updates["status"] = "In Progress"
@@ -25029,7 +25031,8 @@ def _sync_project_payment(project_number: str) -> None:
             updates["status"] = "invoiced_Fully paid"
         elif contract_val > 0 and 0 < total_paid < contract_val - 0.01:
             if current_status not in ("On Hold", "invoiced_Fully paid", "Cancelled",
-                                      "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced"):
+                                      "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced",
+                                      "Scope Disagreement", "Project Completion Issue"):
                 updates["status"] = "invoiced_Partially paid"
         # Do NOT downgrade invoiced_Fully paid/invoiced_Not paid yet when total_paid == 0 — payment_log may be incomplete
 
