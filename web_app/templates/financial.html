@@ -5870,9 +5870,10 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     const today = new Date();
 
     // project_number -> AR category, for projects flagged Scope Disagreement /
-    // Project Completion Issue (mirrors the dashboard's ar_data computation).
+    // Project Completion Issue / On Hold (mirrors the dashboard's ar_data
+    // computation; On Hold maps to the "Others / On Hold" category).
     const flaggedByProject = {};
-    arFlaggedProjects.forEach(p => { if (p.project_number) flaggedByProject[p.project_number] = p.status; });
+    arFlaggedProjects.forEach(p => { if (p.project_number) flaggedByProject[p.project_number] = p.category; });
     const projArAdded = {}; // project_number -> amount already counted via its invoices
 
     // Initialize all categories with zero data
@@ -5981,7 +5982,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     // cover (including projects with no invoice at all yet).
     arFlaggedProjects.forEach(p => {
       const pnum = p.project_number;
-      const category = p.status;
+      const category = p.category;
       if (!pnum || !category || !arData[category]) return;
       const remainder = (parseFloat(p.outstanding) || 0) - (projArAdded[pnum] || 0);
       if (remainder <= 0.01) return;
