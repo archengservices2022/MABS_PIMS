@@ -5866,13 +5866,16 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
   let currentArCurrency = '$';
   let selectedArCategory = null;
 
-  function categorizeInvoice(inv) {
-    // Use explicit ar_category if set, otherwise infer from status and properties.
-    // Note: a project flagged "Scope Disagreement" / "Project Completion Issue" /
-    // "On Hold" does NOT override an invoice's own category here — that would
-    // steal invoices that are legitimately in their own bucket (e.g. one
-    // explicitly marked "Incorrect Invoice"). Flagged projects instead
-    // contribute their leftover uncovered balance separately, below.
+  function categorizeInvoice(inv, flaggedByProject) {
+    // Priority, highest first:
+    //  1. A deliberate per-invoice flag — explicit ar_category, or the
+    //     invoice's own status literally "Invoice Disputed" / "Incorrect
+    //     Invoice" — always wins, on any project.
+    //  2. Otherwise, a project flagged Scope Disagreement / Project
+    //     Completion Issue / On Hold is a stronger signal than a plain
+    //     workflow status (Sent, Partial, ...), so its invoices land in the
+    //     project's category instead of the usual bucket.
+    //  3. Otherwise, infer from status as before.
     if (inv.ar_category) {
       return inv.ar_category;
     }
@@ -5882,8 +5885,14 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 
     if (status === 'Invoice Disputed') return 'Invoice Disputed';
     if (status === 'Incorrect Invoice') return 'Incorrect Invoice';
-    if (status === 'Partial') return 'Partial Payment - Outstanding';
     if (status === 'Paid' || status === 'Cancelled') return null;
+
+    const pnum = (meta.project_number || '').trim();
+    if (flaggedByProject && pnum && flaggedByProject[pnum]) {
+      return flaggedByProject[pnum];
+    }
+
+    if (status === 'Partial') return 'Partial Payment - Outstanding';
     if (status === 'Sent' || status === 'Viewed' || status === 'Overdue') return 'Invoiced - Not Paid';
     // Draft invoices go to Others/On Hold, not Invoiced - Not Paid
 
@@ -5906,6 +5915,10 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     const currencySymbol = '{{ currency_symbol }}';
     const today = new Date();
 
+    // project_number -> AR category, for projects flagged Scope Disagreement /
+    // Project Completion Issue / On Hold (On Hold maps to "Others / On Hold").
+    const flaggedByProject = {};
+    arFlaggedProjects.forEach(p => { if (p.project_number) flaggedByProject[p.project_number] = p.category; });
     const projArAdded = {}; // project_number -> amount already counted via its own invoices
 
     // Initialize all categories with zero data
@@ -5990,7 +6003,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         overdueAmount += amount;
       }
 
-      const category = categorizeInvoice(meta);
+      const category = categorizeInvoice(meta, flaggedByProject);
       console.log(`[AR_DEBUG_CAT] Invoice ${meta.invoice_number || inv.id} categorized as: "${category}", Amount: ${amount}`);
 
       if (category && arData[category]) {

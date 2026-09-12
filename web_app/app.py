@@ -2144,18 +2144,22 @@ def dashboard():
     #   • Invoice status is recalculated with _calculate_invoice_status().
     #   • Paid / Cancelled invoices are excluded.
     #   • Amount = (total − amount_paid) for Partial, otherwise the full total.
-    #   • Category is meta.ar_category when set, else inferred from status;
-    #     unknown/Draft invoices fall into "Others / On Hold". An invoice's
-    #     own ar_category (e.g. someone manually flagged it "Incorrect
-    #     Invoice") always wins — project status never overrides it.
-    #   • A project flagged "Scope Disagreement", "Project Completion Issue",
-    #     or "On Hold" (On Hold → "Others / On Hold") additionally contributes
-    #     whatever part of its outstanding balance (contract value − amount
-    #     paid) isn't already accounted for by its own invoices' categorized
-    #     amounts — as one project-level entry, not by re-bucketing invoices
-    #     that already have a category of their own. This is what makes a
-    #     not-yet-invoiced (or under-invoiced) flagged project show up too,
-    #     without stealing invoices that are legitimately in another bucket.
+    #   • Category priority, highest first:
+    #       1. A deliberate per-invoice flag — meta.ar_category, or the
+    #          invoice's own status literally set to "Invoice Disputed" /
+    #          "Incorrect Invoice" — always wins, on any project.
+    #       2. Otherwise, a project flagged "Scope Disagreement", "Project
+    #          Completion Issue", or "On Hold" (On Hold → "Others / On Hold")
+    #          — a stronger signal than a plain workflow status like Sent or
+    #          Partial, so its invoices land in the project's category
+    #          instead of the usual Partial/Invoiced-Not-Paid/Others bucket.
+    #       3. Otherwise, inferred from status as before; unknown/Draft
+    #          invoices fall into "Others / On Hold".
+    #     Whatever part of a flagged project's outstanding balance (contract
+    #     value − amount paid) isn't already covered by its own invoices this
+    #     way — including a project with no invoice at all — is topped up as
+    #     one project-level entry, so a not-yet-invoiced flagged project shows
+    #     up too.
     #   • "Advance Payment Received" comes from employee advances with a
     #     remaining balance, NOT from invoices.
     ar_data = {
@@ -2183,19 +2187,25 @@ def dashboard():
         "Project Completion Issue": "Project Completion Issue",
         "On Hold":                  "Others / On Hold",
     }
+    _proj_status_by_num = {
+        (p.get("project_number") or "").strip(): (p.get("status") or "").strip()
+        for p in proj_list if isinstance(p, dict) and p.get("project_number")
+    }
+
     def _ar_categorize(_meta):
         _cat = (_meta.get("ar_category") or "").strip()
         if _cat:
             return _cat
         _st = (_meta.get("status") or "").strip()
-        if _st == "Invoice Disputed":
-            return "Invoice Disputed"
-        if _st == "Incorrect Invoice":
-            return "Incorrect Invoice"
-        if _st == "Partial":
-            return "Partial Payment - Outstanding"
+        if _st in ("Invoice Disputed", "Incorrect Invoice"):
+            return _st
         if _st in ("Paid", "Cancelled"):
             return None
+        _proj_cat = _PROJECT_STATUS_AR.get(_proj_status_by_num.get((_meta.get("project_number") or "").strip(), ""))
+        if _proj_cat:
+            return _proj_cat
+        if _st == "Partial":
+            return "Partial Payment - Outstanding"
         if _st in ("Sent", "Viewed", "Overdue"):
             return "Invoiced - Not Paid"
         return "Others / On Hold"
