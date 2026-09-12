@@ -5611,7 +5611,8 @@ function viewReceipt(expId) {
             <th class="text-end">Amount</th>
             <th class="text-center">Days Pending</th>
             <th>Status</th>
-            <th>Date</th>
+            <th>Start Date</th>
+            <th>Due Date</th>
           </tr>
         </thead>
         <tbody id="arCategoryDetailsBody"></tbody>
@@ -5937,7 +5938,8 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
           amount: balance,
           daysPending: daysPending,
           status: adv.status || 'Open',
-          date: adv.date,
+          startDate: adv.date || '',
+          dueDate: '',
           isAdvance: true
         });
       }
@@ -5997,7 +5999,8 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
           amount: amount,
           daysPending: daysPending,
           status: status,
-          date: meta.invoice_date || meta.date || inv.date
+          startDate: meta.invoice_date || meta.date || inv.date || '',
+          dueDate: meta.due_date || inv.due_date || ''
         });
       }
     });
@@ -6023,7 +6026,8 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         amount: outstanding,
         daysPending: 0,
         status: p.status || category,
-        date: ''
+        startDate: p.start_date || '',
+        dueDate: p.due_date || ''
       });
     });
 
@@ -6114,7 +6118,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       .sort((a, b) => (b.daysPending || 0) - (a.daysPending || 0))
       .map(item => {
         const amt = currentArCurrency + (parseFloat(item.amount) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
-        const dateStr = item.date ? new Date(item.date).toLocaleDateString('en-US') : '—';
+        const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US') : '—';
         const statusSlug = String(item.status || '').toLowerCase().replace(/\s+/g, '-');
         const numberCell = item.href
           ? `<a href="${item.href}" class="text-teal fw-bold text-decoration-none">${item.number || '—'}</a>`
@@ -6125,12 +6129,13 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
           <td class="text-end">${amt}</td>
           <td class="text-center">${item.daysPending || 0}</td>
           <td><span class="badge status-${statusSlug}">${item.status || '—'}</span></td>
-          <td>${dateStr}</td>
+          <td>${fmtDate(item.startDate)}</td>
+          <td>${fmtDate(item.dueDate)}</td>
         </tr>`;
       }).join('');
 
     document.getElementById('arCategoryDetailsBody').innerHTML =
-      rows || `<tr><td colspan="6" class="text-center text-muted py-3">No records in this category.</td></tr>`;
+      rows || `<tr><td colspan="7" class="text-center text-muted py-3">No records in this category.</td></tr>`;
 
     panel.style.display = '';
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

@@ -16370,6 +16370,8 @@ def financial():
             "status": p.get("status", ""),
             "category": _AR_PROJECT_STATUS_CATEGORY[p.get("status")],
             "outstanding": _safe_float(p.get("contract_value", 0)) - _safe_float(p.get("amount_paid", 0)),
+            "start_date": p.get("start_date") or p.get("date_received") or "",
+            "due_date": p.get("end_date", ""),
         }
         for p in projects_list
         if isinstance(p, dict) and p.get("status") in _AR_PROJECT_STATUS_CATEGORY and p.get("project_number")
