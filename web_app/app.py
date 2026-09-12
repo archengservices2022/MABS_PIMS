@@ -16364,8 +16364,8 @@ def financial():
     }
     ar_flagged_projects = [
         {
+            "project_id": p.get("firebase_id", ""),
             "project_number": (p.get("project_number") or "").strip(),
-            "project_name": p.get("project_name", ""),
             "client": p.get("company_name") or p.get("client_name") or "",
             "status": p.get("status", ""),
             "category": _AR_PROJECT_STATUS_CATEGORY[p.get("status")],

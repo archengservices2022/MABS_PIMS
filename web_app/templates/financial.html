@@ -5992,6 +5992,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         arData[category].count += 1;
         arData[category].invoices.push({
           number: meta.invoice_number || inv.invoice_number || meta.id || inv.id,
+          href: inv.firebase_id ? ('/invoicing/' + inv.firebase_id) : '',
           client: clientName,
           amount: amount,
           daysPending: daysPending,
@@ -6016,7 +6017,8 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       arData[category].amount += outstanding;
       arData[category].count += 1;
       arData[category].invoices.push({
-        number: p.project_number + (p.project_name ? ' — ' + p.project_name : ''),
+        number: p.project_number,
+        href: p.project_id ? ('/projects/' + p.project_id) : '',
         client: p.client || '—',
         amount: outstanding,
         daysPending: 0,
@@ -6114,8 +6116,11 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         const amt = currentArCurrency + (parseFloat(item.amount) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
         const dateStr = item.date ? new Date(item.date).toLocaleDateString('en-US') : '—';
         const statusSlug = String(item.status || '').toLowerCase().replace(/\s+/g, '-');
+        const numberCell = item.href
+          ? `<a href="${item.href}" class="text-teal fw-bold text-decoration-none">${item.number || '—'}</a>`
+          : (item.number || '—');
         return `<tr>
-          <td class="fw-semibold">${item.number || '—'}</td>
+          <td class="fw-semibold">${numberCell}</td>
           <td>${item.client || '—'}</td>
           <td class="text-end">${amt}</td>
           <td class="text-center">${item.daysPending || 0}</td>
