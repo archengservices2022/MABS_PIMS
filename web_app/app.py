@@ -2248,6 +2248,7 @@ def dashboard():
     proj_chart_labels = []
     proj_chart_counts = []
     proj_chart_values = []
+    proj_chart_ongoing = []
     for inv in cur_year_projs:
         if isinstance(inv, dict):
             date_str = inv.get("date_received", "") or ""
@@ -2260,9 +2261,12 @@ def dashboard():
                         proj_chart_labels.append(key)
                         proj_chart_counts.append(0)
                         proj_chart_values.append(0.0)
+                        proj_chart_ongoing.append(0)
                     idx = proj_chart_labels.index(key)
                     proj_chart_counts[idx] += 1
                     proj_chart_values[idx] += _safe_float(inv.get("contract_value", 0))
+                    if inv.get("status", "") not in ("Completed", "invoiced_Fully paid"):
+                        proj_chart_ongoing[idx] += 1
                 except Exception:
                     pass
 
@@ -2328,6 +2332,7 @@ def dashboard():
         proj_chart_labels=json.dumps(proj_chart_labels),
         proj_chart_counts=json.dumps(proj_chart_counts),
         proj_chart_values=json.dumps(proj_chart_values),
+        proj_chart_ongoing=json.dumps(proj_chart_ongoing),
     )
 
 # ── Routes: Sales Dashboard ───────────────────────────────────────────────────
