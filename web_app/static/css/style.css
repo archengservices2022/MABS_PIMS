@@ -408,6 +408,7 @@ body {
 .bg-purple { background: #7C3AED; }
 .bg-slate  { background: var(--slate-600); }
 .bg-red    { background: #DC2626; }
+.bg-cyan   { background: #0EA5E9; }
 
 /* ══ LIST ITEMS ═════════════════════════════════════════════════════════════ */
 .list-item {
@@ -478,6 +479,8 @@ body {
 .status-invoiced-partially-paid { background:#FED7AA; color:#9A3412; }
 .status-invoiced-unpaid         { background:#FEF9C3; color:#A16207; }
 .status-on-going                { background:#DCFCE7; color:#15803D; }
+.status-scope-disagreement           { background:#E0F2FE; color:#0369A1; }
+.status-project-completion-issue     { background:#D1FAE5; color:#047857; }
 
 .badge-role-admin    { background:#FEE2E2; color:#B91C1C; }
 .badge-role-projects { background:var(--violet-l); color:#1D4ED8; }
