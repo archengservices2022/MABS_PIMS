@@ -7505,6 +7505,58 @@ def _repair_payment_log_stage_index(invoice_data):
 
     return invoice_data
 
+
+def _ensure_payment_ids(invoice_data):
+    """
+    Guarantee every payment_log / tax_payments entry has a stable, unique "payment_id".
+
+    Delete-approval requests (entity_type="payment") must keep pointing at the exact
+    same payment record even if other payments are added/removed in the meantime, so
+    identity can't be a raw array index (it shifts). This assigns a permanent uuid to
+    any entry that doesn't have one yet; entries that already have one are untouched.
+
+    Returns (invoice_data, changed) where `changed` tells the caller whether any id
+    was newly assigned and the data needs to be persisted back to Firebase.
+    """
+    if not isinstance(invoice_data, dict):
+        return invoice_data, False
+
+    changed = False
+
+    payment_log = invoice_data.get("payment_log", [])
+    if isinstance(payment_log, list):
+        for p in payment_log:
+            if isinstance(p, dict) and not p.get("payment_id"):
+                p["payment_id"] = uuid.uuid4().hex
+                changed = True
+
+    tax_payments = invoice_data.get("tax_payments", [])
+    if isinstance(tax_payments, list):
+        for p in tax_payments:
+            if isinstance(p, dict) and not p.get("payment_id"):
+                p["payment_id"] = uuid.uuid4().hex
+                changed = True
+
+    return invoice_data, changed
+
+
+def _find_payment_index_by_ref(payment_list, payment_ref):
+    """Locate a payment entry's current array index by its stable payment_id.
+
+    Falls back to treating payment_ref as a legacy positional index for links
+    generated before payment_id existed.
+    """
+    if not isinstance(payment_list, list):
+        return None
+    for i, p in enumerate(payment_list):
+        if isinstance(p, dict) and p.get("payment_id") and p.get("payment_id") == payment_ref:
+            return i
+    if payment_ref.isdigit():
+        idx = int(payment_ref)
+        if 0 <= idx < len(payment_list):
+            return idx
+    return None
+
 @app.route("/invoicing/<invoice_id>", methods=["GET"])
 @role_required("invoicing")
 def invoice_detail(invoice_id):
@@ -7521,6 +7573,14 @@ def invoice_detail(invoice_id):
     if data.get("payment_log") != payment_log_before:
         log.info(f"[REPAIR_PAYMENT_LOG] Saving repaired payment_log for invoice {invoice_id}")
         fb_update(f"/invoices/{invoice_id}", {"payment_log": data.get("payment_log", [])})
+
+    # Backfill stable payment_id on any payment/tax entries that predate it
+    data, _payment_ids_backfilled = _ensure_payment_ids(data)
+    if _payment_ids_backfilled:
+        fb_update(f"/invoices/{invoice_id}", {
+            "payment_log": data.get("payment_log", []),
+            "tax_payments": data.get("tax_payments", []),
+        })
 
     # Linked project(s) — an invoice can bill multiple projects via per-line-item overrides
     linked_project = None
@@ -7573,6 +7633,7 @@ def invoice_detail(invoice_id):
             "notes": payment.get("notes", ""),
             "amount_paid": _safe_float(payment.get("amount", 0)),
             "payment_log_index": p_idx,
+            "payment_id": payment.get("payment_id", ""),
             "stage_index": payment.get("stage_index", "0"),
         }
 
@@ -28578,14 +28639,25 @@ def payment_sequential(invoice_id):
 
     return jsonify({"success": True, "amount": amount}), 200
 
-@app.route("/invoicing/<invoice_id>/payment/delete/<int:idx>", methods=["POST"])
+@app.route("/invoicing/<invoice_id>/payment/delete/<payment_ref>", methods=["POST"])
 @role_required("invoicing")
-def payment_delete(invoice_id, idx):
-    """Remove a payment entry from the log - deletes only that specific stage's payment."""
+def payment_delete(invoice_id, payment_ref):
+    """Remove a payment entry from the log - deletes only that specific stage's payment.
+
+    payment_ref is normally the payment's stable payment_id (so the target can't drift
+    if other payments are added/removed between an approval request and the actual
+    delete); it falls back to a legacy positional index for older links.
+    """
+    inv_data = fb_get(f"/invoices/{invoice_id}") or {}
+    payment_log = inv_data.get("payment_log", [])
+    idx = _find_payment_index_by_ref(payment_log, payment_ref)
+    if idx is None:
+        return jsonify({"error": "Payment not found"}), 404
+
     # Check permission for payment deletion (similar to receipt deletion)
     _uid = session.get("user_uid", "")
     user_role = normalize_role(session.get("user_role", ""))
-    entity_id = f"{invoice_id}_invoice_{idx}"
+    entity_id = f"{invoice_id}_invoice_{payment_ref}"
     has_approval = user_role in ("admin", "accountant") or _has_approved_delete_request(_uid, "payment", entity_id)
 
     if not has_approval:
@@ -28595,8 +28667,6 @@ def payment_delete(invoice_id, idx):
             "permission_required": True
         }), 403
 
-    inv_data = fb_get(f"/invoices/{invoice_id}") or {}
-    payment_log = inv_data.get("payment_log", [])
     if not isinstance(payment_log, list) or idx >= len(payment_log):
         return jsonify({"error": "Payment not found"}), 404
 
@@ -28678,7 +28748,7 @@ def payment_delete(invoice_id, idx):
                 })
 
     # Mark the permission request as completed if one exists
-    entity_id = f"{invoice_id}_invoice_{idx}"
+    entity_id = f"{invoice_id}_invoice_{payment_ref}"
     approved_req = _has_approved_delete_request(_uid, "payment", entity_id)
     if approved_req:
         fb_update(f"/permission_requests/{approved_req.get('firebase_id')}", {
@@ -28688,14 +28758,24 @@ def payment_delete(invoice_id, idx):
 
     return jsonify({"success": True}), 200
 
-@app.route("/invoicing/<invoice_id>/tax/payment/delete/<int:idx>", methods=["POST"])
+@app.route("/invoicing/<invoice_id>/tax/payment/delete/<payment_ref>", methods=["POST"])
 @role_required("invoicing")
-def tax_payment_delete(invoice_id, idx):
-    """Remove a tax payment entry from the log."""
+def tax_payment_delete(invoice_id, payment_ref):
+    """Remove a tax payment entry from the log.
+
+    payment_ref is normally the payment's stable payment_id; falls back to a legacy
+    positional index for older links.
+    """
+    inv_data = fb_get(f"/invoices/{invoice_id}") or {}
+    tax_log = inv_data.get("tax_payments", [])
+    idx = _find_payment_index_by_ref(tax_log, payment_ref)
+    if idx is None:
+        return jsonify({"error": "Tax payment not found"}), 404
+
     # Check permission for tax payment deletion
     _uid = session.get("user_uid", "")
     user_role = normalize_role(session.get("user_role", ""))
-    entity_id = f"{invoice_id}_tax_{idx}"
+    entity_id = f"{invoice_id}_tax_{payment_ref}"
     has_approval = user_role in ("admin", "accountant") or _has_approved_delete_request(_uid, "payment", entity_id)
 
     if not has_approval:
@@ -28705,8 +28785,6 @@ def tax_payment_delete(invoice_id, idx):
             "permission_required": True
         }), 403
 
-    inv_data = fb_get(f"/invoices/{invoice_id}") or {}
-    tax_log = inv_data.get("tax_payments", [])
     if not isinstance(tax_log, list) or idx >= len(tax_log):
         return jsonify({"error": "Tax payment not found"}), 404
 
@@ -28763,7 +28841,7 @@ def tax_payment_delete(invoice_id, idx):
                 })
 
     # Mark the permission request as completed if one exists
-    entity_id = f"{invoice_id}_tax_{idx}"
+    entity_id = f"{invoice_id}_tax_{payment_ref}"
     approved_req = _has_approved_delete_request(_uid, "payment", entity_id)
     if approved_req:
         fb_update(f"/permission_requests/{approved_req.get('firebase_id')}", {

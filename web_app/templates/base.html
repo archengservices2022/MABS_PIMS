@@ -742,11 +742,12 @@ window._submitPermissionRequest = function () {
 </div>
 <script>
 (function(){
-  var _drType='', _drId='', _drLabel='';
-  window.openDeleteRequestModal = function(entityType, entityId, entityLabel){
-    _drType  = entityType;
-    _drId    = entityId;
-    _drLabel = entityLabel;
+  var _drType='', _drId='', _drLabel='', _drAction='';
+  window.openDeleteRequestModal = function(entityType, entityId, entityLabel, actionText){
+    _drType   = entityType;
+    _drId     = entityId;
+    _drLabel  = entityLabel;
+    _drAction = 'Delete ' + (actionText || entityLabel);
     var lbl = document.getElementById('drEntityLabel');
     if(lbl) lbl.textContent = entityLabel;
     var notes = document.getElementById('drNotes');
@@ -764,7 +765,7 @@ window._submitPermissionRequest = function () {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending…';
 
     console.log('Sending delete request:', {
-      action: 'Delete ' + _drLabel,
+      action: _drAction,
       entity_type: _drType,
       entity_id: _drId,
       entity_label: _drLabel,
@@ -775,7 +776,7 @@ window._submitPermissionRequest = function () {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
-        action:       'Delete ' + _drLabel,
+        action:       _drAction,
         notes:        notes,
         page_url:     window.location.href,
         entity_type:  _drType,
