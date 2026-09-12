@@ -5866,16 +5866,9 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
   let currentArCurrency = '$';
   let selectedArCategory = null;
 
-  function categorizeInvoice(inv, flaggedByProject) {
-    // Priority, highest first:
-    //  1. A deliberate per-invoice flag — explicit ar_category, or the
-    //     invoice's own status literally "Invoice Disputed" / "Incorrect
-    //     Invoice" — always wins, on any project.
-    //  2. Otherwise, a project flagged Scope Disagreement / Project
-    //     Completion Issue / On Hold is a stronger signal than a plain
-    //     workflow status (Sent, Partial, ...), so its invoices land in the
-    //     project's category instead of the usual bucket.
-    //  3. Otherwise, infer from status as before.
+  function categorizeInvoice(inv) {
+    // Purely invoice-level — never looks at the invoice's project's status.
+    // Use explicit ar_category if set, otherwise infer from status.
     if (inv.ar_category) {
       return inv.ar_category;
     }
@@ -5885,14 +5878,8 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 
     if (status === 'Invoice Disputed') return 'Invoice Disputed';
     if (status === 'Incorrect Invoice') return 'Incorrect Invoice';
-    if (status === 'Paid' || status === 'Cancelled') return null;
-
-    const pnum = (meta.project_number || '').trim();
-    if (flaggedByProject && pnum && flaggedByProject[pnum]) {
-      return flaggedByProject[pnum];
-    }
-
     if (status === 'Partial') return 'Partial Payment - Outstanding';
+    if (status === 'Paid' || status === 'Cancelled') return null;
     if (status === 'Sent' || status === 'Viewed' || status === 'Overdue') return 'Invoiced - Not Paid';
     // Draft invoices go to Others/On Hold, not Invoiced - Not Paid
 
@@ -5914,12 +5901,6 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     const arFlaggedProjects = {{ ar_flagged_projects|default([])|tojson|safe }} || [];
     const currencySymbol = '{{ currency_symbol }}';
     const today = new Date();
-
-    // project_number -> AR category, for projects flagged Scope Disagreement /
-    // Project Completion Issue / On Hold (On Hold maps to "Others / On Hold").
-    const flaggedByProject = {};
-    arFlaggedProjects.forEach(p => { if (p.project_number) flaggedByProject[p.project_number] = p.category; });
-    const projArAdded = {}; // project_number -> amount already counted via its own invoices
 
     // Initialize all categories with zero data
     const arData = {};
@@ -6003,7 +5984,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         overdueAmount += amount;
       }
 
-      const category = categorizeInvoice(meta, flaggedByProject);
+      const category = categorizeInvoice(meta);
       console.log(`[AR_DEBUG_CAT] Invoice ${meta.invoice_number || inv.id} categorized as: "${category}", Amount: ${amount}`);
 
       if (category && arData[category]) {
@@ -6018,31 +5999,26 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
           date: meta.invoice_date || meta.date || inv.date
         });
       }
-      const pnum = (meta.project_number || '').trim();
-      if (pnum) projArAdded[pnum] = (projArAdded[pnum] || 0) + amount;
     });
 
-    // Top up Scope Disagreement / Project Completion Issue with whatever part
-    // of the flagged project's outstanding balance its invoices didn't already
-    // cover (including projects with no invoice at all yet).
+    // Scope Disagreement / Project Completion Issue / On Hold: one entry per
+    // flagged project, equal to its full outstanding balance — independent
+    // of (not netted against) whatever category its own invoices landed in
+    // above, so this always lists project records, never invoice records.
     arFlaggedProjects.forEach(p => {
-      const pnum = p.project_number;
       const category = p.category;
-      if (!pnum || !category || !arData[category]) return;
-      const remainder = (parseFloat(p.outstanding) || 0) - (projArAdded[pnum] || 0);
-      if (remainder <= 0.01) return;
+      const outstanding = parseFloat(p.outstanding) || 0;
+      if (!p.project_number || !category || !arData[category] || outstanding <= 0.01) return;
 
-      totalMarket += remainder;
-      totalOutstanding += remainder;
+      totalMarket += outstanding;
+      totalOutstanding += outstanding;
       if (p.client) clients.add(p.client);
-      arData[category].amount += remainder;
+      arData[category].amount += outstanding;
       arData[category].count += 1;
-      // One row per project (not per invoice) — this is the part of the
-      // project's outstanding balance its own invoices don't already cover.
       arData[category].invoices.push({
-        number: pnum + (p.project_name ? ' — ' + p.project_name : ''),
+        number: p.project_number + (p.project_name ? ' — ' + p.project_name : ''),
         client: p.client || '—',
-        amount: remainder,
+        amount: outstanding,
         daysPending: 0,
         status: p.status || category,
         date: ''

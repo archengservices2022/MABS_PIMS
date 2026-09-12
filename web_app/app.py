@@ -2144,22 +2144,17 @@ def dashboard():
     #   • Invoice status is recalculated with _calculate_invoice_status().
     #   • Paid / Cancelled invoices are excluded.
     #   • Amount = (total − amount_paid) for Partial, otherwise the full total.
-    #   • Category priority, highest first:
-    #       1. A deliberate per-invoice flag — meta.ar_category, or the
-    #          invoice's own status literally set to "Invoice Disputed" /
-    #          "Incorrect Invoice" — always wins, on any project.
-    #       2. Otherwise, a project flagged "Scope Disagreement", "Project
-    #          Completion Issue", or "On Hold" (On Hold → "Others / On Hold")
-    #          — a stronger signal than a plain workflow status like Sent or
-    #          Partial, so its invoices land in the project's category
-    #          instead of the usual Partial/Invoiced-Not-Paid/Others bucket.
-    #       3. Otherwise, inferred from status as before; unknown/Draft
-    #          invoices fall into "Others / On Hold".
-    #     Whatever part of a flagged project's outstanding balance (contract
-    #     value − amount paid) isn't already covered by its own invoices this
-    #     way — including a project with no invoice at all — is topped up as
-    #     one project-level entry, so a not-yet-invoiced flagged project shows
-    #     up too.
+    #   • Category is meta.ar_category when set, else inferred from status;
+    #     unknown/Draft invoices fall into "Others / On Hold". This is purely
+    #     invoice-level and never looks at the invoice's project's status —
+    #     Partial Payment - Outstanding is always built from invoices.
+    #   • Separately (not netted against the above — the two are deliberately
+    #     not mixed), every project whose own status is "Scope Disagreement",
+    #     "Project Completion Issue", or "On Hold" (→ "Others / On Hold")
+    #     contributes one project-level entry equal to its full outstanding
+    #     balance (contract value − amount paid), regardless of what its
+    #     invoices are separately doing. So "Project Completion Issue" always
+    #     lists projects, never invoices.
     #   • "Advance Payment Received" comes from employee advances with a
     #     remaining balance, NOT from invoices.
     ar_data = {
@@ -2187,30 +2182,24 @@ def dashboard():
         "Project Completion Issue": "Project Completion Issue",
         "On Hold":                  "Others / On Hold",
     }
-    _proj_status_by_num = {
-        (p.get("project_number") or "").strip(): (p.get("status") or "").strip()
-        for p in proj_list if isinstance(p, dict) and p.get("project_number")
-    }
 
     def _ar_categorize(_meta):
         _cat = (_meta.get("ar_category") or "").strip()
         if _cat:
             return _cat
         _st = (_meta.get("status") or "").strip()
-        if _st in ("Invoice Disputed", "Incorrect Invoice"):
-            return _st
-        if _st in ("Paid", "Cancelled"):
-            return None
-        _proj_cat = _PROJECT_STATUS_AR.get(_proj_status_by_num.get((_meta.get("project_number") or "").strip(), ""))
-        if _proj_cat:
-            return _proj_cat
+        if _st == "Invoice Disputed":
+            return "Invoice Disputed"
+        if _st == "Incorrect Invoice":
+            return "Incorrect Invoice"
         if _st == "Partial":
             return "Partial Payment - Outstanding"
+        if _st in ("Paid", "Cancelled"):
+            return None
         if _st in ("Sent", "Viewed", "Overdue"):
             return "Invoiced - Not Paid"
         return "Others / On Hold"
 
-    _proj_ar_added = {}  # project_number → amount already counted via its invoices
     for inv in inv_list:
         if not isinstance(inv, dict):
             continue
@@ -2226,24 +2215,20 @@ def dashboard():
         _key = _AR_CATEGORY_KEY.get(_ar_categorize(meta))
         if _key:
             ar_data[_key] += amount
-        _pn = (meta.get("project_number") or "").strip()
-        if _pn:
-            _proj_ar_added[_pn] = _proj_ar_added.get(_pn, 0.0) + amount
 
-    # Top up Scope Disagreement / Project Completion Issue with whatever part
-    # of the flagged project's outstanding balance its invoices didn't already
-    # cover — this is what makes a not-yet-invoiced project show up too.
+    # Scope Disagreement / Project Completion Issue / On Hold: one entry per
+    # flagged project, equal to its full outstanding balance — independent of
+    # (not netted against) whatever category its own invoices landed in
+    # above, so this always reflects project records, never invoice records.
     for _p in proj_list:
         if not isinstance(_p, dict):
             continue
         _cat = _PROJECT_STATUS_AR.get((_p.get("status") or "").strip())
         if not _cat:
             continue
-        _pn = (_p.get("project_number") or "").strip()
         _outstanding = _safe_float(_p.get("contract_value", 0)) - _safe_float(_p.get("amount_paid", 0))
-        _remainder = _outstanding - _proj_ar_added.get(_pn, 0.0)
-        if _remainder > 0.01:
-            ar_data[_AR_CATEGORY_KEY[_cat]] += _remainder
+        if _outstanding > 0.01:
+            ar_data[_AR_CATEGORY_KEY[_cat]] += _outstanding
 
     # Advance Payment Received — employee advances still carrying a balance
     _dash_adv_raw = fb_get("/employee_advances") or {}
@@ -16366,12 +16351,12 @@ def financial():
     advances_list = [_ensure_json_serializable(a) for a in (advances_list or [])]
 
     # A/R Summary: projects flagged "Scope Disagreement", "Project Completion
-    # Issue", or "On Hold" (On Hold → "Others / On Hold") additionally
-    # contribute whatever part of their outstanding balance isn't already
-    # covered by their own invoices' categorized amounts, as one project-level
-    # entry — mirrors the same logic in the dashboard route's ar_data. Kept as
-    # a small lookup (with just enough project info to display) rather than
-    # shipping the full projects list to the AR Summary tab's JS.
+    # Issue", or "On Hold" (On Hold → "Others / On Hold") each contribute one
+    # project-level entry equal to their full outstanding balance, independent
+    # of whatever category their own invoices separately land in — mirrors
+    # the same logic in the dashboard route's ar_data. Kept as a small lookup
+    # (with just enough project info to display) rather than shipping the
+    # full projects list to the AR Summary tab's JS.
     _AR_PROJECT_STATUS_CATEGORY = {
         "Scope Disagreement":       "Scope Disagreement",
         "Project Completion Issue": "Project Completion Issue",
