@@ -4530,7 +4530,8 @@ def project_detail(project_id):
                            co_contract_increase=co_contract_increase,
                            base_contract=base_contract,
                            user_has_delete_perm=_has_del_perm,
-                           comm_history=comm_history)
+                           comm_history=comm_history,
+                           today_date=datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"))
 
 # ── Change Order Routes ───────────────────────────────────────────────────────
 
@@ -4571,6 +4572,11 @@ def co_new(project_id):
                     return _redirect_project_detail(project_id, "#tab-change-orders")
 
     now_str = datetime.now(timezone.utc).isoformat()
+    co_date = request.form.get("co_date", "").strip()
+    # A user-picked CO date replaces just the date part of created_at (same
+    # convention as editing an existing CO's date), keeping today's time —
+    # falls back to "now" if the field was left blank.
+    created_at_str = (co_date + now_str[10:]) if co_date else now_str
     new_co = {
         "firebase_id":      _generate_co_firebase_id(),
         "co_number":        co_num,
@@ -4578,7 +4584,7 @@ def co_new(project_id):
         "description":      request.form.get("description", "").strip(),
         "amount":           _safe_float(request.form.get("amount", 0)),
         "status":           "Draft",
-        "created_at":       now_str,
+        "created_at":       created_at_str,
         "created_by":       session.get("user_email", ""),
         "submitted_at":     "",
         "approved_at":      "",

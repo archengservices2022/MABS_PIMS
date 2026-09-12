@@ -1182,13 +1182,17 @@
         <input type="hidden" name="page" class="form-page-input" value="1">
         <div class="modal-body">
           <div class="row g-3 mb-3">
-            <div class="col-md-7">
+            <div class="col-md-5">
               <label class="form-label fw-600">CO Number <span class="text-danger">*</span></label>
               <input type="text" name="co_number" class="form-control" placeholder="e.g. CO-001" autocomplete="off" required>
             </div>
-            <div class="col-md-5">
+            <div class="col-md-4">
               <label class="form-label fw-600">Amount ($) <span class="text-danger">*</span></label>
               <input type="number" name="amount" class="form-control" step="0.01" min="0" placeholder="0.00" required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-600">Date</label>
+              <input type="date" name="co_date" class="form-control" value="{{ today_date }}">
             </div>
           </div>
           <div class="mb-3">
