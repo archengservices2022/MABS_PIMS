@@ -3555,9 +3555,10 @@ def projects():
         status_counts[st] = status_counts.get(st, 0) + 1
     overdue_count = sum(1 for i in items if i.get("_has_overdue"))
 
-    statuses = ["Not Started", "In Progress", "Scope Disagreement", "Project Completion Issue",
+    statuses = ["Not Started", "In Progress",
                 "Sent out_Invoiced", "Sent out_Not Invoiced",
-                "invoiced_Not paid yet", "invoiced_Partially paid", "invoiced_Fully paid"]
+                "invoiced_Not paid yet", "invoiced_Partially paid", "invoiced_Fully paid",
+                "On Hold", "Scope Disagreement", "Project Completion Issue", "Cancelled"]
     # Get unique client names from all projects (company_name preferred over client_name)
     clients_set = set()
     for p in raw.values() if isinstance(raw, dict) else []:
