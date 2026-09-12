@@ -92,8 +92,11 @@
           <td class="text-end text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(m.get('amount_claimed', 0)|float) }}</td>
           <td class="text-end text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(m.get('amount_approved', m.get('amount_claimed', 0))|float) }}</td>
           <td class="text-center">
-            {% if m.get('has_receipt') or m.get('receipt_filename') %}
-            <i class="bi bi-file-earmark-pdf receipt-icon receipt-btn" style="cursor:pointer;" data-claim-id="{{ m.get('firebase_id', '') }}" title="{{ m.get('receipt_filename', 'Receipt attached') }}"></i>
+            {% if (m.get('has_receipt') or m.get('receipt_filename')) and m.get('firebase_id') %}
+            <a href="{{ url_for('medical_claim_receipt', claim_id=m.get('firebase_id')) }}" target="_blank"
+               class="receipt-icon" style="text-decoration:none;" title="{{ m.get('receipt_filename', 'View receipt') }}">
+              <i class="bi bi-file-earmark-pdf"></i>
+            </a>
             {% else %}
             <span class="text-muted small">—</span>
             {% endif %}
@@ -142,17 +145,6 @@
         window.location.href = "{{ url_for('employee_all_medical', uid=uid, page=1) }}".replace('page=1', 'page=' + page);
       }
     }
-    document.addEventListener('DOMContentLoaded', function() {
-      document.querySelectorAll('.receipt-btn').forEach(btn => {
-        btn.addEventListener('click', function(e) {
-          e.preventDefault();
-          const claimId = this.getAttribute('data-claim-id');
-          if (claimId) {
-            window.open('/employees/medical-claims/' + claimId + '/receipt', '_blank');
-          }
-        });
-      });
-    });
   </script>
   {% endif %}
   {% else %}

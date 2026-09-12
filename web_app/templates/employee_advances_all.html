@@ -77,6 +77,7 @@
     <table>
       <thead>
         <tr>
+          <th>Advance No</th>
           <th>Date</th>
           <th class="text-end">Advance Amount</th>
           <th class="text-end">Adjusted/Paid</th>
@@ -89,6 +90,13 @@
         {% for adv in advances %}
         {% set balance = [adv.get('amount', 0)|float - adv.get('adjusted', 0)|float, 0]|max %}
         <tr>
+          <td class="text-muted small">
+            {% if adv.get('firebase_id') %}
+            <a href="{{ url_for('advance_detail', advance_id=adv.get('firebase_id')) }}" style="color:#0D9488; text-decoration:none; font-weight:700;">{{ adv.get('advance_no') or '—' }}</a>
+            {% else %}
+            <strong>{{ adv.get('advance_no') or '—' }}</strong>
+            {% endif %}
+          </td>
           <td class="text-muted small"><strong>{{ (adv.get('date', '') or '—') | format_date }}</strong></td>
           <td class="text-end text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(adv.get('amount', 0)|float) }}</td>
           <td class="text-end">{{ currency_symbol }}{{ '{:,.2f}'.format(adv.get('adjusted', 0)|float) }}</td>

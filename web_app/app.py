@@ -20103,81 +20103,84 @@ def employee_profile_pdf(uid):
         [1.3*inch, 1.3*inch, 1.3*inch, 1.3*inch, 1.2*inch], numeric_cols={1, 2, 3}, icon_kind="wallet",
         accent_hex="#D97706", totals={1: money(_adv_total), 2: money(_adv_adjusted_total), 3: money(_adv_bal_total)} if _adv_rows else None)
 
-    # Projects worked (every distinct project, not just the last 5) — accent matches "Projects Worked" tile
-    data_table(
-        "PROJECTS WORKED",
-        ["Project #", "Name", "Status"],
-        [[p.get("project_number", "—") or "—", (p.get("project_name", "") or "—")[:55], p.get("status", "—") or "—"]
-         for p in data["all_projects_worked"]],
-        [1.6*inch, 3.5*inch, 1.3*inch], icon_kind="briefcase", accent_hex="#7C3AED")
-
-    # Timesheets (every submitted/approved week) — accent matches "Total Hours" tile
-    def _week_label(ws):
-        if not ws:
-            return "—"
-        try:
-            wd = datetime.strptime(str(ws)[:10], "%Y-%m-%d")
-            we = wd + timedelta(days=6)
-            return f"{wd.strftime('%m-%d-%Y')} — {we.strftime('%m-%d-%Y')}"
-        except Exception:
-            return str(ws)
-    _ts_total_hrs = sum(_safe_float(t.get("total_hours", 0)) for t in data["all_timesheets"])
-    data_table(
-        "TIMESHEETS",
-        ["Period", "Hours", "Status"],
-        [[_week_label(t.get("week_of", "")), f'{_safe_float(t.get("total_hours", 0)):.1f} hrs', t.get("status", "Pending") or "Pending"]
-         for t in data["all_timesheets"]],
-        [2.7*inch, 1.5*inch, 2.2*inch], numeric_cols={1}, icon_kind="clock",
-        accent_hex="#2563EB", totals={1: f"{_ts_total_hrs:.1f} hrs"} if data["all_timesheets"] else None)
-
-    # Time Off Requests (every request) — accent matches "Leave Taken" tile
-    _time_off_days = sum(_safe_float(t.get("working_days", 0)) for t in data["all_time_off"])
-    data_table(
-        "TIME OFF REQUESTS",
-        ["Type", "From", "To", "Days", "Status"],
-        [[t.get("type", "Leave") or "Leave",
-          _format_date_display(t.get("start_date", "")),
-          _format_date_display(t.get("end_date", "")),
-          f'{_safe_float(t.get("working_days", 0)):.1f}',
-          t.get("status", "Pending") or "Pending"]
-         for t in data["all_time_off"]],
-        [1.4*inch, 1.4*inch, 1.4*inch, 0.9*inch, 1.3*inch], numeric_cols={3}, icon_kind="calendar_check",
-        accent_hex="#16A34A", totals={3: f"{_time_off_days:.1f}"} if data["all_time_off"] else None)
-
-    # Employee Expenses (every submission) — genuine employee-submitted
-    # expenses only (see _is_employee_added_expense).
-    _real_expenses = [e for e in data["all_expenses"] if _is_employee_added_expense(e)]
-    _exp_total = sum(_safe_float(e.get("amount", 0)) for e in _real_expenses)
-    data_table(
-        "EMPLOYEE EXPENSES",
-        ["Date", "Category", "Amount", "Status"],
-        [[_format_date_display(e.get("date") or e.get("expense_date") or ""),
-          (e.get("category", "—") or "—")[:28],
-          money(e.get("amount", 0)),
-          e.get("status", "Pending") or "Pending"]
-         for e in _real_expenses],
-        [1.5*inch, 2.4*inch, 1.4*inch, 1.1*inch], numeric_cols={2}, icon_kind="receipt",
-        accent_hex="#DC2626", totals={2: money(_exp_total)} if _real_expenses else None)
-
-    # Medical Claims (every submission) — Claimed vs Approved, same two
-    # amount columns as the on-screen "Employee Medical Allowance" table.
-    # Approved falls back to the claimed amount until a claim has actually
-    # been reviewed, matching that page's own display logic.
-    def _med_approved(m):
-        return _safe_float(m.get("amount_approved", m.get("amount_claimed", 0)))
-    _med_claimed_total = sum(_safe_float(m.get("amount_claimed", 0)) for m in data["all_medical"])
-    _med_approved_total = sum(_med_approved(m) for m in data["all_medical"])
-    data_table(
-        "MEDICAL CLAIMS",
-        ["Date", "Type", "Claimed", "Approved", "Status"],
-        [[_format_date_display(m.get("claim_date", "")),
-          (m.get("expense_type", "—") or "—")[:22],
-          money(m.get("amount_claimed", 0)),
-          money(_med_approved(m)),
-          m.get("status", "Pending") or "Pending"]
-         for m in data["all_medical"]],
-        [1.3*inch, 1.7*inch, 1.2*inch, 1.2*inch, 1.0*inch], numeric_cols={2, 3}, icon_kind="medical",
-        accent_hex="#0EA5E9", totals={2: money(_med_claimed_total), 3: money(_med_approved_total)} if data["all_medical"] else None)
+    # ── Disabled tables — Projects Worked / Timesheets / Time Off Requests /
+    # Employee Expenses / Medical Claims. Kept here (commented, not deleted)
+    # so they're a quick un-comment away if these sections come back. ──
+    # # Projects worked (every distinct project, not just the last 5) — accent matches "Projects Worked" tile
+    # data_table(
+    #     "PROJECTS WORKED",
+    #     ["Project #", "Name", "Status"],
+    #     [[p.get("project_number", "—") or "—", (p.get("project_name", "") or "—")[:55], p.get("status", "—") or "—"]
+    #      for p in data["all_projects_worked"]],
+    #     [1.6*inch, 3.5*inch, 1.3*inch], icon_kind="briefcase", accent_hex="#7C3AED")
+    #
+    # # Timesheets (every submitted/approved week) — accent matches "Total Hours" tile
+    # def _week_label(ws):
+    #     if not ws:
+    #         return "—"
+    #     try:
+    #         wd = datetime.strptime(str(ws)[:10], "%Y-%m-%d")
+    #         we = wd + timedelta(days=6)
+    #         return f"{wd.strftime('%m-%d-%Y')} — {we.strftime('%m-%d-%Y')}"
+    #     except Exception:
+    #         return str(ws)
+    # _ts_total_hrs = sum(_safe_float(t.get("total_hours", 0)) for t in data["all_timesheets"])
+    # data_table(
+    #     "TIMESHEETS",
+    #     ["Period", "Hours", "Status"],
+    #     [[_week_label(t.get("week_of", "")), f'{_safe_float(t.get("total_hours", 0)):.1f} hrs', t.get("status", "Pending") or "Pending"]
+    #      for t in data["all_timesheets"]],
+    #     [2.7*inch, 1.5*inch, 2.2*inch], numeric_cols={1}, icon_kind="clock",
+    #     accent_hex="#2563EB", totals={1: f"{_ts_total_hrs:.1f} hrs"} if data["all_timesheets"] else None)
+    #
+    # # Time Off Requests (every request) — accent matches "Leave Taken" tile
+    # _time_off_days = sum(_safe_float(t.get("working_days", 0)) for t in data["all_time_off"])
+    # data_table(
+    #     "TIME OFF REQUESTS",
+    #     ["Type", "From", "To", "Days", "Status"],
+    #     [[t.get("type", "Leave") or "Leave",
+    #       _format_date_display(t.get("start_date", "")),
+    #       _format_date_display(t.get("end_date", "")),
+    #       f'{_safe_float(t.get("working_days", 0)):.1f}',
+    #       t.get("status", "Pending") or "Pending"]
+    #      for t in data["all_time_off"]],
+    #     [1.4*inch, 1.4*inch, 1.4*inch, 0.9*inch, 1.3*inch], numeric_cols={3}, icon_kind="calendar_check",
+    #     accent_hex="#16A34A", totals={3: f"{_time_off_days:.1f}"} if data["all_time_off"] else None)
+    #
+    # # Employee Expenses (every submission) — genuine employee-submitted
+    # # expenses only (see _is_employee_added_expense).
+    # _real_expenses = [e for e in data["all_expenses"] if _is_employee_added_expense(e)]
+    # _exp_total = sum(_safe_float(e.get("amount", 0)) for e in _real_expenses)
+    # data_table(
+    #     "EMPLOYEE EXPENSES",
+    #     ["Date", "Category", "Amount", "Status"],
+    #     [[_format_date_display(e.get("date") or e.get("expense_date") or ""),
+    #       (e.get("category", "—") or "—")[:28],
+    #       money(e.get("amount", 0)),
+    #       e.get("status", "Pending") or "Pending"]
+    #      for e in _real_expenses],
+    #     [1.5*inch, 2.4*inch, 1.4*inch, 1.1*inch], numeric_cols={2}, icon_kind="receipt",
+    #     accent_hex="#DC2626", totals={2: money(_exp_total)} if _real_expenses else None)
+    #
+    # # Medical Claims (every submission) — Claimed vs Approved, same two
+    # # amount columns as the on-screen "Employee Medical Allowance" table.
+    # # Approved falls back to the claimed amount until a claim has actually
+    # # been reviewed, matching that page's own display logic.
+    # def _med_approved(m):
+    #     return _safe_float(m.get("amount_approved", m.get("amount_claimed", 0)))
+    # _med_claimed_total = sum(_safe_float(m.get("amount_claimed", 0)) for m in data["all_medical"])
+    # _med_approved_total = sum(_med_approved(m) for m in data["all_medical"])
+    # data_table(
+    #     "MEDICAL CLAIMS",
+    #     ["Date", "Type", "Claimed", "Approved", "Status"],
+    #     [[_format_date_display(m.get("claim_date", "")),
+    #       (m.get("expense_type", "—") or "—")[:22],
+    #       money(m.get("amount_claimed", 0)),
+    #       money(_med_approved(m)),
+    #       m.get("status", "Pending") or "Pending"]
+    #      for m in data["all_medical"]],
+    #     [1.3*inch, 1.7*inch, 1.2*inch, 1.2*inch, 1.0*inch], numeric_cols={2, 3}, icon_kind="medical",
+    #     accent_hex="#0EA5E9", totals={2: money(_med_claimed_total), 3: money(_med_approved_total)} if data["all_medical"] else None)
 
     # ── Page furniture: running header on continuation pages + a footer with
     # "Page X of Y" on every page (drawn via a canvas subclass so it repeats). ──

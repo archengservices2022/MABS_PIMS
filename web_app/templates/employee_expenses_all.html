@@ -142,9 +142,19 @@
         window.location.href = "{{ url_for('employee_all_expenses', uid=uid, page=1) }}".replace('page=1', 'page=' + page);
       }
     }
+  </script>
+  {% endif %}
+  <script>
+    // This used to live inside the pagination block above (guarded on
+    // total_pages > 1), so with exactly one page of expenses (e.g. 15 or
+    // fewer, matching the page size) it was never included on the page at
+    // all — the receipt icon just sat there unbound, not clickable.
     document.addEventListener('DOMContentLoaded', function() {
-      const receiptButtons = document.querySelectorAll('.receipt-btn');
-      receiptButtons.forEach(btn => {
+      // The endpoint returns JSON ({url, filename}, the file as a data: URL) —
+      // it isn't the raw file, so window.open()'ing it directly just showed
+      // raw JSON text in the new tab. Fetch it and open the actual file URL
+      // it hands back, same as the working receipt viewer elsewhere.
+      document.querySelectorAll('.receipt-btn').forEach(btn => {
         btn.addEventListener('click', function(e) {
           e.preventDefault();
           e.stopPropagation();
@@ -153,14 +163,23 @@
             alert('Receipt ID not found');
             return;
           }
-          const url = '/employees/expenses/' + expId + '/receipt';
-          console.log('Opening expense receipt:', url);
-          window.open(url, '_blank');
+          fetch('/employees/expenses/' + expId + '/receipt')
+            .then(r => r.json())
+            .then(d => {
+              if (d.error) { alert('Receipt not available: ' + d.error); return; }
+              const a = document.createElement('a');
+              a.href = d.url;
+              a.download = d.filename || 'receipt';
+              a.target = '_blank';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            })
+            .catch(() => alert('Could not load receipt.'));
         });
       });
     });
   </script>
-  {% endif %}
   {% else %}
   <div class="empty-state">
     <i class="bi bi-receipt"></i>
