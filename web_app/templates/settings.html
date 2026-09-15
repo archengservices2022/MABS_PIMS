@@ -465,9 +465,33 @@
                     </div>
                     <div class="text-muted" style="font-size:11px;">{{ u.get('email','—') }}</div>
                   </td>
-                  <!-- Role -->
+                  <!-- Role (click the badge to change it — disabled for your own row,
+                       so you can't accidentally demote yourself out of Settings) -->
                   <td>
-                    <span class="badge badge-role-{{ _role }}">{{ _role|capitalize }}</span>
+                    {% if _is_me %}
+                    <span class="badge badge-role-{{ _role }}" title="You can't change your own role">{{ _role|capitalize }}</span>
+                    {% else %}
+                    <form method="POST" action="{{ url_for('user_role_update', uid=u.firebase_uid) }}"
+                          class="role-edit-form d-inline-flex align-items-center gap-1">
+                      <select name="role" class="form-select form-select-sm role-edit-select"
+                              style="display:none;width:auto;font-size:11px;padding:2px 22px 2px 6px;"
+                              onchange="this.form.submit()"
+                              onblur="this.style.display='none';this.nextElementSibling.style.display='';">
+                        <option value="sales"          {{ 'selected' if _role=='sales' }}>Sales</option>
+                        <option value="projects"       {{ 'selected' if _role=='projects' }}>Projects</option>
+                        <option value="finance"        {{ 'selected' if _role=='finance' }}>Finance</option>
+                        <option value="engineer"       {{ 'selected' if _role=='engineer' }}>Engineer</option>
+                        <option value="administration" {{ 'selected' if _role=='administration' }}>Administration</option>
+                        <option value="accountant"     {{ 'selected' if _role=='accountant' }}>Accountant</option>
+                        <option value="admin"          {{ 'selected' if _role=='admin' }}>Admin</option>
+                      </select>
+                      <span class="badge badge-role-{{ _role }}" style="cursor:pointer;"
+                            title="Click to change role"
+                            onclick="this.style.display='none';this.previousElementSibling.style.display='';this.previousElementSibling.focus();">
+                        {{ _role|capitalize }}
+                      </span>
+                    </form>
+                    {% endif %}
                     {% if _role == 'sales' %}
                       {% set _cr = u.get('commission_rate', 0)|float %}
                       {% set _et = u.get('employee_type', '') %}
