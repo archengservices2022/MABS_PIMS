@@ -4614,8 +4614,28 @@ def co_status(project_id, co_idx):
     cos = project.get("change_orders") or []
     if not isinstance(cos, list):
         cos = list(cos.values()) if isinstance(cos, dict) else []
-    if co_idx >= len(cos):
-        abort(404)
+
+    # The page's co_idx is a snapshot of this CO's position at render time.
+    # If change_orders has since shifted — another tab/session added, deleted,
+    # or reordered a CO — that position can drift or fall out of range,
+    # producing a confusing 404 (or worse, silently acting on the wrong CO).
+    # Re-locate the CO by its stable firebase_id when the form supplies one;
+    # fall back to the positional index only when that's unavailable.
+    co_fb_id = request.form.get("co_firebase_id", "").strip()
+    resolved_idx = None
+    if co_fb_id:
+        for idx, c in enumerate(cos):
+            if isinstance(c, dict) and c.get("firebase_id") == co_fb_id:
+                resolved_idx = idx
+                break
+    if resolved_idx is None:
+        if co_idx < len(cos):
+            resolved_idx = co_idx
+        else:
+            flash("This change order no longer exists on this project — the page was out of date. Please refresh and try again.", "warning")
+            return _redirect_project_detail(project_id, "#tab-change-orders")
+    co_idx = resolved_idx
+
     new_status = request.form.get("status", "")
     valid = {"Draft", "Submitted", "Approved", "Rejected"}
     if new_status not in valid:

@@ -1020,20 +1020,20 @@
                     {% if co.get('status') == 'Draft' %}
                     <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}">
                       <input type="hidden" name="status" value="Submitted">
+                      <input type="hidden" name="co_firebase_id" value="{{ co.get('firebase_id','') }}">
                       <button class="btn btn-xs btn-outline-warning" title="Submit to client">Submit</button>
                     </form>
                     {% elif co.get('status') == 'Submitted' %}
-                    <button type="button" class="btn btn-xs btn-success approve-co-btn"
-                            data-project-id="{{ project.firebase_id }}"
-                            data-co-idx="{{ co_idx }}"
-                            data-co-number="{{ co.get('co_number','CO') }}"
-                            data-co-amount="{{ co.get('amount', 0) }}"
-                            title="Approve — adds to contract value">
-                      Approve
-                    </button>
+                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}"
+                          onsubmit="return confirm('Approve {{ co.get("co_number","CO") }} (${{ "%.2f"|format(co.get("amount",0)|float) }})? This will add it to the contract value and create a new payment stage.');">
+                      <input type="hidden" name="status" value="Approved">
+                      <input type="hidden" name="co_firebase_id" value="{{ co.get('firebase_id','') }}">
+                      <button class="btn btn-xs btn-success" title="Approve — adds to contract value">Approve</button>
+                    </form>
                     <button type="button" class="btn btn-xs btn-outline-danger reject-co-btn"
                             data-project-id="{{ project.firebase_id }}"
                             data-co-idx="{{ co_idx }}"
+                            data-co-firebase-id="{{ co.get('firebase_id','') }}"
                             data-co-number="{{ co.get('co_number','CO') }}"
                             title="Reject this change order">
                       Reject
@@ -2643,6 +2643,14 @@ function submitCoStatus(status) {
 
   form.appendChild(input);
 
+  if (currentCoData.coFirebaseId) {
+    var fbIdInput = document.createElement('input');
+    fbIdInput.type = 'hidden';
+    fbIdInput.name = 'co_firebase_id';
+    fbIdInput.value = currentCoData.coFirebaseId;
+    form.appendChild(fbIdInput);
+  }
+
   // Add page parameter to preserve pagination
   const urlParams = new URLSearchParams(window.location.search);
   const pageNum = urlParams.get('page');
@@ -2656,12 +2664,6 @@ function submitCoStatus(status) {
 
   document.body.appendChild(form);
   form.submit();
-}
-
-function confirmApproveChangeOrder() {
-  if (!currentCoData) return;
-  bootstrap.Modal.getInstance(document.getElementById('approveCoModal')).hide();
-  submitCoStatus('Approved');
 }
 
 function confirmRejectChangeOrder() {
@@ -2694,25 +2696,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  document.querySelectorAll('.approve-co-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      currentCoData = {
-        projectId: this.dataset.projectId,
-        coIdx: this.dataset.coIdx,
-        coNumber: this.dataset.coNumber,
-        coAmount: this.dataset.coAmount
-      };
-      document.getElementById('approveCoMessage').textContent =
-        'Approving ' + currentCoData.coNumber + ' (' + currentCoData.coAmount + ') will add it to the contract value and create a new payment stage.';
-      new bootstrap.Modal(document.getElementById('approveCoModal')).show();
-    });
-  });
-
   document.querySelectorAll('.reject-co-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       currentCoData = {
         projectId: this.dataset.projectId,
         coIdx: this.dataset.coIdx,
+        coFirebaseId: this.dataset.coFirebaseId,
         coNumber: this.dataset.coNumber
       };
       document.getElementById('rejectReason').value = '';
@@ -2769,27 +2758,6 @@ function toggleCommModal() {
   }
 }
 </script>
-
-<!-- ?? Change Order - Approve Modal ???????????????????????????????????? -->
-<div class="modal fade" id="approveCoModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header py-2">
-        <h6 class="modal-title">Approve Change Order</h6>
-        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body pb-2">
-        <p id="approveCoMessage" class="text-muted mb-0" style="font-size:12px;line-height:1.6;"></p>
-      </div>
-      <div class="modal-footer py-2">
-        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-sm btn-success" onclick="confirmApproveChangeOrder()">
-          <i class="bi bi-check-circle me-1"></i>Approve
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- ?? Change Order - Reject Modal ???????????????????????????????????? -->
 <div class="modal fade" id="rejectCoModal" tabindex="-1">
