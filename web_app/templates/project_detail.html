@@ -1025,11 +1025,13 @@
                       <button class="btn btn-xs btn-outline-warning" title="Submit to client">Submit</button>
                     </form>
                     {% elif co.get('status') == 'Submitted' %}
-                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}"
-                          onsubmit="return confirm('Approve {{ co.get("co_number","CO") }} (${{ "%.2f"|format(co.get("amount",0)|float) }})? This will add it to the contract value and create a new payment stage.');">
+                    <form id="approveCoForm{{ co_idx }}" method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}">
                       <input type="hidden" name="status" value="Approved">
                       <input type="hidden" name="co_firebase_id" value="{{ co.get('firebase_id','') }}">
-                      <button class="btn btn-xs btn-success" title="Approve — adds to contract value">Approve</button>
+                      <button type="button" class="btn btn-xs btn-success" title="Approve — adds to contract value"
+                              onclick="confirmApproveCo('approveCoForm{{ co_idx }}', '{{ co.get("co_number","CO") }}', {{ co.get("amount",0)|float }})">
+                        Approve
+                      </button>
                     </form>
                     <button type="button" class="btn btn-xs btn-outline-danger reject-co-btn"
                             data-project-id="{{ project.firebase_id }}"
@@ -2626,6 +2628,64 @@ function showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl) 
   modal.appendChild(footer);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+}
+
+// Styled confirm dialog (same look as the Approve/Reject Time Off modal)
+function showConfirmationModal(title, message, action, headerBg, onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5); display: flex; align-items: center;
+    justify-content: center; z-index: 9999;
+  `;
+
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    max-width: 450px; width: 90%; overflow: hidden;
+  `;
+
+  const header = document.createElement('div');
+  header.style.cssText = `background: ${headerBg}; color: white; padding: 18px 24px; font-weight: 700; font-size: 16px;`;
+  header.textContent = title;
+
+  const body = document.createElement('div');
+  body.style.cssText = `padding: 24px; color: #334155; font-size: 14px; line-height: 1.6;`;
+  body.innerHTML = `<p>${message}</p>`;
+
+  const footer = document.createElement('div');
+  footer.style.cssText = `padding: 18px 24px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #e2e8f0;`;
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = `padding: 9px 18px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #334155; font-weight: 600; cursor: pointer; font-size: 13px;`;
+  cancelBtn.onclick = () => overlay.remove();
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.textContent = action;
+  confirmBtn.style.cssText = `padding: 9px 18px; border: none; border-radius: 6px; background: ${headerBg}; color: white; font-weight: 600; cursor: pointer; font-size: 13px;`;
+  confirmBtn.onclick = () => {
+    overlay.remove();
+    onConfirm();
+  };
+
+  footer.appendChild(cancelBtn);
+  footer.appendChild(confirmBtn);
+  modal.appendChild(header);
+  modal.appendChild(body);
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+function confirmApproveCo(formId, coNumber, amount) {
+  showConfirmationModal(
+    'Approve Change Order',
+    `You are about to <strong>approve</strong> <strong>${coNumber}</strong> (${CURRENCY_SYMBOL}${parseFloat(amount).toFixed(2)}). This will add it to the contract value and create a new payment stage.`,
+    'Approve',
+    '#10b981',
+    () => document.getElementById(formId).submit()
+  );
 }
 
 // Change Order Approval/Rejection Dialogs
