@@ -368,6 +368,27 @@ def _heal_co_stages(project_id: str, project: dict) -> bool:
     return changed
 
 
+def _resolve_co_idx(cos: list, co_idx: int, co_fb_id: str = ""):
+    """Re-locate a change order by its stable firebase_id when one is
+    supplied, falling back to its positional index otherwise.
+
+    co_idx is only a snapshot of where a CO sat in the list when the page
+    was rendered. If change_orders has since shifted — another tab/session
+    added, deleted, or reordered a CO — that position can drift or fall out
+    of range, silently acting on (or 404ing on) the wrong CO. Returns the
+    resolved index, or None if the CO can't be found by either means (e.g.
+    it was deleted since the page was rendered).
+    """
+    co_fb_id = (co_fb_id or "").strip()
+    if co_fb_id:
+        for idx, c in enumerate(cos):
+            if isinstance(c, dict) and c.get("firebase_id") == co_fb_id:
+                return idx
+    if 0 <= co_idx < len(cos):
+        return co_idx
+    return None
+
+
 def normalize_role(role: str) -> str:
     r = str(role or "sales").strip().lower()
     return r if r in ROLE_PAGES else "sales"
@@ -4615,25 +4636,10 @@ def co_status(project_id, co_idx):
     if not isinstance(cos, list):
         cos = list(cos.values()) if isinstance(cos, dict) else []
 
-    # The page's co_idx is a snapshot of this CO's position at render time.
-    # If change_orders has since shifted — another tab/session added, deleted,
-    # or reordered a CO — that position can drift or fall out of range,
-    # producing a confusing 404 (or worse, silently acting on the wrong CO).
-    # Re-locate the CO by its stable firebase_id when the form supplies one;
-    # fall back to the positional index only when that's unavailable.
-    co_fb_id = request.form.get("co_firebase_id", "").strip()
-    resolved_idx = None
-    if co_fb_id:
-        for idx, c in enumerate(cos):
-            if isinstance(c, dict) and c.get("firebase_id") == co_fb_id:
-                resolved_idx = idx
-                break
+    resolved_idx = _resolve_co_idx(cos, co_idx, request.form.get("co_firebase_id", ""))
     if resolved_idx is None:
-        if co_idx < len(cos):
-            resolved_idx = co_idx
-        else:
-            flash("This change order no longer exists on this project — the page was out of date. Please refresh and try again.", "warning")
-            return _redirect_project_detail(project_id, "#tab-change-orders")
+        flash("This change order no longer exists on this project — the page was out of date. Please refresh and try again.", "warning")
+        return _redirect_project_detail(project_id, "#tab-change-orders")
     co_idx = resolved_idx
 
     new_status = request.form.get("status", "")
@@ -4706,8 +4712,12 @@ def co_update_amount(project_id, co_idx):
     if not project:
         abort(404)
     cos = _normalise_list(project.get("change_orders"))
-    if co_idx >= len(cos) or not isinstance(cos[co_idx], dict):
-        abort(404)
+
+    resolved_idx = _resolve_co_idx(cos, co_idx, request.form.get("co_firebase_id", ""))
+    if resolved_idx is None:
+        flash("This change order no longer exists on this project — the page was out of date. Please refresh and try again.", "warning")
+        return _redirect_project_detail(project_id, "#tab-change-orders")
+    co_idx = resolved_idx
 
     new_amount = _safe_float(request.form.get("amount", 0))
     if new_amount < 0:
@@ -4735,21 +4745,29 @@ def co_update_amount(project_id, co_idx):
     base_value = _base_contract_value(project, cos)
     co = cos[co_idx]
     old_co_num = co.get("co_number", "")
-    co["amount"] = new_amount
+
+    # Build only the fields actually being changed, and write them as a
+    # targeted partial update to this CO's own sub-path (not the whole
+    # change_orders array). A full read-modify-write here risked silently
+    # reverting a concurrent change to this CO's own status field — e.g. an
+    # Approve click landing moments before this Save read its snapshot of
+    # the project — since that stale status would ride along in the
+    # full-array write and clobber the real one.
+    co_updates = {"amount": new_amount, "updated_at": datetime.now(timezone.utc).isoformat()}
     if request.form.get("title") is not None:
-        co["title"] = request.form.get("title", "").strip()
+        co_updates["title"] = request.form.get("title", "").strip()
     if request.form.get("description") is not None:
-        co["description"] = request.form.get("description", "").strip()
+        co_updates["description"] = request.form.get("description", "").strip()
     co_date = request.form.get("co_date", "").strip()
     if co_date:
         existing = co.get("created_at", "")
         time_part = existing[10:] if len(existing) > 10 else "T00:00:00+00:00"
-        co["created_at"] = co_date + time_part
+        co_updates["created_at"] = co_date + time_part
     if new_po_wo:
-        co["po_wo_number"] = new_po_wo
+        co_updates["po_wo_number"] = new_po_wo
     new_shipping = request.form.get("shipping_address", None)
     if new_shipping is not None:
-        co["shipping_address"] = new_shipping.strip()
+        co_updates["shipping_address"] = new_shipping.strip()
 
     # CO number rename — check uniqueness within project first
     new_co_num_req = request.form.get("new_co_number", "").strip()
@@ -4757,14 +4775,18 @@ def co_update_amount(project_id, co_idx):
         if any(c.get("co_number") == new_co_num_req for i, c in enumerate(cos) if i != co_idx):
             flash(f"CO number '{new_co_num_req}' is already in use on this project.", "danger")
             return _redirect_project_detail(project_id, "#tab-change-orders")
-        co["co_number"] = new_co_num_req
+        co_updates["co_number"] = new_co_num_req
     else:
         new_co_num_req = None  # no rename
 
-    co["updated_at"] = datetime.now(timezone.utc).isoformat()
+    # Apply locally too, so the stage-matching/contract-value math below sees
+    # the new values without another round trip.
+    co.update(co_updates)
+    fb_update(f"/projects/{project_id}/change_orders/{co_idx}", co_updates)
 
+    # Sync linked payment stage(s) with the same targeted-update approach —
+    # only amount/name/co_number, never status/invoice_id/amount_paid.
     stages = _normalise_list(project.get("payment_stages"))
-    # use old CO number to locate linked stages, then update them
     for idx, stage in enumerate(stages):
         if not isinstance(stage, dict):
             continue
@@ -4772,25 +4794,26 @@ def co_update_amount(project_id, co_idx):
         stage_co_num = stage.get("co_number", "")
         stage_name = str(stage.get("name", ""))
         if stage_co_idx == co_idx or (old_co_num and (stage_co_num == old_co_num or old_co_num in stage_name)):
-            stage["amount"] = new_amount
+            stage_updates = {"amount": new_amount}
             curr_co_num = co.get("co_number", old_co_num)
             if new_co_num_req:
-                stage["co_number"] = new_co_num_req
+                stage_updates["co_number"] = new_co_num_req
             # Rebuild stage name to reflect current CO number and title
             curr_title = co.get("title", "")
             if curr_title:
-                stage["name"] = f"{curr_co_num} – {curr_title}"
+                stage_updates["name"] = f"{curr_co_num} – {curr_title}"
             elif new_co_num_req and old_co_num and old_co_num in stage_name:
-                stage["name"] = stage_name.replace(old_co_num, new_co_num_req, 1)
+                stage_updates["name"] = stage_name.replace(old_co_num, new_co_num_req, 1)
+            stage.update(stage_updates)
+            fb_update(f"/projects/{project_id}/payment_stages/{idx}", stage_updates)
 
-    update_data = {
+    # Contract value is derived from every CO's amount — recompute and store
+    # as its own small targeted update.
+    fb_update(f"/projects/{project_id}", {
         "base_contract_value": base_value,
         "contract_value": base_value + _approved_co_total(cos),
-        "change_orders": cos,
-        "payment_stages": stages,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    fb_update(f"/projects/{project_id}", update_data)
+    })
     cache_bust("projects_list")
     flash(f"{co.get('co_number', 'CO')} updated.", "success")
     return _redirect_project_detail(project_id, "#tab-change-orders")
@@ -4852,8 +4875,12 @@ def co_delete(project_id, co_idx):
     if not project:
         abort(404)
     cos = _normalise_list(project.get("change_orders"))
-    if co_idx >= len(cos) or not isinstance(cos[co_idx], dict):
-        abort(404)
+
+    resolved_idx = _resolve_co_idx(cos, co_idx, request.form.get("co_firebase_id", ""))
+    if resolved_idx is None:
+        flash("This change order no longer exists on this project — the page was out of date. Please refresh and try again.", "warning")
+        return _redirect_project_detail(project_id, "#tab-change-orders")
+    co_idx = resolved_idx
 
     co = cos[co_idx]
     co_number = str(co.get("co_number", "") or "").strip()
@@ -4951,8 +4978,13 @@ def co_pdf(project_id, co_idx):
     if not project:
         abort(404)
     cos = _normalise_list(project.get("change_orders"))
-    if co_idx >= len(cos) or not isinstance(cos[co_idx], dict):
-        abort(404)
+
+    resolved_idx = _resolve_co_idx(cos, co_idx, request.args.get("co_firebase_id", ""))
+    if resolved_idx is None:
+        flash("This change order no longer exists on this project — the page was out of date. Please refresh and try again.", "warning")
+        return _redirect_project_detail(project_id, "#tab-change-orders")
+    co_idx = resolved_idx
+
     co = cos[co_idx]
     ci = company_info()
 
