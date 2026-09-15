@@ -4621,19 +4621,39 @@ def co_status(project_id, co_idx):
     if new_status not in valid:
         abort(400)
     now_str = datetime.now(timezone.utc).isoformat()
+    was_already_approved = cos[co_idx].get("status") == "Approved"
     cos[co_idx]["status"] = new_status
     if new_status == "Submitted":
         cos[co_idx]["submitted_at"] = now_str
     if new_status == "Approved":
         cos[co_idx]["approved_at"] = now_str
+        co_firebase_id = cos[co_idx].get("firebase_id")
+        co_number      = cos[co_idx].get("co_number")
+        stages = project.get("payment_stages") or []
+        if not isinstance(stages, list):
+            stages = []
+        # Idempotency guard: a double-click, slow network retry, or resubmitted
+        # form can send this same "Approve" POST more than once. Without this
+        # check each resend appended another payment stage and re-added the CO
+        # amount to the contract value, producing duplicate "CO-1" rows.
+        already_has_stage = any(
+            isinstance(s, dict) and (
+                s.get("co_index") == co_idx or
+                (co_firebase_id and s.get("co_firebase_id") == co_firebase_id) or
+                (co_number and s.get("co_number") == co_number)
+            )
+            for s in stages
+        )
+        if was_already_approved or already_has_stage:
+            fb_update(f"/projects/{project_id}", {"change_orders": cos})
+            flash(f"{cos[co_idx]['co_number']} is already approved.", "info")
+            return _redirect_project_detail(project_id, "#tab-change-orders")
+
         # Increase contract value and add payment stage
         co_amount = _safe_float(cos[co_idx].get("amount", 0))
         co_title  = cos[co_idx].get("title", cos[co_idx].get("co_number", ""))
         old_value = _safe_float(project.get("contract_value", 0))
         new_value = old_value + co_amount
-        stages = project.get("payment_stages") or []
-        if not isinstance(stages, list):
-            stages = []
         stages.append({
             "name":   cos[co_idx]['co_number'],
             "amount": co_amount,
