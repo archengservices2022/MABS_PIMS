@@ -8487,17 +8487,24 @@ def invoice_update_amount(invoice_id):
                     except (ValueError, TypeError):
                         pass
 
-                # Match by project_number and stage_index (stored in line item)
+                # Match by project_number and payment_stage_index (the field actually
+                # persisted on each line item by _parse_invoice_form — "stage_index"
+                # is only ever a transient form-field name, never a stored key, so
+                # matching on it here always missed and fell through to the
+                # position-based fallback below, which silently updates the wrong
+                # stage whenever this invoice doesn't carry every one of the
+                # project's stages starting at index 0 (e.g. an invoice covering
+                # only CO stages 2-4 of a 5-stage plan).
                 if stage_idx_int >= 0:
-                    # First try: match by project and stored stage_index (new invoices)
+                    # First try: match by project and stored payment_stage_index (new invoices)
                     for idx, item in enumerate(line_items):
                         if isinstance(item, dict):
                             if (item.get("project_number", "").strip() == project_number and
-                                item.get("stage_index") == stage_idx_int):
+                                item.get("payment_stage_index") == stage_idx_int):
                                 line_item_idx = idx
                                 break
                     else:
-                        # Fallback: for legacy invoices without stage_index, count line items for this project
+                        # Fallback: for legacy invoices without payment_stage_index, count line items for this project
                         # The nth line item for a project = stage n (assuming line items added in order)
                         proj_item_count = 0
                         for idx, item in enumerate(line_items):
@@ -29345,17 +29352,18 @@ def update_project_stage(project_id, stage_idx):
                 # For each line item, check if it's for this stage/project
                 found = False
 
-                # First try: match by project_number and stage_index (new invoices)
+                # First try: match by project_number and payment_stage_index (new
+                # invoices) — the field actually persisted by _parse_invoice_form.
                 for item in line_items:
                     if isinstance(item, dict):
                         if (item.get("project_number", "").strip() == project_number and
-                            item.get("stage_index") == stage_idx):
+                            item.get("payment_stage_index") == stage_idx):
                             item["amount"] = str(new_amount)
                             item["unit_price"] = str(new_amount)
                             found = True
                             break
 
-                # Fallback: for legacy invoices without stage_index, count line items for this project
+                # Fallback: for legacy invoices without payment_stage_index, count line items for this project
                 if not found:
                     proj_item_count = 0
                     for item in line_items:
