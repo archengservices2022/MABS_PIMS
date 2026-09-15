@@ -6418,7 +6418,7 @@ def api_get_projects(project_ids):
                     proj_num_s = proj.get("project_number", "")
                     invoiced_s = {
                         s_i for s_i, s in enumerate(proj.get("payment_stages") or [])
-                        if isinstance(s, dict) and s.get("status") == "Invoiced"
+                        if isinstance(s, dict) and s.get("status") in ("Invoiced", "Paid", "Partially Paid", "Overdue")
                     }
                     all_pending = []
                     next_idx = proj.get("next_stage_index")
@@ -6503,7 +6503,7 @@ def api_get_projects(project_ids):
                             continue
                         matches = (co_fb and s2.get("co_firebase_id") == co_fb) or \
                                   (co_num and s2.get("co_number") == co_num)
-                        if matches and s2.get("status") == "Invoiced":
+                        if matches and s2.get("status") in ("Invoiced", "Paid", "Partially Paid", "Overdue"):
                             stage_billed = True
                             break
                     if stage_billed:
@@ -6724,7 +6724,7 @@ def invoice_new():
                 if not pnum:
                     continue
                 for s_i, s in enumerate(pdata.get("payment_stages") or []):
-                    if isinstance(s, dict) and s.get("status") == "Invoiced":
+                    if isinstance(s, dict) and s.get("status") in ("Invoiced", "Paid", "Partially Paid", "Overdue"):
                         invoiced_stages_map.setdefault(pnum, set()).add(s_i)
 
         # Check if any line item's stage is already invoiced
@@ -24083,7 +24083,7 @@ def _get_next_payment_stage(project: dict, all_invoices: dict = None) -> dict:
     # a single meta.payment_stage_index on a multi-project invoice is a guess.
     invoiced_stages = {
         i for i, s in enumerate(payment_stages)
-        if isinstance(s, dict) and s.get("status") == "Invoiced"
+        if isinstance(s, dict) and s.get("status") in ("Invoiced", "Paid", "Partially Paid", "Overdue")
     }
     if isinstance(all_invoices, dict):
         for inv_id, inv_data in all_invoices.items():
