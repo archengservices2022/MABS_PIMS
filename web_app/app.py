@@ -29467,6 +29467,36 @@ def update_invoiced_stage(project_id, stage_idx):
     except Exception as e:
         return {"success": False, "error": str(e)}, 500
 
+@app.route("/api/projects/<project_id>/stage/<int:stage_idx>/reset-status", methods=["POST"])
+@role_required("projects")
+def reset_stage_status(project_id, stage_idx):
+    """Reset a stage's status back to 'Pending Invoice'.
+
+    Only for stages that were never actually invoiced (e.g. status came in
+    marked "Invoiced" from a bulk Excel import) — guarded by requiring no
+    invoice_id and no amount_paid, so a stage linked to a real invoice can
+    never be reset this way. Touches only this stage's status field.
+    """
+    try:
+        project = fb_get(f"/projects/{project_id}") or {}
+        stages = project.get("payment_stages", [])
+
+        if stage_idx >= len(stages) or not isinstance(stages[stage_idx], dict):
+            return {"success": False, "error": "Invalid stage index"}, 400
+
+        stage = stages[stage_idx]
+        if stage.get("invoice_id") or _safe_float(stage.get("amount_paid", 0)) > 0:
+            return {"success": False, "error": "Stage is linked to a real invoice/payment and cannot be reset this way."}, 400
+
+        stages[stage_idx]["status"] = "Pending Invoice"
+        project["payment_stages"] = stages
+        project["updated_at"] = datetime.now(timezone.utc).isoformat()
+        fb_update(f"/projects/{project_id}", project)
+
+        return {"success": True, "message": "Stage reset to Pending Invoice"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}, 500
+
 @app.route("/api/projects/<project_id>/stage/<int:stage_idx>/invoice", methods=["POST"])
 @role_required("projects")
 def quick_invoice_stage(project_id, stage_idx):

@@ -464,6 +464,10 @@
                             title="Create invoice for this stage">
                       <i class="bi bi-receipt"></i>
                     </button>
+                    {% elif st in ('Invoiced', 'Partially Paid', 'Overdue') and not inv_id and (s.get('amount_paid',0)|float) <= 0 %}
+                    <button type="button" class="btn btn-xs btn-outline-secondary" onclick="resetStageStatus({{ loop.index0 }}, '{{ project.firebase_id }}')" title="No real invoice is linked to this stage — reset it back to Pending Invoice">
+                      <i class="bi bi-arrow-counterclockwise"></i> Reset
+                    </button>
                     {% elif st == 'Invoiced' %}
                     <button type="button" class="btn btn-xs btn-outline-warning" onclick="quickUpdateInvoicedStage({{ loop.index0 }}, '{{ inv_id }}', {{ s.get('amount',0)|float }}, '{{ project.get('project_number','') }}')" title="Update invoiced amount">
                       <i class="bi bi-arrow-repeat"></i>
@@ -1781,6 +1785,22 @@ async function quickUpdateInvoicedStage(stageIdx, invoiceId, newAmount, projectN
     } else {
       const data = await resp.json();
       alert('? Error: ' + (data.error || 'Could not update invoice'));
+    }
+  } catch (e) {
+    alert('? Error: ' + e.message);
+  }
+}
+
+async function resetStageStatus(stageIdx, projId) {
+  if (!confirm('Reset this stage back to "Pending Invoice"? Use this only if it was never actually invoiced (e.g. the status came in from an Excel import).')) return;
+
+  try {
+    const resp = await fetch(`/api/projects/${projId}/stage/${stageIdx}/reset-status`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.success) {
+      location.reload();
+    } else {
+      alert('? Error: ' + (data.error || 'Could not reset stage status'));
     }
   } catch (e) {
     alert('? Error: ' + e.message);
