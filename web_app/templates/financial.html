@@ -2873,7 +2873,7 @@ function editExpenseModal(expId, expData) {
       if (!existingNote) {
         const note = document.createElement('small');
         note.className = 'text-muted read-only-note';
-        note.textContent = 'Commission amount can be edited in the Commission tab';
+        note.textContent = 'Directly paid commission amounts cannot be edited here — manage them from the Commission tab';
         note.style.display = 'block';
         note.style.marginTop = '4px';
         amountContainer.appendChild(note);
