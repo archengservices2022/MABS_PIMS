@@ -500,8 +500,8 @@
               <th class="text-center">Win Rate</th>
               <th class="text-end">Revenue Generated</th>
               <th class="text-end" style="color:white;">Commission Earned</th>
-              <th class="text-end" style="color:white;">Adjusted</th>
-              <th class="text-end" style="color:white;">Paid Amount</th>
+              <th class="text-end" style="color:white;">Advance Adjusted</th>
+              <th class="text-end" style="color:white;">Commission Paid</th>
               <th class="text-end" style="color:white;">Remaining Due</th>
             </tr>
           </thead>
@@ -688,8 +688,8 @@
           html += '<th class="text-end">Contract Value</th>';
           html += '<th class="text-center">Rate / Type</th>';
           html += '<th class="text-end" style="color:white;">Commission Earned</th>';
-          html += '<th class="text-end" style="color:white;">Adjusted amount</th>';
-          html += '<th class="text-end" style="color:white;">Paid Amount</th>';
+          html += '<th class="text-end" style="color:white;">Advance Adjusted</th>';
+          html += '<th class="text-end" style="color:white;">Commission Paid</th>';
           html += '<th class="text-end" style="color:white;">Remaining Due</th>';
           html += '<th>Status</th>';
           html += '</tr>';
@@ -708,11 +708,7 @@
             const remaining = pc.commission_amount - pc.adjusted_amount - pc.paid_amount;
             let statusBadge = '';
             if (remaining <= 0.01) {
-              if (pc.paid_amount <= 0.01 && pc.adjusted_amount > 0.01) {
-                statusBadge = '<span class="badge bg-info text-white" style="font-size:10px;"><i class="bi bi-check2 me-1"></i>Fully Adjusted</span>';
-              } else {
-                statusBadge = '<span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>';
-              }
+              statusBadge = '<span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>';
             } else {
               statusBadge = '<span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>';
             }

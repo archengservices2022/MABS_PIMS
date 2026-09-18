@@ -962,6 +962,50 @@ def _recalculate_project_deductions_for_salesperson(salesperson_name: str):
     except Exception as e:
         log.error(f"Error recalculating project deductions for {salesperson_name}: {e}")
 
+def _enrich_advance_adjustments_with_commission_projects(advances_list):
+    """Attach the project number(s) and per-project amount a Commission Deduction adjustment
+    was applied against, so the Advance List can show which project's commission paid off the advance."""
+    try:
+        all_projects = fb_get("/projects") or {}
+        proj_number_by_id = {
+            pid: pdata.get("project_number", "")
+            for pid, pdata in all_projects.items()
+            if isinstance(pdata, dict)
+        }
+
+        all_cpay = fb_get("/commission_payments") or {}
+        breakdown_by_adjustment_id = {}
+        if isinstance(all_cpay, dict):
+            for cp in all_cpay.values():
+                if not isinstance(cp, dict):
+                    continue
+                adjustment_id = cp.get("adjustment_id")
+                proj_deductions = cp.get("project_deductions", {})
+                if not adjustment_id or not isinstance(proj_deductions, dict):
+                    continue
+                breakdown = breakdown_by_adjustment_id.setdefault(adjustment_id, [])
+                seen_proj_nums = {b["project_number"] for b in breakdown}
+                for pid, amt in proj_deductions.items():
+                    proj_num = proj_number_by_id.get(pid, "")
+                    if proj_num and proj_num not in seen_proj_nums:
+                        seen_proj_nums.add(proj_num)
+                        breakdown.append({"project_number": proj_num, "amount": _safe_float(amt)})
+
+        for adv in advances_list:
+            adjustments = adv.get("adjustments")
+            if not isinstance(adjustments, dict):
+                continue
+            for adj_id, adj_data in adjustments.items():
+                if not isinstance(adj_data, dict):
+                    continue
+                if (adj_data.get("type") or "").strip() != "Commission Deduction":
+                    continue
+                breakdown = breakdown_by_adjustment_id.get(adj_id, [])
+                adj_data["project_breakdown"] = breakdown
+                adj_data["project_numbers"] = [b["project_number"] for b in breakdown]
+    except Exception as e:
+        log.error(f"Error enriching advance adjustments with project numbers: {e}")
+
 # ── Employee Advance Finance Sync Helpers ────────────────────────────────────
 def _sync_advance_to_finance(advance_id: str, advance_data: dict):
     """Advances are no longer synced to expenses. Only adjustments are tracked in expenses."""
@@ -2466,8 +2510,30 @@ def sales_dashboard():
         "conv_count":     _conv_count,
         "total_earned":    _comm_total_earned,
         "total_adjusted":  _comm_total_adjusted,
-        "total_paid":      _comm_total_paid,
-        "total_remaining": _comm_total_remaining,
+        # "Commission Paid" = paid directly (cash), separate from amounts
+        # settled by deducting an advance. "Total Paid" below combines both.
+        "total_paid":          _comm_total_paid,
+        "total_paid_combined": _comm_total_adjusted + _comm_total_paid,
+        "total_remaining":     _comm_total_remaining,
+    }
+
+    # Advance summary for this salesperson — mirrors the Employee Profile page's
+    # Total Advance / Advance Outstanding calculation so the two never disagree.
+    _all_advances_sd = fb_get("/employee_advances") or {}
+    _my_advances = [
+        v for v in _all_advances_sd.values()
+        if isinstance(v, dict) and (v.get("employee_uid") == _uid or (v.get("employee_name") or "").strip() == user_name)
+    ]
+    _adv_total = sum(_safe_float(a.get("amount", 0)) for a in _my_advances)
+    _adv_adjusted = sum(_safe_float(a.get("adjusted", 0)) for a in _my_advances)
+    _adv_outstanding = sum(
+        max(_safe_float(a.get("amount", 0)) - _safe_float(a.get("adjusted", 0)), 0.0)
+        for a in _my_advances if (a.get("status", "") or "").lower() != "closed"
+    )
+    advance_summary = {
+        "total_advance": _adv_total,
+        "total_adjusted": _adv_adjusted,
+        "outstanding": _adv_outstanding,
     }
 
     return render_template("sales_dashboard.html",
@@ -2482,6 +2548,7 @@ def sales_dashboard():
         recent_quotes=recent_quotes,
         today_str=today_str,
         commission=commission,
+        advance_summary=advance_summary,
     )
 
 # ── Routes: Quotes ────────────────────────────────────────────────────────────
@@ -10529,6 +10596,7 @@ def payroll():
                 adv_copy = dict(adv_data)
                 adv_copy['id'] = adv_id
                 advances_list.append(adv_copy)
+    _enrich_advance_adjustments_with_commission_projects(advances_list)
     advances_list.sort(key=lambda x: x.get("date", ""), reverse=True)
 
     # Check delete permissions for advances
@@ -12904,6 +12972,8 @@ def advance_detail(advance_id):
                     if not adj_data.get('adjusted_by_name'):
                         adj_data['adjusted_by_name'] = adjusted_by_username
 
+        _enrich_advance_adjustments_with_commission_projects([{"adjustments": adjustments}])
+
         return render_template('advance_detail.html',
             advance_id=advance_id,
             advance_no=advance_no,
@@ -12951,6 +13021,8 @@ def get_employee_advances():
                     adv_copy = dict(adv_data)
                     adv_copy['id'] = adv_id  # Add Firebase document ID
                     advances.append(adv_copy)
+
+        _enrich_advance_adjustments_with_commission_projects(advances)
 
         # Sort by date descending
         advances.sort(key=lambda x: x.get("date", ""), reverse=True)
@@ -13502,22 +13574,13 @@ def _calculate_commission_status(remaining_due, paid_amount, total_deducted):
     """
     Calculate commission status based on remaining, paid, and deducted amounts.
 
-    Rules:
-    1. remaining_due > 0 → "Pending"
-    2. remaining_due = 0 AND paid_amount > 0 → "Paid"
-    3. remaining_due = 0 AND paid_amount = 0 AND total_deducted > 0 → "Fully Adjusted"
-    4. remaining_due = 0 AND paid_amount = 0 AND total_deducted = 0 → "Paid"
+    A commission with $0 remaining is "Paid" whether it was settled via a direct
+    payment or fully covered by advance deductions. Anything still owed is "Pending".
     """
     remaining = _safe_float(remaining_due)
-    paid = _safe_float(paid_amount)
-    deducted = _safe_float(total_deducted)
 
     if remaining > 0.01:
         return "Pending"
-    elif paid > 0.01:
-        return "Paid"
-    elif deducted > 0.01:
-        return "Fully Adjusted"
     else:
         return "Paid"
 

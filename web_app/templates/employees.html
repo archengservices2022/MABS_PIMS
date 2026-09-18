@@ -1033,9 +1033,9 @@
     </div>
     <div class="col-12 col-md-6 col-lg-3">
       <div class="card-panel text-center">
-        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Paid</div>
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Commission Paid</div>
         <div id="ecKpiPaid" style="font-size:1.6rem;font-weight:800;color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(ct.paid) }}</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Commission paid out</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Paid directly to employee</div>
       </div>
     </div>
     <div class="col-12 col-md-6 col-lg-3">
@@ -1065,8 +1065,8 @@
               <th class="text-end">Contract Value</th>
               <th class="text-center">Rate / Type</th>
               <th class="text-end">Commission Earned</th>
-              <th class="text-end">Adjusted</th>
-              <th class="text-end">Paid Amount</th>
+              <th class="text-end">Advance Adjusted</th>
+              <th class="text-end">Commission Paid</th>
               <th class="text-end">Remaining Due</th>
               <th>Status</th>
             </tr>
@@ -1091,11 +1091,7 @@
               <td class="text-end fw-semibold" style="color:#DC2626;">{{ currency_symbol }}{{ "{:,.2f}".format(_remd) }}</td>
               <td>
                 {% if _rem <= 0.01 %}
-                  {% if _paid <= 0.01 and _adj > 0.01 %}
-                  <span class="badge bg-info text-white" style="font-size:10px;"><i class="bi bi-check2 me-1"></i>Fully Adjusted</span>
-                  {% else %}
                   <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
-                  {% endif %}
                 {% else %}
                   <span class="badge bg-warning text-dark" style="font-size:10px;"><i class="bi bi-clock me-1"></i>Pending</span>
                 {% endif %}

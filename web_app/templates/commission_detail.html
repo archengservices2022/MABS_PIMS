@@ -75,7 +75,7 @@
   text-align: left;
   font-weight: 700;
   color: white;
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .5px;
 }
@@ -503,9 +503,9 @@ input:checked + .toggle-slider:before {
         <div class="kpi-sub">Across All Adjustments</div>
       </div>
       <div class="kpi-card kpi-green">
-        <div class="kpi-top"><span class="kpi-label">Total Paid</span><i class="bi bi-check-circle kpi-icon-sm"></i></div>
+        <div class="kpi-top"><span class="kpi-label">Commission Paid</span><i class="bi bi-check-circle kpi-icon-sm"></i></div>
         <div class="kpi-value" id="detailTotalPaid">{{ currency_symbol }}{{ "{:,.2f}".format(total_paid) }}</div>
-        <div class="kpi-sub">Across All Payments</div>
+        <div class="kpi-sub">Paid directly to employee</div>
       </div>
       <div class="kpi-card kpi-amber">
         <div class="kpi-top"><span class="kpi-label">Outstanding</span><i class="bi bi-exclamation-circle kpi-icon-sm"></i></div>
@@ -522,7 +522,6 @@ input:checked + .toggle-slider:before {
         <option value="">All Status</option>
         <option value="Pending">Pending</option>
         <option value="Paid">Paid</option>
-        <option value="Fully Adjusted">Fully Adjusted</option>
       </select>
 
       <div class="filter-toggle">
@@ -541,9 +540,9 @@ input:checked + .toggle-slider:before {
             <th>CLIENT</th>
             <th>CONTRACT VALUE</th>
             <th>RATE / TYPE</th>
-            <th>COMMISSION</th>
-            <th>ADJUSTED</th>
-            <th>PAID AMOUNT</th>
+            <th>COMMISSION EARNED</th>
+            <th>ADVANCE ADJUSTED</th>
+            <th>Commission Paid</th>
             <th>REMAINING DUE</th>
             <th>STATUS</th>
             <th>ACTIONS</th>
@@ -556,29 +555,17 @@ input:checked + .toggle-slider:before {
           {% set paid_amount = comm.get('paid_amount', 0) | float %}
           {% set remaining = (earned - adjusted - paid_amount) | float %}
 
-          {# Status determination logic based on remaining balance, paid amount, and adjusted amount #}
+          {# Status determination logic based on remaining balance #}
+          {# A commission with $0 remaining is shown as Paid whether it was settled via a
+             direct payment or fully covered by advance deductions #}
           {% if remaining <= 0.01 %}
-            {# Remaining balance is 0 #}
-            {% if paid_amount <= 0.01 and adjusted > 0.01 %}
-              {% set display_status = 'Fully Adjusted' %}
-            {% elif paid_amount > 0.01 and adjusted > 0.01 %}
-              {% set display_status = 'Paid' %}
-            {% elif paid_amount > 0.01 and adjusted <= 0.01 %}
-              {% set display_status = 'Paid' %}
-            {% elif paid_amount <= 0.01 and adjusted <= 0.01 %}
-              {% set display_status = 'Paid' %}
-            {% else %}
-              {% set display_status = 'Paid' %}
-            {% endif %}
+            {% set display_status = 'Paid' %}
           {% else %}
-            {# Remaining balance is greater than 0 #}
             {% set display_status = 'Pending' %}
           {% endif %}
 
           {% if display_status == 'Paid' %}
             {% set status_class = 'badge bg-success' %}
-          {% elif display_status == 'Fully Adjusted' %}
-            {% set status_class = 'badge bg-info' %}
           {% else %}
             {# Pending #}
             {% set status_class = 'badge bg-warning text-dark' %}
@@ -628,8 +615,6 @@ input:checked + .toggle-slider:before {
                 <span class="status-badge {{ status_class }}">
                   {% if display_status == 'Paid' %}
                     <i class="bi bi-check-circle" style="font-size: 10px;"></i>
-                  {% elif display_status == 'Fully Adjusted' %}
-                    <i class="bi bi-lock-fill" style="font-size: 10px;"></i>
                   {% elif display_status == 'Pending' %}
                     <i class="bi bi-clock" style="font-size: 10px;"></i>
                   {% endif %}
@@ -874,6 +859,13 @@ document.addEventListener('DOMContentLoaded', function() {
   setTimeout(() => {
     localStorage.removeItem('isRestoringPage');
   }, 100);
+
+  // If a project number was passed in the URL (e.g. from the Advance List), jump straight to it
+  const deepLinkQuery = new URLSearchParams(window.location.search).get('q');
+  if (deepLinkQuery) {
+    document.getElementById('searchCommissions').value = deepLinkQuery;
+    filterCommissions();
+  }
 });
 
 function filterCommissions() {

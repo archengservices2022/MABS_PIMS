@@ -459,9 +459,9 @@
           <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Deductions and adjustments</div>
         </div>
         <div class="summary-card" style="border-left:4px solid #10b981;">
-          <div class="summary-card-label">Total Paid</div>
+          <div class="summary-card-label">Commission Paid</div>
           <div class="summary-card-value" id="cardCommPaid" style="color:#10b981;">{{ currency_symbol }}0.00</div>
-          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Commission paid out</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Paid directly to employee</div>
         </div>
         <div class="summary-card" style="border-left:4px solid #f59e0b;">
           <div class="summary-card-label">Outstanding</div>
@@ -722,16 +722,17 @@
               <th>Advance No</th>
               <th style="min-width: 110px;">Date</th>
               <th style="min-width: 150px;">Employee</th>
-              <th style="min-width: 130px;">Amount</th>
+              <th style="min-width: 130px;">Adv Amount</th>
               <th style="min-width: 130px;">Adjusted</th>
-              <th style="min-width: 130px;">Balance</th>
+              <th style="min-width: 130px;">Remaining Balance</th>
               <th>Status</th>
+              <th style="min-width: 200px;">Adv Adjustment Details</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="advanceTableBody">
             <tr>
-              <td colspan="7" style="text-align:center;color:#94a3b8;padding:40px;">
+              <td colspan="9" style="text-align:center;color:#94a3b8;padding:40px;">
                 No advances found. Create one using the form above.
               </td>
             </tr>
@@ -1952,11 +1953,80 @@ function getUpdatedEmployeeName(storedName) {
   return matchedEmployee || storedName;
 }
 
+// Format a YYYY-MM-DD (or ISO) date string as "Sep 1, 2026"
+function formatProfessionalDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+// Build the "Adjustment Details" cell for an advance: lists every adjustment made against it,
+// linking commission-deduction project numbers to that project's Commission Details page.
+// Non-commission adjustments of the same type are combined into one line with a summed amount.
+function buildAdvanceAdjustmentDetails(adv, employeeName) {
+  const adjustments = adv.adjustments && typeof adv.adjustments === 'object' ? Object.values(adv.adjustments) : [];
+  const sortedAdjustments = adjustments
+    .filter(a => a && a.type)
+    .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+  if (sortedAdjustments.length === 0) {
+    return '<span style="color:#94a3b8;">—</span>';
+  }
+
+  const projectLink = projNum => {
+    const url = `/commission/${encodeURIComponent(employeeName)}?q=${encodeURIComponent(projNum)}`;
+    return `<a href="${url}" style="font-weight:600;color:#0d9488;text-decoration:underline;">${projNum}</a>`;
+  };
+
+  const lines = [];
+
+  // Commission deductions: one line per adjustment (each ties to its own project/date)
+  sortedAdjustments.filter(a => (a.type || '').trim() === 'Commission Deduction').forEach(a => {
+    const breakdown = Array.isArray(a.project_breakdown) ? a.project_breakdown.filter(b => b && b.project_number) : [];
+
+    let destinationText;
+    if (breakdown.length > 1) {
+      // One payment covering multiple projects: show each project with its own share
+      destinationText = breakdown.map(b =>
+        `${projectLink(b.project_number)} ({{ currency_symbol }}${parseFloat(b.amount || 0).toFixed(2)})`
+      ).join(', ');
+    } else if (breakdown.length === 1) {
+      destinationText = `${projectLink(breakdown[0].project_number)} ({{ currency_symbol }}${parseFloat(breakdown[0].amount || a.amount || 0).toFixed(2)})`;
+    } else {
+      const fallback = (a.remarks || a.reference || 'commission').toString().trim();
+      destinationText = `<span style="font-weight:600;">${fallback}</span> ({{ currency_symbol }}${parseFloat(a.amount || 0).toFixed(2)})`;
+    }
+
+    lines.push(`<div style="font-size:12.5px;color:#374151;line-height:1.5;margin-bottom:4px;">Commission Adjusted from ${destinationText}</div>`);
+  });
+
+  // Other adjustment types: combine same-type entries into one summed line
+  const otherGroups = new Map();
+  sortedAdjustments.filter(a => (a.type || '').trim() !== 'Commission Deduction').forEach(a => {
+    const type = (a.type || '').trim();
+    if (!otherGroups.has(type)) otherGroups.set(type, []);
+    otherGroups.get(type).push(a);
+  });
+
+  otherGroups.forEach((items, type) => {
+    const total = items.reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0);
+    let text = `${type} ({{ currency_symbol }}${total.toFixed(2)})`;
+    if (items.length === 1) {
+      const detail = (items[0].reference || items[0].remarks || '').toString().trim();
+      if (detail) text += ` — ${detail}`;
+    }
+    lines.push(`<div style="font-size:12.5px;color:#374151;line-height:1.5;margin-bottom:4px;">${text}</div>`);
+  });
+
+  return lines.join('');
+}
+
 function refreshAdvanceTable() {
   const tbody = document.getElementById('advanceTableBody');
 
   if (allAdvances.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:40px;">
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:40px;">
       No advances found. Create one using the form above.
     </td></tr>`;
     document.getElementById('advanceTotal').textContent = 'Total: 0 Record(s)';
@@ -2006,12 +2076,13 @@ function refreshAdvanceTable() {
         <td><a href="${detailUrl}" style="color:#0d9488;text-decoration:underline;font-weight:bold;">${adv.advance_no || 'N/A'}</a></td>
         <td style="white-space:nowrap;">${formattedDate}</td>
         <td>${employeeName}</td>
-        <td>{{ currency_symbol }}${parseFloat(adv.amount || 0).toFixed(2)}</td>
-        <td>{{ currency_symbol }}${parseFloat(adv.adjusted || 0).toFixed(2)}</td>
-        <td>{{ currency_symbol }}${parseFloat(balance).toFixed(2)}</td>
+        <td style="color:#2563eb;font-weight:600;">{{ currency_symbol }}${parseFloat(adv.amount || 0).toFixed(2)}</td>
+        <td style="color:#16a34a;font-weight:600;">{{ currency_symbol }}${parseFloat(adv.adjusted || 0).toFixed(2)}</td>
+        <td style="color:#dc2626;font-weight:600;">{{ currency_symbol }}${parseFloat(balance).toFixed(2)}</td>
         <td><span style="display:inline-block;padding:6px 14px;border-radius:16px;font-size:12px;font-weight:700;
           ${adv.status === 'Closed' ? 'background:#dcfce7;color:#15803d;' : 'background:#dbeafe;color:#1d4ed8;'}">
           ${adv.status || 'Open'}</span></td>
+        <td onclick="event.stopPropagation()">${buildAdvanceAdjustmentDetails(adv, employeeName)}</td>
         <td onclick="event.stopPropagation()" style="padding:0;">
           <div class="d-flex gap-1" style="padding:10px;">
             <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit"
@@ -2040,9 +2111,10 @@ function refreshAdvanceTable() {
   const totalsRow = `
     <tr class="totals-row" style="background:#f0f9ff;border-top:2px solid #cbd5e1;font-weight:600;">
       <td colspan="3" style="text-align:right;padding:12px 10px;color:#1f2937;">Totals (${sortedAdvances.length} advances)</td>
-      <td style="padding:12px 10px;color:#1f2937;">{{ currency_symbol }}${parseFloat(totalAmount).toFixed(2)}</td>
-      <td style="padding:12px 10px;color:#10b981;">{{ currency_symbol }}${parseFloat(totalAdjusted).toFixed(2)}</td>
-      <td style="padding:12px 10px;color:#ef4444;">{{ currency_symbol }}${parseFloat(totalBalance).toFixed(2)}</td>
+      <td style="padding:12px 10px;color:#2563eb;">{{ currency_symbol }}${parseFloat(totalAmount).toFixed(2)}</td>
+      <td style="padding:12px 10px;color:#16a34a;">{{ currency_symbol }}${parseFloat(totalAdjusted).toFixed(2)}</td>
+      <td style="padding:12px 10px;color:#dc2626;">{{ currency_symbol }}${parseFloat(totalBalance).toFixed(2)}</td>
+      <td></td>
       <td></td>
       <td></td>
     </tr>
@@ -2118,7 +2190,7 @@ function filterAdvanceTable() {
     if (!noResults) {
       const noResultsRow = document.createElement('tr');
       noResultsRow.className = 'no-results';
-      noResultsRow.innerHTML = `<td colspan="8" style="text-align:center;color:#94a3b8;padding:30px;">
+      noResultsRow.innerHTML = `<td colspan="9" style="text-align:center;color:#94a3b8;padding:30px;">
         No advances match your filters.
       </td>`;
       tbody.appendChild(noResultsRow);
@@ -2164,10 +2236,10 @@ function filterAdvanceTable() {
       if (totalsRow) {
         totalsRow.innerHTML = `
           <td colspan="3" style="text-align:right;padding:12px 10px;font-weight:600;color:#1f2937;">Totals (${visibleCount} advances)</td>
-          <td style="padding:12px 10px;font-weight:600;color:#1f2937;">{{ currency_symbol }}${parseFloat(filteredTotal).toFixed(2)}</td>
-          <td style="padding:12px 10px;font-weight:600;color:#10b981;">{{ currency_symbol }}${parseFloat(filteredAdjusted).toFixed(2)}</td>
-          <td style="padding:12px 10px;font-weight:600;color:#ef4444;">{{ currency_symbol }}${parseFloat(filteredBalance).toFixed(2)}</td>
-          <td colspan="2"></td>
+          <td style="padding:12px 10px;font-weight:600;color:#2563eb;">{{ currency_symbol }}${parseFloat(filteredTotal).toFixed(2)}</td>
+          <td style="padding:12px 10px;font-weight:600;color:#16a34a;">{{ currency_symbol }}${parseFloat(filteredAdjusted).toFixed(2)}</td>
+          <td style="padding:12px 10px;font-weight:600;color:#dc2626;">{{ currency_symbol }}${parseFloat(filteredBalance).toFixed(2)}</td>
+          <td colspan="3"></td>
         `;
       }
 
@@ -2424,39 +2496,22 @@ document.addEventListener('DOMContentLoaded', function() {
 let allCommissions = [];
 let selectedSalesperson = null;
 
-// Calculate commission status based on remaining balance, paid amount, and adjusted amount
+// Calculate commission status based on remaining balance
+// A commission with $0 remaining is shown as Paid whether it was settled via a
+// direct payment or fully covered by advance deductions
 function getCommissionStatus(earned, adjusted, paid) {
   const remaining = earned - adjusted - paid;
   const EPSILON = 0.01;
-
-  if (remaining <= EPSILON) {
-    // Remaining balance is 0
-    if (paid <= EPSILON && adjusted > EPSILON) {
-      return 'Fully Adjusted';
-    } else if (paid > EPSILON && adjusted > EPSILON) {
-      return 'Paid';
-    } else if (paid > EPSILON && adjusted <= EPSILON) {
-      return 'Paid';
-    } else if (paid <= EPSILON && adjusted <= EPSILON) {
-      return 'Paid';
-    } else {
-      return 'Paid';
-    }
-  } else {
-    // Remaining balance is greater than 0
-    return 'Pending';
-  }
+  return remaining <= EPSILON ? 'Paid' : 'Pending';
 }
 
 function getStatusBadgeClass(status) {
   if (status === 'Paid') return 'badge bg-success';
-  if (status === 'Fully Adjusted') return 'badge bg-info';
   return 'badge bg-warning text-dark'; // Pending
 }
 
 function getStatusIcon(status) {
   if (status === 'Paid') return '<i class="bi bi-check-circle me-1"></i>';
-  if (status === 'Fully Adjusted') return '<i class="bi bi-lock-fill me-1"></i>';
   if (status === 'Pending') return '<i class="bi bi-clock me-1"></i>';
   return '';
 }
@@ -2962,7 +3017,7 @@ function renderProjectDetailsInContainer(personName, container) {
       const adjusted = parseFloat(comm.total_deducted) || 0;
       const remaining = parseFloat(comm.remaining_due) || 0;
       const displayStatus = getCommissionStatus(earned, adjusted, paid);
-      const statusBadge = displayStatus === 'Paid' || displayStatus === 'Fully Adjusted' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+      const statusBadge = displayStatus === 'Paid' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
 
       html += `
         <tr style="background:white;border-top:1px solid #e2e8f0;" data-commission-id="${comm.commission_doc_id}">
@@ -3157,7 +3212,7 @@ function renderProjectDetailsByPerson(filtered, personName, tbody) {
 
       // Determine display status: based on remaining balance, paid amount, and adjusted amount
       const displayStatus = getCommissionStatus(earned, adjusted, paid);
-      const statusBadge = displayStatus === 'Paid' || displayStatus === 'Fully Adjusted' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+      const statusBadge = displayStatus === 'Paid' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
 
       const hasProjectLink = comm.actual_project_id && comm.actual_project_id.trim() !== '';
       const projectLink = hasProjectLink ? `/projects/${comm.actual_project_id}` : 'javascript:void(0)';
