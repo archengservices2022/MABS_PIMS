@@ -17475,9 +17475,13 @@ def expense_restore(exp_id):
     if archive.get("submitted_by") or archive.get("employee_name"):
         fb_update(f"/expenses/{exp_id}", restored)
 
-    # If this expense is linked to a salary, restore the salary as well
+    # If this expense is linked to a salary, restore the salary as well —
+    # except for commission payments, which no longer get a Payroll record
+    # at all (see api_commission_pay / api_commission_mark_paid /
+    # api_commission_edit), so restoring one shouldn't resurrect it either.
     salary_id = archive.get("salary_id")
-    if salary_id:
+    is_commission_payment = bool(archive.get("is_commission") or archive.get("salary_type") == "Commission")
+    if salary_id and not is_commission_payment:
         # Prepare salary data from the archived expense data
         salary_data = {
             "employee_name": archive.get("employee_name", ""),
@@ -17490,33 +17494,12 @@ def expense_restore(exp_id):
             "year": int(archive.get("date", "")[:4]) if archive.get("date") else datetime.now(COMPANY_TZ).year,
             "salary_status": "Paid",
             "created_at": archive.get("created_at", datetime.now(timezone.utc).isoformat()),
+            "salary_type": archive.get("salary_type", "Salary"),
         }
-
-        # PRESERVE COMMISSION FIELDS when restoring
-        if archive.get("is_commission") or archive.get("salary_type") == "Commission":
-            salary_data["salary_type"] = "Commission"
-            salary_data["is_commission"] = True
-
-            # Preserve commission identifiers
-            if archive.get("commission_id"):
-                salary_data["commission_id"] = archive.get("commission_id")
-
-            # Preserve commission_payment_details for multi-project payments
-            if archive.get("commission_payment_details"):
-                salary_data["commission_payment_details"] = archive.get("commission_payment_details")
-
-            # Preserve project info for commissions
-            if archive.get("project"):
-                salary_data["project"] = archive.get("project")
-            if archive.get("project_numbers"):
-                salary_data["project_numbers"] = archive.get("project_numbers")
-
-            log.info(f"Restoring commission payment salary: {salary_id}, is_commission=True")
-        else:
-            salary_data["salary_type"] = archive.get("salary_type", "Salary")
-            log.info(f"Restoring regular salary: {salary_id}, salary_type={salary_data['salary_type']}")
-
+        log.info(f"Restoring regular salary: {salary_id}, salary_type={salary_data['salary_type']}")
         fb_update(f"/balance_sheet_salary/{salary_id}", salary_data)
+    elif salary_id and is_commission_payment:
+        log.info(f"Skipping Payroll restore for commission payment expense {exp_id} (salary_id={salary_id})")
 
     # If this expense is an advance, restore the corresponding advance entry
     if archive.get("expense_type") == "Employee Advance":
@@ -18047,9 +18030,12 @@ def expense_edit(exp_id):
                     fb_update(f"/medical_claim_receipts/{medical_claim_id}", receipt_data)
             fb_update(f"/medical_claims/{medical_claim_id}", med_claim_update)
 
-        # If this expense is linked to a salary, sync back to payroll
+        # If this expense is linked to a salary, sync back to payroll — but
+        # never for a commission payment, which no longer has a Payroll
+        # record to sync to (see api_commission_pay / api_commission_mark_paid
+        # / api_commission_edit and the matching skip in expense_restore).
         salary_id = existing.get("salary_id")
-        if salary_id:
+        if salary_id and not (existing.get("is_commission") or existing.get("salary_type") == "Commission"):
             salary_update = {
                 "date": data.get("date", ""),
                 "amount": _safe_float(data.get("amount", 0)),
