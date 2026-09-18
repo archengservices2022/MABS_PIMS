@@ -156,6 +156,13 @@
       {% if user_role in ('admin', 'accountant') and pending_medical_claims %}<span class="badge bg-warning text-dark ms-1" style="font-size:10px;">{{ pending_medical_claims|length }}</span>{% elif my_medical_claims | selectattr('status','equalto','Pending') | list | length %}<span class="badge bg-warning text-dark ms-1" style="font-size:10px;">{{ my_medical_claims | selectattr('status','equalto','Pending') | list | length }}</span>{% endif %}
     </a>
   </li>
+  {% if my_advances %}
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-my-advances">
+      <i class="bi bi-wallet2 me-1"></i>Advances
+    </a>
+  </li>
+  {% endif %}
   {% if my_commissions or user_role == 'sales' %}
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-my-commission">
@@ -1002,6 +1009,82 @@
   </div>
   {% endif %}
 </div><!-- /tab-my-reviews -->
+
+<!-- ?? My Advances Tab ??????????????????????????????????????????????????? -->
+<div class="tab-pane fade" id="tab-my-advances">
+  {% if my_advances %}
+  {% set at = namespace(total=0, adjusted=0, balance=0) %}
+  {% for a in my_advances %}
+    {% set at.total    = at.total    + (a.amount | float) %}
+    {% set at.adjusted = at.adjusted + (a.adjusted | float) %}
+    {% set at.balance  = at.balance  + (a.balance | float) %}
+  {% endfor %}
+
+  <div class="row g-3 mb-4">
+    <div class="col-12 col-md-4">
+      <div class="card-panel text-center">
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Advances</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(at.total) }}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Across {{ my_advances|length }} advance{{ 's' if my_advances|length != 1 }}</div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="card-panel text-center">
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Advance Adjusted</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#D97706;">{{ currency_symbol }}{{ "{:,.2f}".format(at.adjusted) }}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Adjusted so far</div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="card-panel text-center">
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Outstanding Balance</div>
+        <div style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if at.balance > 0 else '#16a34a' }};">{{ currency_symbol }}{{ "{:,.2f}".format(at.balance) }}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Remaining to be repaid</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <h6 class="fw-semibold mb-3"><i class="bi bi-wallet2 me-2" style="color:#b45309;"></i>My Advances</h6>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+          <thead style="background:#f8fafc; font-size:11px;">
+            <tr><th class="text-center" style="width:7%;">Advance No</th><th class="text-center" style="width:9%;">Advance Date</th><th class="text-center" style="width:11%;">Reason</th><th class="text-center" style="width:11%;">Advance Amount</th><th class="text-center" style="width:12%;">Advance Adjusted</th><th class="text-center" style="width:12%;">Remaining Balance</th><th class="text-center" style="width:8%;">Status</th><th class="text-center" style="width:30%;">Note</th></tr>
+          </thead>
+          <tbody>
+          {% for a in my_advances %}
+          <tr>
+            <td class="text-center fw-600" style="white-space:nowrap;">{{ a.get('advance_no','—') or '—' }}</td>
+            <td class="text-center" style="white-space:nowrap;font-size:13px;">{{ (a.get('date') or '—') | format_date }}</td>
+            <td class="text-center text-muted small">{{ a.get('reason','—') or '—' }}</td>
+            <td class="text-center" style="color:#2563eb;font-weight:600;">{{ currency_symbol }}{{ "{:,.2f}".format(a.amount) }}</td>
+            <td class="text-center" style="color:#16a34a;font-weight:600;">{{ currency_symbol }}{{ "{:,.2f}".format(a.adjusted) }}</td>
+            <td class="text-center" style="color:#dc2626;font-weight:600;">{{ currency_symbol }}{{ "{:,.2f}".format(a.balance) }}</td>
+            <td class="text-center"><span class="badge status-{{ (a.get('status','open'))|lower }}">{{ a.get('status','Open') }}</span></td>
+            <td class="small text-center">
+              {% if a.adjustment_lines %}
+                {% for line in a.adjustment_lines %}
+                <div style="font-size:12.5px;color:#374151;line-height:1.5;">{{ line }}</div>
+                {% endfor %}
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-wallet2" style="font-size:40px;opacity:.3;"></i>
+    <div class="mt-2">No advances on record.</div>
+  </div>
+  {% endif %}
+</div><!-- /tab-my-advances -->
 
 <!-- ?? My Commission Tab ??????????????????????????????????????????????????? -->
 <div class="tab-pane fade" id="tab-my-commission">

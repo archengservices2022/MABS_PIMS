@@ -10968,7 +10968,9 @@ def api_commission_pay():
             "is_commission": True,
             "commission_payment_details": [{"commission_id": c.get("commission_id"), "project_number": c.get("project_number"), "amount": c.get("amount")} for c in updated_commissions]
         }
-        fb_update(f"/balance_sheet_salary/{salary_id}", salary_record)
+        # Payroll no longer gets its own record for this — only the expense
+        # entry below is saved, same as api_commission_mark_paid.
+        # fb_update(f"/balance_sheet_salary/{salary_id}", salary_record)
 
         # Create expense record in Finance with detailed payment breakdown
         expense_id = str(uuid.uuid4())
@@ -11107,8 +11109,11 @@ def api_commission_edit():
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "created_by": session.get("username", "Unknown")
             }
-            fb_update(f"/balance_sheet_salary/{salary_id}", salary_data)
-            log.info(f"Created salary record {salary_id} for commission payment: ${payment_amount}")
+            # Payroll no longer gets its own record for this — only the
+            # expense entry below is saved, same as api_commission_mark_paid
+            # and api_commission_pay.
+            # fb_update(f"/balance_sheet_salary/{salary_id}", salary_data)
+            # log.info(f"Created salary record {salary_id} for commission payment: ${payment_amount}")
 
             # Create expense record (category: Commission)
             expense_id = str(uuid.uuid4())
@@ -11309,7 +11314,9 @@ def api_commission_mark_paid():
         "payment_method": "Direct",
         "created_by": session.get("user_name", "Unknown")
     }
-    fb_update(f"/balance_sheet_salary/{salary_id}", salary_record)
+    # Payroll no longer gets its own record for this — only the expense
+    # entry below is saved.
+    # fb_update(f"/balance_sheet_salary/{salary_id}", salary_record)
 
     # Create expense record with commission_id for cascade delete
     expense_id = str(uuid.uuid4())
@@ -20829,6 +20836,57 @@ def employee_all_projects(uid):
         active_projects=active_projects, completed_projects=completed_projects)
 
 
+def _advance_adjustment_lines(adv):
+    """Human-readable summary of every adjustment made against an advance —
+    same content as Payroll ▸ Employee Advance's "Adv Adjustment Details"
+    column (buildAdvanceAdjustmentDetails in payroll.html), ported to Python
+    for the employee self-service "Advances" tab, which is server-rendered.
+    """
+    adjustments = adv.get("adjustments") or {}
+    items = [v for v in adjustments.values() if isinstance(v, dict) and v.get("type")]
+    if not items:
+        return []
+    items.sort(key=lambda a: a.get("date", "") or "")
+
+    lines = []
+
+    # Commission deductions: one line per adjustment (each ties to its own project/date)
+    for a in items:
+        if (a.get("type") or "").strip() != "Commission Deduction":
+            continue
+        breakdown = [b for b in (a.get("project_breakdown") or []) if isinstance(b, dict) and b.get("project_number")]
+        if len(breakdown) > 1:
+            dest = ", ".join(
+                f"{b.get('project_number')} ({CURRENCY_SYMBOL}{_safe_float(b.get('amount', 0)):,.2f})"
+                for b in breakdown
+            )
+        elif len(breakdown) == 1:
+            amt = _safe_float(breakdown[0].get("amount", a.get("amount", 0)))
+            dest = f"{breakdown[0].get('project_number')} ({CURRENCY_SYMBOL}{amt:,.2f})"
+        else:
+            fallback = (a.get("remarks") or a.get("reference") or "commission").strip()
+            dest = f"{fallback} ({CURRENCY_SYMBOL}{_safe_float(a.get('amount', 0)):,.2f})"
+        lines.append(f"Commission Adjusted from {dest}")
+
+    # Other adjustment types: combine same-type entries into one summed line
+    other_groups: Dict[str, list] = {}
+    for a in items:
+        if (a.get("type") or "").strip() == "Commission Deduction":
+            continue
+        other_groups.setdefault((a.get("type") or "").strip(), []).append(a)
+
+    for a_type, group in other_groups.items():
+        total = sum(_safe_float(a.get("amount", 0)) for a in group)
+        text = f"{a_type} ({CURRENCY_SYMBOL}{total:,.2f})"
+        if len(group) == 1:
+            detail = (group[0].get("reference") or group[0].get("remarks") or "").strip()
+            if detail:
+                text += f" — {detail}"
+        lines.append(text)
+
+    return lines
+
+
 @app.route("/employees")
 @role_required("employees")
 def employees():
@@ -21126,6 +21184,33 @@ def employees():
     # Projects that actually earn a commission (tab badge / KPI count)
     context["my_commissions_earning"] = sum(
         1 for _c in my_commissions if _safe_float(_c.get("commission_amount", 0)) > 0.01)
+
+    # My advances — this employee's own cash-advance history, for the
+    # self-service "Advances" tab (previously only visible to admin/accountant
+    # via the employee profile page or Payroll).
+    _raw_my_adv = fb_get("/employee_advances") or {}
+    my_advances = []
+    if isinstance(_raw_my_adv, dict):
+        for _aid, _av in _raw_my_adv.items():
+            if not isinstance(_av, dict):
+                continue
+            _adv_name = (_av.get("employee_name") or "").strip().lower().replace("_", " ")
+            if _av.get("employee_uid") != uid and _adv_name not in _my_name_variants:
+                continue
+            _av = dict(_av, firebase_id=_aid)
+            _av["amount"]   = _safe_float(_av.get("amount", 0))
+            _av["adjusted"] = _safe_float(_av.get("adjusted", 0))
+            _av["balance"]  = max(_av["amount"] - _av["adjusted"], 0.0)
+            my_advances.append(_av)
+    # Attach real project numbers to each Commission Deduction adjustment
+    # (same enrichment Payroll's Advance List uses) *before* summarizing —
+    # otherwise every commission-linked adjustment falls back to the generic
+    # "commission"/reference placeholder instead of e.g. "MABS-202605146".
+    _enrich_advance_adjustments_with_commission_projects(my_advances)
+    for _av in my_advances:
+        _av["adjustment_lines"] = _advance_adjustment_lines(_av)
+    my_advances.sort(key=lambda a: a.get("date", ""), reverse=True)
+    context["my_advances"] = my_advances
 
     return render_template("employees.html", **context)
 

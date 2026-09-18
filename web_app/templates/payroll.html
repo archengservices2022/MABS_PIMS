@@ -231,10 +231,8 @@
       {% set pending_salaries = salaries | selectattr('salary_status','equalto','Pending') | list %}
       {% set salary_entries = paid_salaries | selectattr('salary_type','equalto','Salary') | list %}
       {% set bonus_entries = all_salaries | selectattr('salary_type','equalto','Bonus') | list %}
-      {% set commission_entries = all_salaries | selectattr('salary_type','equalto','Commission') | list %}
       {% set salary_only_total = salary_entries | sum(attribute='amount') %}
       {% set bonus_total = bonus_entries | sum(attribute='amount') %}
-      {% set commission_total = commission_entries | sum(attribute='amount') %}
       {% set pending_total = pending_salaries | sum(attribute='amount') %}
       {% set paid_total = paid_salaries | sum(attribute='amount') %}
       <div class="summary-cards" id="salaryCards">
@@ -247,11 +245,6 @@
           <div class="summary-card-label">Total Bonus</div>
           <div class="summary-card-value" id="cardBonus">{{ currency_symbol }}{{ "{:,.2f}".format(bonus_total | float) }}</div>
           <div style="font-size:10px;color:#94a3b8;margin-top:6px;">{{ bonus_entries | length }} Performance Bonuses</div>
-        </div>
-        <div class="summary-card" style="border-left:4px solid #06b6d4;">
-          <div class="summary-card-label">Total Commission</div>
-          <div class="summary-card-value" id="cardCommission">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total | float) }}</div>
-          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">{{ commission_entries | length }} Earned Commissions</div>
         </div>
         <div class="summary-card intl">
           <div class="summary-card-label">Total Pending</div>
@@ -274,7 +267,6 @@
               <option value="">All Types</option>
               <option value="Salary">Salary</option>
               <option value="Bonus">Bonus</option>
-              <option value="Commission">Commission</option>
             </select>
             <select id="filterRegion" class="form-select form-select-sm" style="width:180px;">
               <option value="">All Regions</option>
@@ -1110,26 +1102,22 @@ function applySalaryFilters() {
   const cardSalary = document.getElementById('cardSalary');
   const cardPending = document.getElementById('cardPending');
   const cardBonus = document.getElementById('cardBonus');
-  const cardCommission = document.getElementById('cardCommission');
   const cardPaid = document.getElementById('cardPaid');
 
   if (cardSalary) cardSalary.textContent = CURRENCY_SYMBOL + fmt(salaryTotal);
   if (cardPending) cardPending.textContent = CURRENCY_SYMBOL + fmt(pendingTotal);
   if (cardBonus) cardBonus.textContent = CURRENCY_SYMBOL + fmt(bonusTotal);
-  if (cardCommission) cardCommission.textContent = CURRENCY_SYMBOL + fmt(commissionTotal);
   if (cardPaid) cardPaid.textContent = CURRENCY_SYMBOL + fmt(paidTotal);
 
   // Update entry counts in the cards
   const salaryCard = document.querySelector('.summary-card.usa');
   const pendingCard = document.querySelector('.summary-card.intl');
-  const bonusCard = document.querySelectorAll('.summary-card')[2];
-  const commissionCard = document.querySelectorAll('.summary-card')[3];
-  const paidCard = document.querySelectorAll('.summary-card')[4];
+  const bonusCard = document.querySelectorAll('.summary-card')[1];
+  const paidCard = document.querySelectorAll('.summary-card')[3];
 
   if (salaryCard) salaryCard.querySelector('div:last-child').textContent = salaryCount + ' Salary Entries';
   if (pendingCard) pendingCard.querySelector('div:last-child').textContent = pendingCount + ' Awaiting approvals';
   if (bonusCard) bonusCard.querySelector('div:last-child').textContent = bonusCount + ' Performance Bonuses';
-  if (commissionCard) commissionCard.querySelector('div:last-child').textContent = commissionCount + ' Earned Commissions';
   if (paidCard) paidCard.querySelector('div:last-child').textContent = paidCount + ' Paid Entries';
 }
 
@@ -2620,9 +2608,9 @@ function renderSalespersonSummary(filtered, tbody, statusFilter) {
       <th>Projects</th>
       <th>Revenue Generated</th>
       <th>Commission Earned</th>
-      <th>Adjusted Amount</th>
-      <th>Amount Paid</th>
-      <th>Remaining Balance</th>
+      <th>Advance Adjusted</th>
+      <th>Commission Paid</th>
+      <th>Remaining Due</th>
       <th>Status</th>
     `;
   }
