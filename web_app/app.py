@@ -10629,11 +10629,15 @@ def _build_commission_payroll_rows():
             total_commission += _vals["earned"]
     return rows, total_revenue, total_commission
 
-@app.route("/commission/<salesperson_name>")
-@role_required("payroll")
-def commission_detail(salesperson_name):
-    """Display commission details for a specific salesperson"""
-    # Fetch all commissions and projects
+def _get_salesperson_commissions(salesperson_name):
+    """This salesperson's commission records, filtered the way the Commission
+    Details page has always filtered them: the project must still exist (not
+    deleted) and its *current* salesperson must match — a commission left
+    over after a project's salesperson was reassigned, or a project that was
+    later deleted, doesn't count. Shared with the employee profile page so
+    the two never show different totals for the same person.
+    """
+    salesperson_name = (salesperson_name or "").strip()
     all_proj_comm = fb_get("/project_commissions") or {}
     all_projects = fb_get("/projects") or {}
     commissions = []
@@ -10644,8 +10648,8 @@ def commission_detail(salesperson_name):
                 continue
 
             # Filter: Only show commissions with matching salesperson
-            salesperson = comm_data.get("salesperson", "").strip()
-            if not salesperson or salesperson != salesperson_name.strip():
+            salesperson = (comm_data.get("salesperson") or "").strip()
+            if not salesperson or salesperson != salesperson_name:
                 continue
 
             # Get project details
@@ -10675,6 +10679,7 @@ def commission_detail(salesperson_name):
                 continue
 
             # Build commission entry
+            comm_data = dict(comm_data)
             comm_data["firebase_id"] = actual_project_id
             comm_data["commission_doc_id"] = comm_id
             comm_data["client_name"] = project_data.get("client_name", "")
@@ -10692,6 +10697,14 @@ def commission_detail(salesperson_name):
             comm_data["status"] = _calculate_commission_status(remaining_due, paid_amount, adjusted_amount)
 
             commissions.append(comm_data)
+
+    return commissions
+
+@app.route("/commission/<salesperson_name>")
+@role_required("payroll")
+def commission_detail(salesperson_name):
+    """Display commission details for a specific salesperson"""
+    commissions = _get_salesperson_commissions(salesperson_name)
 
     # Sort by project_number: descending by year-month, descending by sequence
     # Example: MABS-202608101, MABS-202512120, MABS-202512118, MABS-202512117...
@@ -19149,17 +19162,11 @@ def api_employee_summary(uid):
 
     # Commission
     commission_rate = _safe_float(user.get("commission_rate", 0))
-    all_pcomm = fb_get("/project_commissions") or {}
-    commission_earned = sum(
-        _safe_float(v.get("commission_amount", 0))
-        for v in all_pcomm.values()
-        if isinstance(v, dict) and (v.get("salesperson") or "").strip() == name
-    )
+    _emp_pcomm = _get_salesperson_commissions(name)
+    commission_earned = sum(_safe_float(v.get("commission_amount", 0)) for v in _emp_pcomm)
     commission_paid = sum(
-        _safe_float(v.get("commission_amount", 0))
-        for v in all_pcomm.values()
-        if isinstance(v, dict) and (v.get("salesperson") or "").strip() == name
-        and v.get("status") == "Paid"
+        _safe_float(v.get("total_deducted", 0)) + _safe_float(v.get("paid_amount", 0))
+        for v in _emp_pcomm
     )
 
     # Expenses this year
@@ -19300,18 +19307,20 @@ def _build_employee_profile_data(uid):
     )
 
     # ── Commission ────────────────────────────────────────────────────────────
+    # Uses the same filtered record set as the Commission Details page
+    # (_get_salesperson_commissions) so the two never disagree — the naive
+    # "salesperson field == name" match used here previously also counted
+    # stale commissions left behind after a project's salesperson was
+    # reassigned, or the project itself was deleted.
     commission_rate  = _safe_float(user.get("commission_rate", 0))
-    all_pcomm        = fb_get("/project_commissions") or {}
-    commission_earned = sum(
-        _safe_float(v.get("commission_amount", 0))
-        for v in all_pcomm.values()
-        if isinstance(v, dict) and (v.get("salesperson") or "").strip() == name
-    )
+    _emp_pcomm = _get_salesperson_commissions(name)
+    commission_earned = sum(_safe_float(v.get("commission_amount", 0)) for v in _emp_pcomm)
+    # "Total Paid" = adjusted (deducted) + actually paid amount, not just the
+    # commission_amount of rows whose status happens to be "Paid" — a partially
+    # adjusted/paid row was otherwise invisible here even though money moved.
     commission_paid = sum(
-        _safe_float(v.get("commission_amount", 0))
-        for v in all_pcomm.values()
-        if isinstance(v, dict) and (v.get("salesperson") or "").strip() == name
-        and v.get("status") == "Paid"
+        _safe_float(v.get("total_deducted", 0)) + _safe_float(v.get("paid_amount", 0))
+        for v in _emp_pcomm
     )
 
     # ── Expenses (reimbursements, other) ──────────────────────────────────────
@@ -19404,6 +19413,17 @@ def _build_employee_profile_data(uid):
          (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
         key=lambda x: x.get("claim_date", ""), reverse=True
     )
+    # Approved medical claims are a real benefit paid out to the employee, but
+    # their synced /expenses row is deliberately excluded from "Other
+    # Reimbursements" below (see _is_employee_added_expense) to avoid double-
+    # counting against that row's own category. Fold the approved amount into
+    # Benefits & Allowances instead so it isn't dropped from the cost totals.
+    medical_claims_paid = sum(
+        _safe_float(m.get("amount_approved", m.get("amount_claimed", 0)))
+        for m in emp_medical
+        if (m.get("status") or "").lower() == "approved"
+    )
+    total_benefits += medical_claims_paid
 
     # ── Timesheets ───────────────────────────────────────────────────────────────
     all_timesheets = _load_timesheets()
@@ -20869,6 +20889,7 @@ def employees():
             cdata["has_receipt"] = bool(cdata.get("has_receipt") or cid in receipt_keys)
             all_medical_list.append(cdata)
     all_medical_list.sort(key=lambda x: x.get("submitted_at", ""), reverse=True)
+    _medical_claims_by_id = {c["firebase_id"]: c for c in all_medical_list}
     context["my_medical_claims"] = [c for c in all_medical_list if c.get("employee_uid") == uid]
     if is_admin:
         context["all_medical_claims"] = all_medical_list
@@ -20917,6 +20938,9 @@ def employees():
             if isinstance(edata, dict):
                 slim = {k: v for k, v in edata.items() if k not in _LARGE_FIELDS}
                 slim["firebase_id"] = eid
+                if slim.get("source") == "medical_claim" and not slim.get("medical_expense_type"):
+                    _src_claim = _medical_claims_by_id.get(slim.get("medical_claim_id") or eid) or {}
+                    slim["medical_expense_type"] = _src_claim.get("expense_type", "Medical")
                 all_emp_expenses.append(slim)
     all_emp_expenses.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
@@ -21189,6 +21213,7 @@ def medical_claim_review(claim_id):
             "updated_at":           now_str,
             "source":               "medical_claim",
             "medical_claim_id":     claim_id,
+            "medical_expense_type": claim.get("expense_type", "Medical"),
             "firebase_id":          claim_id,
             "created_by":           claim.get("employee_name", ""),
             "has_receipt":          bool(claim.get("has_receipt")),
@@ -21269,6 +21294,7 @@ def medical_claim_update_amount(claim_id):
         "updated_at":         now_str,
         "source":             "medical_claim",
         "medical_claim_id":   claim_id,
+        "medical_expense_type": claim.get("expense_type", "Medical"),
         "firebase_id":        claim_id,
         "created_by":         claim.get("employee_name", ""),
         "has_receipt":        bool(claim.get("has_receipt")),

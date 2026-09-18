@@ -1031,8 +1031,8 @@ a[href*="filter_expense"]:hover {
                   <i class="bi bi-paperclip"></i>
                 </button>
                 {% endif %}
-                {% if user_role == 'admin' %}
-                <button type="button" class="btn btn-xs btn-outline-danger" title="Delete (Admin only)" onclick="handleFinanceExpenseDelete('{{ exp.firebase_id }}')">
+                {% if user_role in ('admin', 'accountant') %}
+                <button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="handleFinanceExpenseDelete('{{ exp.firebase_id }}')">
                   <i class="bi bi-trash"></i>
                 </button>
                 {% endif %}

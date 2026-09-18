@@ -196,20 +196,14 @@
     <div class="fin-big">{{ '{:,.1f}'.format(total_hours) }} <span style="font-size:14px;font-weight:400;color:#64748b;">hrs</span></div>
     <div class="fin-detail">{{ '{:,.1f}'.format(billable_hours) }} project hrs &nbsp;·&nbsp; {{ '{:,.1f}'.format(nonbillable_hrs) }} admin hrs</div>
   </div>
-  <div class="fin-card">
-    {% if commission_rate > 0 %}
+  <a class="fin-card" href="{{ url_for('commission_detail', salesperson_name=name) }}" style="text-decoration:none;color:inherit;display:block;">
     <div class="fin-title"><i class="bi bi-graph-up me-1"></i>Commission</div>
     <div class="fin-big text-green">{{ commission_rate }}%</div>
     <div class="fin-detail">
-      Earned {{ currency_symbol }}{{ '{:,.2f}'.format(commission_earned) }} &nbsp;·&nbsp;
-      Paid {{ currency_symbol }}{{ '{:,.2f}'.format(commission_paid) }}
+      Total Earned {{ currency_symbol }}{{ '{:,.2f}'.format(commission_earned) }} &nbsp;·&nbsp;
+      Total Paid {{ currency_symbol }}{{ '{:,.2f}'.format(commission_paid) }}
     </div>
-    {% else %}
-    <div class="fin-title"><i class="bi bi-activity me-1"></i>Avg Hours / Week</div>
-    <div class="fin-big">{{ avg_hrs_week }}</div>
-    <div class="fin-detail">Last 8 weeks</div>
-    {% endif %}
-  </div>
+  </a>
 </div>
 
 <!-- Summary panels -->
@@ -230,7 +224,7 @@
       <span class="sum-row-val">{{ currency_symbol }}{{ '{:,.2f}'.format(total_bonus_paid) }}</span>
     </div>
     <div class="sum-row">
-      <span class="sum-row-label">Total Commission</span>
+      <span class="sum-row-label">Total Paid Commission</span>
       <span class="sum-row-val">{{ currency_symbol }}{{ '{:,.2f}'.format(commission_paid) }}</span>
     </div>
     <div class="sum-row">
@@ -399,7 +393,7 @@
     <div class="prof-table-wrap">
       <table class="table table-sm table-hover mb-0 align-middle">
         <thead style="background:#f8fafc; font-size:11px;">
-          <tr><th>Date</th><th class="text-end">Amount</th><th class="text-end">Balance</th><th>Status</th></tr>
+          <tr><th>Date</th><th class="text-end">Adv Amount</th><th class="text-end">Adjusted</th><th class="text-end">Balance</th></tr>
         </thead>
         <tbody>
         {% for a in recent_advances %}
@@ -407,10 +401,10 @@
         <tr onclick="window.location='{% if a.firebase_id %}{{ url_for('advance_detail', advance_id=a.firebase_id) }}{% else %}{{ url_for('payroll') }}{% endif %}'">
           <td class="text-muted small">{{ (a.get('date') or '—') | format_date }}</td>
           <td class="text-end fw-600">{{ currency_symbol }}{{ '{:,.2f}'.format(a.get('amount',0)|float) }}</td>
+          <td class="text-end text-muted">{{ currency_symbol }}{{ '{:,.2f}'.format(a.get('adjusted',0)|float) }}</td>
           <td class="text-end {% if bal > 0 %}text-amber fw-600{% else %}text-muted{% endif %}">
             {{ currency_symbol }}{{ '{:,.2f}'.format(bal) }}
           </td>
-          <td><span class="badge status-{{ (a.get('status','open'))|lower }}">{{ a.get('status','Open') }}</span></td>
         </tr>
         {% else %}
         <tr><td colspan="4" class="text-muted text-center py-3" style="font-size:12px;">No advances</td></tr>
@@ -538,7 +532,7 @@
       <div class="prof-table-wrap">
         <table class="table table-sm table-hover mb-0 align-middle">
           <thead style="background:#f8fafc; font-size:11px;">
-            <tr><th>Date</th><th>Type</th><th class="text-end">Amount</th><th>Status</th></tr>
+            <tr><th>Date</th><th>Type</th><th class="text-end">Claimed</th><th class="text-end">Approved</th><th>Status</th></tr>
           </thead>
           <tbody>
           {% for med in recent_medical %}
@@ -546,10 +540,11 @@
             <td class="text-muted small">{{ (med.get('claim_date') or '—') | format_date }}</td>
             <td class="text-muted small">{{ med.get('expense_type','—')[:20] }}</td>
             <td class="text-end fw-600 text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(med.get('amount_claimed',0)|float) }}</td>
+            <td class="text-end fw-600">{{ currency_symbol }}{{ '{:,.2f}'.format(med.get('amount_approved',0)|float) if med.get('amount_approved') is not none else '—' }}</td>
             <td><span class="badge status-{{ (med.get('status','pending'))|lower }}">{{ med.get('status','Pending') }}</span></td>
           </tr>
           {% else %}
-          <tr><td colspan="4" class="text-muted text-center py-3" style="font-size:12px;">No medical claims submitted</td></tr>
+          <tr><td colspan="5" class="text-muted text-center py-3" style="font-size:12px;">No medical claims submitted</td></tr>
           {% endfor %}
           </tbody>
         </table>

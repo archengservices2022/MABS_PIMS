@@ -1051,9 +1051,9 @@
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h6 class="fw-semibold mb-0"><i class="bi bi-graph-up-arrow me-2" style="color:#059669;"></i>My Commission — per-project tracking</h6>
-        <div class="form-check form-switch mb-0" style="font-size:12px;">
-          <input class="form-check-input" type="checkbox" id="ecHideZero" checked onchange="ecFilterCommission()">
-          <label class="form-check-label text-muted" for="ecHideZero">Hide {{ currency_symbol }}0</label>
+        <div class="form-check form-switch mb-0 d-flex align-items-center gap-2">
+          <input class="form-check-input mt-0" type="checkbox" id="ecHideZero" checked onchange="ecFilterCommission()">
+          <label class="form-check-label text-muted mb-0" style="font-size:12px;" for="ecHideZero">Hide {{ currency_symbol }}0</label>
         </div>
       </div>
       <div class="table-responsive">
@@ -2117,7 +2117,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
               <td>
                 <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
-                <div class="text-muted" style="font-size:11px;">{{ e.get('expense_type','') }}</div>
+                <div class="text-muted" style="font-size:11px;">{{ e.get('medical_expense_type','Medical Allowance') if e.get('source') == 'medical_claim' else e.get('expense_type','') }}</div>
               </td>
               <td class="text-end">
                 <div class="fw-semibold" style="font-size:14px;">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
@@ -2254,7 +2254,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             </div>
           </td>
           <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
-          <td class="text-muted small">{{ e.get('expense_type','—') }}</td>
+          <td class="text-muted small">{{ e.get('medical_expense_type','Medical Allowance') if e.get('source') == 'medical_claim' else e.get('expense_type','—') }}</td>
           <td>
             <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
             {% if e.get('project_number') %}
@@ -2375,7 +2375,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <td>
             <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
             <div class="text-muted" style="font-size:11px;">
-              <span class="badge bg-light text-secondary" style="font-size:10px;">{{ e.get('expense_type','') }}</span>
+              <span class="badge bg-light text-secondary" style="font-size:10px;">{{ e.get('medical_expense_type','Medical Allowance') if e.get('source') == 'medical_claim' else e.get('expense_type','') }}</span>
             </div>
           </td>
           <td class="text-end">
