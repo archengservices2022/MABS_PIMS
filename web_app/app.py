@@ -12941,6 +12941,44 @@ def delete_salary(sal_id):
 
 # ── Employee Advance Routes ──────────────────────────────────────────────────────
 
+def _reconcile_advance_adjusted(advance_data, advance_id=None):
+    """Make an advance's stored total match its actual adjustment records.
+
+    ``adjusted`` is retained as a denormalized field for reporting, but the
+    records under ``adjustments`` are the source of truth.  This also repairs
+    older advances where an adjustment was removed independently of the
+    advance record (for example, while deleting a linked expense).
+    """
+    if not isinstance(advance_data, dict):
+        return advance_data
+
+    adjustments = advance_data.get("adjustments") or {}
+    if not isinstance(adjustments, dict):
+        adjustments = {}
+
+    adjusted_total = round(sum(
+        _safe_float(adjustment.get("amount", 0))
+        for adjustment in adjustments.values()
+        if isinstance(adjustment, dict)
+    ), 2)
+    advance_amount = _safe_float(advance_data.get("amount", 0))
+    expected_status = "Closed" if advance_amount - adjusted_total <= 0 else "Open"
+
+    stored_total = _safe_float(advance_data.get("adjusted", 0))
+    if round(stored_total, 2) != adjusted_total or advance_data.get("status") != expected_status:
+        advance_data["adjusted"] = adjusted_total
+        advance_data["status"] = expected_status
+        if advance_id:
+            fb_update(f"/employee_advances/{advance_id}", {
+                "adjusted": adjusted_total,
+                "status": expected_status,
+            })
+            log.info(
+                "Reconciled advance %s: adjusted %.2f -> %.2f",
+                advance_data.get("advance_no", advance_id), stored_total, adjusted_total,
+            )
+    return advance_data
+
 @app.route("/payroll/advance/<advance_id>")
 @login_required
 def advance_detail(advance_id):
@@ -12959,6 +12997,8 @@ def advance_detail(advance_id):
 
         if not advance_data:
             abort(404)
+
+        _reconcile_advance_adjusted(advance_data, advance_id)
 
         # Get currency symbol from settings or default
         settings = fb_get("/settings") or {}
@@ -13024,6 +13064,7 @@ def get_employee_advances():
         if isinstance(advances_raw, dict):
             for adv_id, adv_data in advances_raw.items():
                 if isinstance(adv_data, dict):
+                    _reconcile_advance_adjusted(adv_data, adv_id)
                     # Make a copy to avoid modifying original data
                     adv_copy = dict(adv_data)
                     adv_copy['id'] = adv_id  # Add Firebase document ID
@@ -13654,6 +13695,8 @@ def add_advance_adjustment():
         if not advance_id:
             return jsonify({"success": False, "error": "Advance not found"}), 404
 
+        _reconcile_advance_adjusted(advance_data, advance_id)
+
         # Create adjustment record
         import uuid
         adjustment_id = str(uuid.uuid4())
@@ -14014,6 +14057,8 @@ def update_advance_adjustment():
 
         if not advance_id or not advance_data:
             return jsonify({"success": False, "error": "Advance not found"}), 404
+
+        _reconcile_advance_adjusted(advance_data, advance_id)
 
         # Get the old adjustment to recalculate totals
         adjustments = advance_data.get("adjustments", {})
@@ -14421,6 +14466,8 @@ def delete_advance_adjustment():
 
         if not advance_id or not advance_data:
             return jsonify({"success": False, "error": "Advance not found"}), 404
+
+        _reconcile_advance_adjusted(advance_data, advance_id)
 
         # Get the adjustment being deleted
         adjustments = advance_data.get("adjustments", {})
@@ -17391,6 +17438,7 @@ def expense_delete(exp_id):
         if linked_adjustment_id and advance_id:
             # Get the adjustment data
             advance_data = fb_get(f"/employee_advances/{advance_id}") or {}
+            _reconcile_advance_adjusted(advance_data, advance_id)
             adjustments = advance_data.get("adjustments", {})
             adjustment_to_delete = adjustments.get(linked_adjustment_id, {})
             deleted_amount = float(adjustment_to_delete.get("amount", 0))
@@ -17592,6 +17640,7 @@ def expense_restore(exp_id):
             # Get the advance to restore adjustment in
             advance_data = fb_get(f"/employee_advances/{advance_id}") or {}
             if advance_data:
+                _reconcile_advance_adjusted(advance_data, advance_id)
                 adjustments = advance_data.get("adjustments", {}) or {}
 
                 # Check if adjustment needs to be restored (not already present)
