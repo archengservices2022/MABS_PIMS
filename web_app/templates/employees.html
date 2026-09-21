@@ -1244,6 +1244,15 @@
     var CS = {{ currency_symbol | tojson }};
     var EC_PAGE_SIZE = 20;
     var ecPage = 1;
+    var EC_HIDE_ZERO_KEY = 'pims.employeeCommission.hideZero';
+    var hideZeroToggle = document.getElementById('ecHideZero');
+
+    // Keep this display preference until the user deliberately changes it.
+    // A missing saved value preserves the existing default: hide zero-value rows.
+    try {
+      var savedHideZero = localStorage.getItem(EC_HIDE_ZERO_KEY);
+      if (savedHideZero !== null) hideZeroToggle.checked = savedHideZero === 'true';
+    } catch (e) { /* Storage may be unavailable in private/restricted browsers. */ }
     function ecFmt(n) { return CS + n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
 
     function ecVisibleRows() {
@@ -1330,7 +1339,11 @@
       ecRenderPagination(total);
     }
 
-    window.ecFilterCommission = function () { ecPage = 1; ecRender(); };
+    window.ecFilterCommission = function () {
+      try { localStorage.setItem(EC_HIDE_ZERO_KEY, String(hideZeroToggle.checked)); } catch (e) { /* Ignore unavailable storage. */ }
+      ecPage = 1;
+      ecRender();
+    };
     ecRender();
   })();
   </script>
