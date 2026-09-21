@@ -1024,21 +1024,21 @@
     <div class="col-12 col-md-4">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Advances</div>
-        <div style="font-size:1.6rem;font-weight:800;color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(at.total) }}</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Across {{ my_advances|length }} advance{{ 's' if my_advances|length != 1 }}</div>
+        <div id="eaKpiTotal" style="font-size:1.6rem;font-weight:800;color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(at.total) }}</div>
+        <div id="eaKpiTotalSub" style="font-size:11px;color:#94a3b8;margin-top:6px;">Across {{ my_advances|length }} advance{{ 's' if my_advances|length != 1 }}</div>
       </div>
     </div>
     <div class="col-12 col-md-4">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Advance Adjusted</div>
-        <div style="font-size:1.6rem;font-weight:800;color:#D97706;">{{ currency_symbol }}{{ "{:,.2f}".format(at.adjusted) }}</div>
+        <div id="eaKpiAdjusted" style="font-size:1.6rem;font-weight:800;color:#D97706;">{{ currency_symbol }}{{ "{:,.2f}".format(at.adjusted) }}</div>
         <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Adjusted so far</div>
       </div>
     </div>
     <div class="col-12 col-md-4">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Outstanding Balance</div>
-        <div style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if at.balance > 0 else '#16a34a' }};">{{ currency_symbol }}{{ "{:,.2f}".format(at.balance) }}</div>
+        <div id="eaKpiBalance" style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if at.balance > 0 else '#16a34a' }};">{{ currency_symbol }}{{ "{:,.2f}".format(at.balance) }}</div>
         <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Remaining to be repaid</div>
       </div>
     </div>
@@ -1047,6 +1047,10 @@
   <div class="card">
     <div class="card-body">
       <h6 class="fw-semibold mb-3"><i class="bi bi-wallet2 me-2" style="color:#b45309;"></i>My Advances</h6>
+      <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+        <input id="eaSearch" type="search" class="form-control form-control-sm" style="width:260px;" placeholder="Search advances…" oninput="eaApplyFilters()">
+        <select id="eaStatus" class="form-select form-select-sm" style="width:135px;" onchange="eaApplyFilters()"><option value="">All statuses</option><option value="open">Open</option><option value="closed">Closed</option></select>
+      </div>
       <div class="table-responsive">
         <table class="table table-sm table-hover mb-0 align-middle">
           <thead style="background:#f8fafc; font-size:11px;">
@@ -1054,7 +1058,7 @@
           </thead>
           <tbody>
           {% for a in my_advances %}
-          <tr>
+          <tr class="ea-advance-row" data-date="{{ a.get('date','') }}" data-status="{{ (a.get('status','Open') or 'Open')|lower }}" data-amount="{{ a.amount|float }}" data-adjusted="{{ a.adjusted|float }}" data-balance="{{ a.balance|float }}">
             <td class="text-center fw-600" style="white-space:nowrap;">{{ a.get('advance_no','—') or '—' }}</td>
             <td class="text-center" style="white-space:nowrap;font-size:13px;">{{ (a.get('date') or '—') | format_date }}</td>
             <td class="text-center text-muted small">{{ a.get('reason','—') or '—' }}</td>
@@ -1078,6 +1082,35 @@
       </div>
     </div>
   </div>
+  <script>
+  (function () {
+    var CS = {{ currency_symbol | tojson }};
+    function money(value) { return CS + value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+    function filteredRows() {
+      var query = (document.getElementById('eaSearch').value || '').trim().toLowerCase();
+      var status = document.getElementById('eaStatus').value;
+      return Array.prototype.filter.call(document.querySelectorAll('.ea-advance-row'), function (row) {
+        return (!query || row.textContent.toLowerCase().indexOf(query) !== -1)
+          && (!status || row.dataset.status === status);
+      });
+    }
+    window.eaApplyFilters = function () {
+      var visible = filteredRows(), total = 0, adjusted = 0, balance = 0;
+      document.querySelectorAll('.ea-advance-row').forEach(function (row) { row.style.display = 'none'; });
+      visible.forEach(function (row) {
+        row.style.display = '';
+        total += parseFloat(row.dataset.amount || 0) || 0;
+        adjusted += parseFloat(row.dataset.adjusted || 0) || 0;
+        balance += parseFloat(row.dataset.balance || 0) || 0;
+      });
+      document.getElementById('eaKpiTotal').textContent = money(total);
+      document.getElementById('eaKpiAdjusted').textContent = money(adjusted);
+      var balanceEl = document.getElementById('eaKpiBalance');
+      balanceEl.textContent = money(balance); balanceEl.style.color = balance > 0 ? '#DC2626' : '#16a34a';
+      document.getElementById('eaKpiTotalSub').textContent = 'Across ' + visible.length + (visible.length === 1 ? ' advance' : ' advances');
+    };
+  })();
+  </script>
   {% else %}
   <div class="text-center text-muted py-5">
     <i class="bi bi-wallet2" style="font-size:40px;opacity:.3;"></i>
@@ -1139,6 +1172,10 @@
           <label class="form-check-label text-muted mb-0" style="font-size:12px;" for="ecHideZero">Hide {{ currency_symbol }}0</label>
         </div>
       </div>
+      <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+        <input id="ecCommSearch" type="search" class="form-control form-control-sm" style="width:260px;" placeholder="Search commissions…" oninput="ecFilterCommission()">
+        <select id="ecCommStatus" class="form-select form-select-sm" style="width:135px;" onchange="ecFilterCommission()"><option value="">All statuses</option><option value="paid">Paid</option><option value="pending">Pending</option></select>
+      </div>
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0" style="font-size:13px;" id="ecCommTable">
           <thead>
@@ -1161,7 +1198,7 @@
             {% set _paid = c.paid_amount | float %}
             {% set _remd = c.remaining_due | float %}
             {% set _rem  = (_comm - _adj - _paid) %}
-            <tr class="ec-comm-row" data-comm="{{ _comm }}" data-adj="{{ _adj }}" data-paid="{{ _paid }}" data-rem="{{ _remd }}">
+            <tr class="ec-comm-row" data-comm="{{ _comm }}" data-adj="{{ _adj }}" data-paid="{{ _paid }}" data-rem="{{ _remd }}" data-status="{{ 'paid' if _rem <= 0.01 else 'pending' }}">
               <td class="fw-semibold">
                 <a href="{{ url_for('project_detail', project_id=c.firebase_id) }}" class="text-decoration-none">{{ c.project_number }}</a>
               </td>
@@ -1211,9 +1248,15 @@
 
     function ecVisibleRows() {
       var hideZero = document.getElementById('ecHideZero').checked;
+      var query = (document.getElementById('ecCommSearch').value || '').trim().toLowerCase();
+      var status = document.getElementById('ecCommStatus').value;
       return Array.prototype.filter.call(
         document.querySelectorAll('#ecCommTable tbody tr.ec-comm-row'),
-        function (r) { return !(hideZero && (parseFloat(r.dataset.comm || '0') || 0) <= 0.01); });
+        function (r) {
+          return !(hideZero && (parseFloat(r.dataset.comm || '0') || 0) <= 0.01)
+            && (!query || r.textContent.toLowerCase().indexOf(query) !== -1)
+            && (!status || r.dataset.status === status);
+        });
     }
 
     function ecRenderPagination(total) {
