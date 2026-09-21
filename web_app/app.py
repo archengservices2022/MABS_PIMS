@@ -14856,12 +14856,13 @@ def financial():
 
     # Filter for balance sheet (only selected year)
     exp_list_raw_filtered = filter_by_year(exp_list_raw, selected_year)
-    # Exclude ONLY commissions that were paid through the Payroll → Commission
-    # Details workflow. Those also create a /balance_sheet_salary record and are
-    # counted via annual_commissions / annual_payroll, so keeping them here would
-    # double-count. A commission logged through the Add Expense dialog has no
-    # salary/commission linkage and is a normal expense — keep it.
-    exp_list_raw_filtered = [e for e in exp_list_raw_filtered if not _is_payroll_flow_commission(e)]
+    # Regular salary/bonus payouts are represented in Payroll. Direct
+    # commission payouts, however, are Finance expense records and must remain
+    # in the Annual Financial Summary's Expenses figure.
+    exp_list_raw_filtered = [
+        e for e in exp_list_raw_filtered
+        if not (_is_payroll_flow_commission(e) and not e.get("is_commission"))
+    ]
     exp_list_filtered = group_expenses_by_name(exp_list_raw_filtered)
 
     # Filter expenses if filter_expense parameter provided (apply to both raw and grouped lists)
@@ -16312,6 +16313,11 @@ def financial():
 
     # ── Monthly drill-down detail blocks (needs aging_buckets + salaries_domestic) ──
     monthly_expense_details = {str(i): [] for i in range(1, 13)}
+    # Direct commission payments are saved as Finance expenses by Payroll →
+    # Commission Management. Keep them out of the regular expense table, but
+    # expose them in their own monthly table so the payment is visible exactly
+    # once in the monthly expense breakdown.
+    monthly_direct_commission_details = {str(i): [] for i in range(1, 13)}
     for _exp in exp_list_all:
         _ds = (_exp.get("date") or "")[:10]
         try:
@@ -16327,6 +16333,18 @@ def financial():
                 # Annual Financial Summary "Expenses" total.
                 # (Adjustments are always kept and handled below.)
                 if not _is_adj and _is_payroll_flow_commission(_exp):
+                    # salary_id is shared by normal Payroll salary/bonus
+                    # expenses. Only entries explicitly marked as commission
+                    # belong in the Direct Commission Payments table; all
+                    # payroll-flow entries stay out of regular Expenses.
+                    if _exp.get("is_commission"):
+                        monthly_direct_commission_details[str(_d.month)].append({
+                            "date": _ds,
+                            "salesperson": _exp.get("employee_name") or "—",
+                            "projects": _exp.get("project_numbers") or _exp.get("project_number") or "—",
+                            "reference": _exp.get("description") or _exp.get("expense_name") or "Commission payment",
+                            "amount": _safe_float(_exp.get("amount", 0)),
+                        })
                     continue
 
                 _category = _exp.get("category") or _exp.get("expense_type") or ""
@@ -16348,8 +16366,9 @@ def financial():
         except Exception:
             pass
 
-    # Calculate annual payroll (salaries + bonuses + commissions), adjustments, and regular expenses by month
+    # Calculate annual payroll, direct commissions, adjustments, and regular expenses by month.
     annual_payroll = {i: 0.0 for i in range(1, 13)}
+    annual_direct_commissions = {i: 0.0 for i in range(1, 13)}
     annual_adjustments = {i: 0.0 for i in range(1, 13)}
     annual_regular_expenses = {i: 0.0 for i in range(1, 13)}
 
@@ -16359,6 +16378,17 @@ def financial():
             month_num = int(month_str)
             if 1 <= month_num <= 12:
                 annual_payroll[month_num] = sum(_safe_float(s.get("amount", 0)) for s in salaries_list)
+        except (ValueError, TypeError):
+            pass
+
+    for month_str, commissions_list in monthly_direct_commission_details.items():
+        try:
+            month_num = int(month_str)
+            if 1 <= month_num <= 12:
+                annual_direct_commissions[month_num] = sum(
+                    _safe_float(commission.get("amount", 0))
+                    for commission in commissions_list
+                )
         except (ValueError, TypeError):
             pass
 
@@ -16677,6 +16707,7 @@ def financial():
         bs_total_salaries=bs_total_salaries,
         total_salaries=total_salaries,
         annual_payroll=annual_payroll,
+        annual_direct_commissions=annual_direct_commissions,
         annual_adjustments=annual_adjustments,
         annual_regular_expenses=annual_regular_expenses,
         employee_count=employee_count,
@@ -16728,6 +16759,7 @@ def financial():
         ai_enabled=bool(_get_ai_client()),
         monthly_payment_details=json.dumps(monthly_payment_details),
         monthly_expense_details=json.dumps(monthly_expense_details),
+        monthly_direct_commission_details=json.dumps(monthly_direct_commission_details),
         monthly_salary_details=json.dumps(monthly_salary_details),
         monthly_advance_adjustment_details=json.dumps(monthly_advance_adjustment_details),
         monthly_outstanding_details=json.dumps(monthly_outstanding_details),

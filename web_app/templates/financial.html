@@ -4514,20 +4514,20 @@ function viewReceipt(expId) {
             <tr>
               <th style="text-align: left; background: #f8fafc; color: #e74c3c; font-weight: 700; padding: 8px;">▶ EXPENSES</th>
               {% for m in range(1, 13) %}
-              {% set total_exp_m = (annual_payroll.get(m, 0) | float) + (annual_adjustments.get(m, 0) | float) + (annual_regular_expenses.get(m, 0) | float) %}
+              {% set total_exp_m = (annual_payroll.get(m, 0) | float) + (annual_direct_commissions.get(m, 0) | float) + (annual_adjustments.get(m, 0) | float) + (annual_regular_expenses.get(m, 0) | float) %}
               <td>{{ currency_symbol }}{{ total_exp_m | round(2) }}</td>
               {% endfor %}
-              {% set grand_total_exp = (annual_payroll.values() | sum) + (annual_adjustments.values() | sum) + (annual_regular_expenses.values() | sum) %}
+              {% set grand_total_exp = (annual_payroll.values() | sum) + (annual_direct_commissions.values() | sum) + (annual_adjustments.values() | sum) + (annual_regular_expenses.values() | sum) %}
               <td id="bsExpTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ grand_total_exp | round(2) }}</td>
             </tr>
             <tr>
               <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">▶ NET P/L</th>
               {% for m in range(1, 13) %}
-              {% set total_exp_m = (annual_payroll.get(m, 0) | float) + (annual_adjustments.get(m, 0) | float) + (annual_regular_expenses.get(m, 0) | float) %}
+              {% set total_exp_m = (annual_payroll.get(m, 0) | float) + (annual_direct_commissions.get(m, 0) | float) + (annual_adjustments.get(m, 0) | float) + (annual_regular_expenses.get(m, 0) | float) %}
               {% set netval = (annual_revenue.get(m, 0) | float) - total_exp_m %}
               <td style="{{ 'color:#16a34a;' if netval >= 0 else 'color:#dc2626;' }}">{{ currency_symbol }}{{ netval | round(2) }}</td>
               {% endfor %}
-              {% set grand_total_exp = (annual_payroll.values() | sum) + (annual_adjustments.values() | sum) + (annual_regular_expenses.values() | sum) %}
+              {% set grand_total_exp = (annual_payroll.values() | sum) + (annual_direct_commissions.values() | sum) + (annual_adjustments.values() | sum) + (annual_regular_expenses.values() | sum) %}
               {% set grand_net = (annual_revenue.values() | sum) - grand_total_exp %}
               <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ grand_net | round(2) }}</td>
             </tr>
@@ -4660,6 +4660,28 @@ function viewReceipt(expId) {
         </div>
       </div>
 
+      <!-- Directly Paid Commissions Subsection -->
+      <div class="mb-4" id="monthDirectCommissionsSection" style="display:none;">
+        <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#047857; padding:6px 0; border-bottom:2px solid #A7F3D0; margin-bottom:8px;">
+          <i class="bi bi-cash-coin me-1"></i>Directly Paid Commissions
+        </div>
+        <div class="table-responsive">
+          <table class="table mb-0" style="font-size:12px;">
+            <thead style="background:#065F46; color:#fff;">
+              <tr>
+                <th style="padding:8px 12px; color:#fff;">Date</th>
+                <th style="padding:8px 12px; color:#fff;">Salesperson</th>
+                <th style="padding:8px 12px; color:#fff;">Project(s)</th>
+                <th style="padding:8px 12px; color:#fff;">Reference</th>
+                <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="monthDirectCommissionsTbody"></tbody>
+            <tfoot id="monthDirectCommissionsTfoot" style="background:#ECFDF5; border-top:2px solid #A7F3D0;"></tfoot>
+          </table>
+        </div>
+      </div>
+
       <!-- Adjustments Subsection -->
       <div class="mb-4" id="monthAdjustmentsSection" style="display:none;">
         <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#7C3AED; padding:6px 0; border-bottom:2px solid #DDD6FE; margin-bottom:8px;">
@@ -4673,7 +4695,7 @@ function viewReceipt(expId) {
                 <th style="padding:8px 12px; color:#fff;">Employee</th>
                 <th style="padding:8px 12px; color:#fff;">Advance #</th>
                 <th style="padding:8px 12px; color:#fff;">Type</th>
-                <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
+                <th style="padding:8px 12px; color:#fff; text-align:right;">Advance Adjusted Amount</th>
               </tr>
             </thead>
             <tbody id="monthAdjustmentsTbody"></tbody>
@@ -4685,7 +4707,7 @@ function viewReceipt(expId) {
 <!-- Grand Total Row -->
       <div style="background:#FEF2F2; border:2px solid #FECACA; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
         <span style="font-weight:700; font-size:13px; color:#991B1B;">
-          <i class="bi bi-calculator me-2"></i>TOTAL EXPENSES (Expenses + Payroll + Adjustments)
+          <i class="bi bi-calculator me-2"></i>TOTAL EXPENSES (Expenses + Payroll + Direct Paid Commissions + Advance Adjustments)
         </span>
         <span style="font-weight:800; font-size:14px; color:#DC2626;" id="monthTotalExpenses">—</span>
       </div>
@@ -4696,6 +4718,7 @@ function viewReceipt(expId) {
   (function() {
     var monthlyPaymentDetails    = {{ monthly_payment_details | safe }};
     var monthlyExpenseDetails    = {{ monthly_expense_details | safe }};
+    var monthlyDirectCommissionDetails = {{ monthly_direct_commission_details | safe }};
     var monthlySalaryDetails      = {{ monthly_salary_details | safe }};
     var monthlyCommissionDetails  = {{ monthly_commission_details | safe }};
     var monthlyOutstandingDetails = {{ monthly_outstanding_details | safe }};
@@ -4827,12 +4850,13 @@ function viewReceipt(expId) {
 
       /* ?? 4b. Commissions (from dedicated monthly_commission_details) ?? */
       var commissions = monthlyCommissionDetails[mkey] || [];
+      var directCommissions = monthlyDirectCommissionDetails[mkey] || [];
 
       /* ?? 5. Salaries ?? */
       var salaries = monthlySalaryDetails[mkey] || [];
 
       // Check if there's any data (salaries + adjustments + expenses + COMMISSIONS)
-      var hasData = salaries.length > 0 || adjustments.length > 0 || regularExpenses.length > 0 || commissions.length > 0;
+      var hasData = salaries.length > 0 || adjustments.length > 0 || regularExpenses.length > 0 || commissions.length > 0 || directCommissions.length > 0;
       var combinedSec = document.getElementById('monthCombinedExpensesSection');
 
       if (!hasData) {
@@ -4870,6 +4894,29 @@ function viewReceipt(expId) {
             +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#1D4ED8;font-size:13px;">'+fmt(totalSal)+'</td></tr>';
         } else {
           salSec.style.display = 'none';
+        }
+
+        // Populate Direct Commission Payments (Payroll → Commission Management)
+        var directCommSec = document.getElementById('monthDirectCommissionsSection');
+        var totalDirectCommissions = 0;
+        if (directCommissions.length > 0) {
+          directCommSec.style.display = '';
+          directCommissions.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+          var dcRows = directCommissions.map(function(c, idx) {
+            var bg = idx%2===0?'#fff':'#ecfdf5';
+            return '<tr style="background:'+bg+';border-bottom:1px solid #a7f3d0;">'
+              +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(c.date)+'</td>'
+              +'<td style="padding:8px 12px;color:#1e293b;font-weight:500;">'+(c.salesperson||'—')+'</td>'
+              +'<td style="padding:8px 12px;color:#047857;font-weight:500;">'+(c.projects||'—')+'</td>'
+              +'<td style="padding:8px 12px;color:#6b7280;">'+(c.reference||'—')+'</td>'
+              +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#047857;">'+fmt(c.amount)+'</td></tr>';
+          });
+          document.getElementById('monthDirectCommissionsTbody').innerHTML = dcRows.join('');
+          totalDirectCommissions = directCommissions.reduce(function(s,c){return s+parseFloat(c.amount||0);},0);
+          document.getElementById('monthDirectCommissionsTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total Directly Paid Commissions</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#047857;font-size:13px;">'+fmt(totalDirectCommissions)+'</td></tr>';
+        } else {
+          directCommSec.style.display = 'none';
         }
 
         // Populate Adjustments (from Advance Adjustments expenses)
@@ -4924,7 +4971,7 @@ function viewReceipt(expId) {
 
       // Calculate and display grand total - only if hasData is true
       if (hasData) {
-        var grandTotal = totalSal + totalAdj + totalExp;
+        var grandTotal = totalSal + totalDirectCommissions + totalAdj + totalExp;
         document.getElementById('monthTotalExpenses').textContent = fmt(grandTotal);
       }
 
