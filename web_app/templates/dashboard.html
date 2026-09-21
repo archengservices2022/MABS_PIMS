@@ -1156,6 +1156,7 @@ const allProjChartLabels = {{ proj_chart_labels|safe }};
 const allProjChartCounts = {{ proj_chart_counts|safe }};
 const allProjChartValues = {{ proj_chart_values|safe }};
 const allProjChartOngoing = {{ proj_chart_ongoing|safe }};
+const allProjChartCancelled = {{ proj_chart_cancelled|safe }};
 
 // Filter for current year (2026) only
 const currentYear = new Date().getFullYear().toString();
@@ -1163,6 +1164,7 @@ const projChartLabels = [];
 const projChartCounts = [];
 const projChartValues = [];
 const projChartOngoing = [];
+const projChartCancelled = [];
 
 for (let i = 0; i < allProjChartLabels.length; i++) {
   if (allProjChartLabels[i].includes(currentYear)) {
@@ -1170,6 +1172,7 @@ for (let i = 0; i < allProjChartLabels.length; i++) {
     projChartCounts.push(allProjChartCounts[i]);
     projChartValues.push(allProjChartValues[i]);
     projChartOngoing.push(allProjChartOngoing[i]);
+    projChartCancelled.push(allProjChartCancelled[i]);
   }
 }
 
@@ -1182,6 +1185,7 @@ if (projChartLabels.length === 0) {
     projChartCounts.push(0);
     projChartValues.push(0);
     projChartOngoing.push(0);
+    projChartCancelled.push(0);
   }
 }
 
@@ -1228,6 +1232,19 @@ if (projCanvas) {
           barThickness: 'flex',
           maxBarThickness: 28,
           hoverBackgroundColor: 'rgba(220, 38, 38, 0.95)',
+        },
+        {
+          label: 'Cancelled',
+          data: projChartCancelled,
+          backgroundColor: 'rgba(148, 163, 184, 0.75)',
+          borderRadius: { topLeft: 6, topRight: 6, bottomLeft: 0, bottomRight: 0 },
+          borderSkipped: false,
+          borderWidth: 0,
+          yAxisID: 'y',
+          order: 2,
+          barThickness: 'flex',
+          maxBarThickness: 28,
+          hoverBackgroundColor: 'rgba(100, 116, 139, 0.95)',
         },
         {
           label: 'Project Value',
@@ -1293,6 +1310,9 @@ if (projCanvas) {
               }
               if (c.datasetIndex === 1) {
                 return 'Not Yet Completed: ' + c.parsed.y;
+              }
+              if (c.datasetIndex === 2) {
+                return 'Cancelled: ' + c.parsed.y;
               }
               return 'Value: ' + CURRENCY_SYMBOL + c.parsed.y.toLocaleString(undefined, {maximumFractionDigits: 0});
             }

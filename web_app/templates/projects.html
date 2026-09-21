@@ -118,7 +118,7 @@
       {% for st, count in status_counts.items() %}
       {% set icon, color = status_styles.get(st, ('bi-kanban', 'bg-slate')) %}
       <div class="col-6 col-md-3 col-lg-2">
-        <a href="{{ url_for('projects', status=st, tab='all-projects') }}" class="text-decoration-none">
+        <a href="{{ url_for('projects', status=st, tab='all-projects', q=search, client=client_filter, plant=plant_filter, from=date_from, to=date_to) }}" class="text-decoration-none">
           <div class="stat-card py-2 px-3" style="gap:10px;{{ 'border-color:var(--slate-400);box-shadow:0 0 0 1px var(--slate-300);' if status_filter == st }}">
             <div class="stat-icon {{ color }}" style="width:36px;height:36px;font-size:16px;border-radius:8px;">
               <i class="bi {{ icon }}"></i>
@@ -133,7 +133,7 @@
       {% endfor %}
       {% if overdue_count %}
       <div class="col-6 col-md-3 col-lg-2">
-        <a href="{{ url_for('projects', overdue=1, tab='all-projects') }}" class="text-decoration-none">
+        <a href="{{ url_for('projects', overdue=1, tab='all-projects', q=search, status=status_filter, client=client_filter, plant=plant_filter, from=date_from, to=date_to) }}" class="text-decoration-none">
           <div class="stat-card py-2 px-3" style="gap:10px;{{ 'border-color:var(--slate-400);box-shadow:0 0 0 1px var(--slate-300);' if overdue_filter }}">
             <div class="stat-icon bg-red" style="width:36px;height:36px;font-size:16px;border-radius:8px;">
               <i class="bi bi-exclamation-triangle-fill"></i>
