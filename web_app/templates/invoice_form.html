@@ -10,6 +10,32 @@
   background-repeat: no-repeat;
   background-position: 5px center;
 }
+
+/* Searchable project select — type-to-filter overlay on top of the real
+   <select>, which stays in the DOM (hidden) and keeps submitting normally. */
+.ss-wrap { position: relative; }
+select.ss-hidden-select { display: none; }
+.ss-list {
+  display: none;
+  position: fixed;
+  z-index: 1055;
+  max-height: 220px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(15,23,42,.15);
+  font-size: 12px;
+}
+.ss-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ss-item:hover, .ss-item.ss-active { background: #f0fdfa; color: #0f766e; }
+.ss-empty { padding: 6px 10px; color: #94a3b8; font-style: italic; }
 </style>
 {% endblock %}
 
@@ -208,6 +234,9 @@
                 <td>
                   {{ project_select(prefill_proj|default('')) }}
                   <input type="hidden" name="item_stage_index[]" value="{{ stage_idx }}">
+                  <input type="hidden" name="item_co_number[]" value="">
+                  <input type="hidden" name="item_co_firebase_id[]" value="">
+                  <input type="hidden" name="item_powo_number[]" value="">
                 </td>
                 <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
                 <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ stage_amount }}" min="0" step="0.01" oninput="calcRow(this)"></td>
@@ -237,6 +266,9 @@
                 <td>
                   {{ project_select(prefill_proj|default('')) }}
                   <input type="hidden" name="item_stage_index[]" value="">
+                  <input type="hidden" name="item_co_number[]" value="">
+                  <input type="hidden" name="item_co_firebase_id[]" value="">
+                  <input type="hidden" name="item_powo_number[]" value="">
                 </td>
                 <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
                 <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ prefill_amount }}" min="0" step="0.01" oninput="calcRow(this)"></td>
@@ -249,6 +281,9 @@
                 <td>
                   {{ project_select(prefill_proj|default('')) }}
                   <input type="hidden" name="item_stage_index[]" value="">
+                  <input type="hidden" name="item_co_number[]" value="">
+                  <input type="hidden" name="item_co_firebase_id[]" value="">
+                  <input type="hidden" name="item_powo_number[]" value="">
                 </td>
                 <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
                 <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="0" min="0" step="0.01" oninput="calcRow(this)"></td>
@@ -311,6 +346,29 @@
     </div>
   </div>
 </form>
+
+<!-- Stage Picker Modal — opens when a project is chosen in a line item's
+     "invoice project" select and that project still has pending payment
+     stages / approved change orders to bill. -->
+<div class="modal fade" id="stagePickerModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Select Stages to Invoice</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="stagePickerBody">
+        <p class="text-muted">Loading...</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="stagePickerConfirmBtn" onclick="confirmStagePicker()">
+          <i class="bi bi-upload me-1"></i>Load Selected
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -320,6 +378,187 @@ const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "
 const projectOptionsHtml = '<option value="">— invoice project —</option>' +
   [{% for p in projects %}{{ p.get('project_number','')|tojson }}{{ ',' if not loop.last }}{% endfor %}]
     .map(num => `<option value="${num}">${num}</option>`).join('');
+
+// The catalog is fixed for this form; availability is derived from live rows.
+const invoiceStageOptions = {{ invoice_stage_options|default({})|tojson }};
+const editingInvoiceId = {{ invoice_id|default('')|tojson }};
+
+function stageIdentityKeys(info) {
+  const keys = [];
+  if (info.stageIdx !== undefined && info.stageIdx !== null && info.stageIdx !== '') {
+    keys.push('stage:' + Number(info.stageIdx));
+  }
+  if (info.coFirebaseId) keys.push('co-id:' + info.coFirebaseId);
+  if (info.coNumber) keys.push('co-number:' + info.coNumber);
+  return keys;
+}
+
+function usedStageKeys(projectNumber, exceptRow = null) {
+  const keys = new Set();
+  const mainProject = document.querySelector('select[name="project_number"]')?.value || '';
+  document.querySelectorAll('#lineItemsBody tr.line-item-row').forEach(row => {
+    if (row === exceptRow) return;
+    const value = name => row.querySelector(`[name="${name}"]`)?.value || '';
+    if ((value('item_project[]') || mainProject) !== projectNumber) return;
+    stageIdentityKeys({stageIdx: value('item_stage_index[]'),
+      coFirebaseId: value('item_co_firebase_id[]'), coNumber: value('item_co_number[]')})
+      .forEach(key => keys.add(key));
+  });
+  return keys;
+}
+
+function availableStageChoices(data, exceptRow = null) {
+  const used = usedStageKeys(data.project_number, exceptRow);
+  const available = item => !stageIdentityKeys({stageIdx: item.stage_idx,
+    coFirebaseId: item.co_firebase_id, coNumber: item.co_number}).some(key => used.has(key));
+  return {...data,
+    all_pending_stages: (data.all_pending_stages || []).filter(available),
+    approved_pending_cos: (data.approved_pending_cos || []).filter(available)};
+}
+
+function canSelectInvoiceProject(number, exceptRow = null) {
+  const data = invoiceStageOptions[number];
+  if (!data) return true;
+  const available = availableStageChoices(data, exceptRow);
+  if (available.all_pending_stages.length || available.approved_pending_cos.length) return true;
+  // Projects without any structured billing choices still allow manual items.
+  return !data.has_payment_stages && !(data.approved_pending_cos || []).length;
+}
+
+function refreshInvoiceProjectChoices() {
+  document.querySelectorAll('select[name="item_project[]"], select[name="project_number"]').forEach(select => {
+    const row = select.closest('tr.line-item-row');
+    Array.from(select.options).forEach(option => {
+      const unavailable = option.value && !canSelectInvoiceProject(option.value, row);
+      // Keep the selected value intact for form submission, but omit it from
+      // searchable choices when the project has no stages left to add.
+      option.hidden = !!unavailable;
+      option.disabled = !!unavailable && option.value !== select.value;
+    });
+    if (select._ssRefresh) select._ssRefresh();
+  });
+}
+
+// Turn a plain <select> of projects into a type-to-filter combobox. The real
+// <select> stays in the DOM (just visually hidden) so it keeps submitting
+// exactly as before and every existing onchange/event-delegation listener
+// on it keeps working unchanged.
+function enhanceProjectSelect(selectEl) {
+  if (!selectEl || selectEl.dataset.ssEnhanced) return;
+  selectEl.dataset.ssEnhanced = '1';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'ss-wrap';
+  selectEl.parentNode.insertBefore(wrap, selectEl);
+  wrap.appendChild(selectEl);
+  selectEl.classList.add('ss-hidden-select');
+
+  const placeholder = (selectEl.options[0] && selectEl.options[0].value === '')
+    ? selectEl.options[0].text : 'Search…';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.autocomplete = 'off';
+  input.className = (selectEl.getAttribute('class') || '').replace('ss-hidden-select', '').trim();
+  input.placeholder = placeholder;
+  wrap.appendChild(input);
+
+  const list = document.createElement('div');
+  list.className = 'ss-list';
+  document.body.appendChild(list); // position:fixed — kept out of any scroll-clipping ancestor (e.g. .table-responsive)
+  selectEl._ssList = list; // so a removed row can clean this up too (it lives in <body>, not the row)
+
+  let activeIdx = -1;
+
+  function optionsData() {
+    return Array.from(selectEl.options)
+      .filter(o => !o.hidden && !o.disabled)
+      .map(o => ({ value: o.value, text: o.text }));
+  }
+  function syncInputFromSelect() {
+    const opt = selectEl.options[selectEl.selectedIndex];
+    input.value = (opt && opt.value !== '') ? opt.text : '';
+  }
+  syncInputFromSelect();
+
+  function positionList() {
+    const r = input.getBoundingClientRect();
+    list.style.left  = r.left + 'px';
+    list.style.top   = (r.bottom + 2) + 'px';
+    list.style.width = r.width + 'px';
+  }
+
+  function closeList() {
+    list.style.display = 'none';
+    syncInputFromSelect();
+  }
+
+  selectEl._ssRefresh = () => {
+    if (list.style.display === 'block') renderList(input.value);
+  };
+
+  function renderList(filter) {
+    const q = (filter || '').trim().toLowerCase();
+    const items = optionsData().filter(o => o.value !== '' && (!q || o.text.toLowerCase().includes(q)));
+    list.innerHTML = '';
+    if (items.length === 0) {
+      list.innerHTML = '<div class="ss-empty">No matches</div>';
+    } else {
+      items.forEach(o => {
+        const row = document.createElement('div');
+        row.className = 'ss-item';
+        row.textContent = o.text;
+        row.dataset.value = o.value;
+        row.addEventListener('mousedown', e => {
+          e.preventDefault(); // fires before input's blur — keeps the click from being lost
+          selectValue(o.value, o.text);
+        });
+        list.appendChild(row);
+      });
+    }
+    activeIdx = -1;
+    positionList();
+    list.style.display = 'block';
+  }
+
+  function selectValue(value, text) {
+    if (!canSelectInvoiceProject(value, selectEl.closest('tr.line-item-row'))) return;
+    selectEl.value = value;
+    input.value = text || '';
+    list.style.display = 'none';
+    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function updateActive(rows) {
+    rows.forEach((r, i) => r.classList.toggle('ss-active', i === activeIdx));
+    if (rows[activeIdx]) rows[activeIdx].scrollIntoView({ block: 'nearest' });
+  }
+
+  input.addEventListener('focus', () => { refreshInvoiceProjectChoices(); input.select(); renderList(''); });
+  input.addEventListener('input', () => renderList(input.value));
+  input.addEventListener('keydown', e => {
+    const rows = Array.from(list.querySelectorAll('.ss-item'));
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, rows.length - 1); updateActive(rows); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); updateActive(rows); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (activeIdx >= 0 && rows[activeIdx]) selectValue(rows[activeIdx].dataset.value, rows[activeIdx].textContent); }
+    else if (e.key === 'Escape') { closeList(); input.blur(); }
+  });
+  input.addEventListener('blur', () => setTimeout(closeList, 120));
+  window.addEventListener('scroll', () => { if (list.style.display === 'block') positionList(); }, true);
+  window.addEventListener('resize', () => { if (list.style.display === 'block') positionList(); });
+}
+
+function enhanceAllProjectSelects(root) {
+  (root || document).querySelectorAll('select[name="item_project[]"], select[name="project_number"]')
+    .forEach(enhanceProjectSelect);
+}
+
+// A select's dropdown panel lives in <body> (position:fixed), not inside its
+// row, so removing the row alone would leave it behind — clean it up too.
+function cleanupRowSelects(row) {
+  if (!row) return;
+  row.querySelectorAll('select.ss-hidden-select').forEach(sel => { if (sel._ssList) sel._ssList.remove(); });
+}
 
 // Client -> active-projects picker: lets one invoice cover several of a
 // client's projects without hand-building each line item from scratch.
@@ -453,7 +692,10 @@ function addProjectLineItem(number, name, amount, stageIdx, stageName) {
     <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="${description}" required></td>
     <td>
       <select name="item_project[]" class="form-select form-select-sm">${projectOptionsHtml}</select>
-      <input type="hidden" name="item_stage_index[]" value="${stageIdx || ''}">
+      <input type="hidden" name="item_stage_index[]" value="${stageIdx ?? ''}">
+      <input type="hidden" name="item_co_number[]" value="">
+      <input type="hidden" name="item_co_firebase_id[]" value="">
+      <input type="hidden" name="item_powo_number[]" value="">
     </td>
     <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
     <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="${price.toFixed(2)}" min="0" step="0.01" oninput="calcRow(this)"></td>
@@ -461,6 +703,8 @@ function addProjectLineItem(number, name, amount, stageIdx, stageName) {
     <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>`;
   tbody.appendChild(row);
   row.querySelector('select[name="item_project[]"]').value = number;
+  enhanceProjectSelect(row.querySelector('select[name="item_project[]"]'));
+  refreshInvoiceProjectChoices();
 
   // If the only other row is still the untouched blank starter row, drop it
   // so the picker doesn't leave a stray empty line item behind.
@@ -468,7 +712,7 @@ function addProjectLineItem(number, name, amount, stageIdx, stageName) {
   if (rows.length === 2) {
     const other = [...rows].find(r => r !== row);
     const desc  = other.querySelector('input[name="item_description[]"]');
-    if (other && !other.dataset.autoProject && desc && !desc.value.trim()) other.remove();
+    if (other && !other.dataset.autoProject && desc && !desc.value.trim()) { cleanupRowSelects(other); other.remove(); }
   }
   calcTotals();
 }
@@ -476,9 +720,11 @@ function addProjectLineItem(number, name, amount, stageIdx, stageName) {
 function removeProjectLineItem(number) {
   const row = findLineItemRowByProject(number);
   if (row && document.querySelectorAll('.line-item-row').length > 1) {
+    cleanupRowSelects(row);
     row.remove();
     calcTotals();
   } else if (row) {
+    cleanupRowSelects(row);
     row.remove();
     addLineItem();
   }
@@ -492,6 +738,7 @@ function calcRow(input) {
   calcTotals();
 }
 function calcTotals() {
+  refreshInvoiceProjectChoices();
   let sub = 0;
   document.querySelectorAll('.item-total').forEach(el => sub += parseFloat(el.value||0));
   const tax   = sub * (parseFloat(document.getElementById('taxRate').value||0) / 100);
@@ -512,18 +759,26 @@ function addLineItem() {
     <td>
       <select name="item_project[]" class="form-select form-select-sm">${projectOptionsHtml}</select>
       <input type="hidden" name="item_stage_index[]" value="">
+      <input type="hidden" name="item_co_number[]" value="">
+      <input type="hidden" name="item_co_firebase_id[]" value="">
+      <input type="hidden" name="item_powo_number[]" value="">
     </td>
     <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
     <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="0" min="0" step="0.01" oninput="calcRow(this)"></td>
     <td><input type="text" class="form-control form-control-sm item-total bg-light" value="0.00" readonly></td>
     <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>`;
   tbody.appendChild(row);
+  enhanceProjectSelect(row.querySelector('select[name="item_project[]"]'));
+  refreshInvoiceProjectChoices();
 }
 function removeRow(btn) {
-  if (document.querySelectorAll('.line-item-row').length > 1) {
-    btn.closest('tr').remove(); calcTotals();
-  }
+  const tr = btn.closest('tr');
+  cleanupRowSelects(tr);
+  tr.remove();
+  if (!document.querySelector('#lineItemsBody .line-item-row')) addLineItem();
+  calcTotals();
 }
+
 function togglePaymentFields() {
   const status = document.getElementById('invoiceStatus').value;
   const show   = ['Paid', 'Partial'].includes(status);
@@ -566,6 +821,8 @@ function togglePaymentFields() {
 calcTotals();
 renderClientProjects();
 togglePaymentFields();
+enhanceAllProjectSelects();
+refreshInvoiceProjectChoices();
 
 function applyNetTerms() {
   const days = parseInt(document.getElementById('netTerms').value, 10);
@@ -626,5 +883,250 @@ function applyNetTerms() {
     }
   }
 })();
+
+// ── Stage picker: pick a project in a line item's "invoice project" select
+// and, if that project still has uninvoiced payment stages / approved COs,
+// offer to check which one(s) to bill — auto-filling description, amount and
+// the hidden stage/CO fields, same as the Projects tab's "Load to Invoice".
+let _stagePickerRow = null;
+let _stagePickerData = null;
+
+function escAttr(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+}
+
+document.getElementById('lineItemsBody').addEventListener('change', function(e) {
+  const sel = e.target.closest('select[name="item_project[]"]');
+  if (!sel) return;
+  onItemProjectChange(sel);
+});
+
+function onItemProjectChange(selectEl) {
+  const projNum = selectEl.value;
+  const row = selectEl.closest('tr');
+  // Changing projects releases the previous stage immediately.
+  ['item_stage_index[]', 'item_co_number[]', 'item_co_firebase_id[]', 'item_powo_number[]'].forEach(name => {
+    const input = row.querySelector(`[name="${name}"]`);
+    if (input) input.value = '';
+  });
+  refreshInvoiceProjectChoices();
+  if (!projNum) return;
+  const showChoices = data => {
+    if (!row.isConnected || selectEl.value !== projNum) return;
+    invoiceStageOptions[projNum] = data;
+    const available = availableStageChoices(data, row);
+    if (!available.all_pending_stages.length && !available.approved_pending_cos.length) {
+      if (!canSelectInvoiceProject(projNum, row)) {
+        selectEl.value = '';
+        const input = selectEl.closest('.ss-wrap')?.querySelector('input');
+        if (input) input.value = '';
+      }
+      refreshInvoiceProjectChoices();
+      return;
+    }
+    openStagePickerModal(selectEl, data);
+  };
+  if (invoiceStageOptions[projNum]) {
+    showChoices(invoiceStageOptions[projNum]);
+    return;
+  }
+  fetch(`/api/invoicing/project-pending?project_number=${encodeURIComponent(projNum)}&invoice_id=${encodeURIComponent(editingInvoiceId)}`)
+    .then(r => r.ok ? r.json() : null)
+    .then(data => { if (data) showChoices(data); })
+    .catch(() => {});
+}
+
+function openStagePickerModal(rowSelectEl, data) {
+  _stagePickerRow  = rowSelectEl.closest('tr');
+  _stagePickerData = data;
+
+  const available = availableStageChoices(data, _stagePickerRow);
+  const stages = available.all_pending_stages;
+  const cos    = available.approved_pending_cos;
+  const body   = document.getElementById('stagePickerBody');
+
+  let html = `<div style="margin-bottom:14px;">
+    <div style="font-size:13px;color:#64748b;">${data.project_number || ''} — ${data.project_name || ''}</div>
+    <p class="text-muted small mb-0 mt-1">Check the stage(s) / change order(s) to bill on this invoice.</p>
+  </div>`;
+
+  html += `<div style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;background:white;">
+      <tr style="background:#f1f5f9;border-bottom:1px solid #e2e8f0;">
+        <th style="padding:10px;width:36px;"></th>
+        <th style="padding:10px;text-align:left;font-weight:600;color:#334155;">Stage</th>
+        <th style="padding:10px;text-align:right;font-weight:600;color:#334155;width:110px;">Amount</th>
+        <th style="padding:10px;text-align:left;font-weight:600;color:#334155;">Status</th>
+      </tr>`;
+
+  stages.forEach(stage => {
+    const checkId = `sp_stage_${stage.stage_idx}`;
+    const statusTxt = stage.blocked ? '⚠ Prior stage not yet invoiced' : 'Ready to invoice';
+    const statusClr = stage.blocked ? '#b45309' : '#0f766e';
+    html += `<tr style="border-bottom:1px solid #f1f5f9;${stage.is_next ? 'background:#f0fdf4;' : ''}">
+      <td style="padding:8px 10px;">
+        <input type="checkbox" id="${checkId}" class="sp-stage-checkbox form-check-input"
+               data-stage-idx="${stage.stage_idx}" data-stage-name="${(stage.stage_name || '').replace(/"/g,'&quot;')}"
+               data-amount="${stage.amount || 0}" ${stage.is_next ? 'checked' : ''}
+               style="cursor:pointer;width:15px;height:15px;">
+      </td>
+      <td style="padding:8px 10px;color:#1e293b;">
+        <label for="${checkId}" style="cursor:pointer;margin:0;">${stage.stage_name || '—'}
+          ${stage.is_next ? '<span style="font-size:10px;background:#dcfce7;color:#15803d;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">Next</span>' : ''}
+        </label>
+      </td>
+      <td style="padding:8px 10px;text-align:right;color:#1e293b;font-weight:600;">${CURRENCY_SYMBOL}${parseFloat(stage.amount||0).toFixed(2)}</td>
+      <td style="padding:8px 10px;color:${statusClr};font-size:11px;">${statusTxt}</td>
+    </tr>`;
+  });
+
+  cos.forEach(co => {
+    const checkId = `sp_co_${co.co_idx}`;
+    html += `<tr style="background:#fffbeb;border-bottom:1px solid #fef3c7;border-left:3px solid #f59e0b;">
+      <td style="padding:8px 10px;">
+        <input type="checkbox" id="${checkId}" class="sp-co-checkbox form-check-input"
+               data-co-number="${co.co_number || ''}" data-co-firebase-id="${co.co_firebase_id || ''}"
+               data-stage-idx="${co.stage_idx ?? ''}" data-powo="${co.powo_number || ''}"
+               data-title="${(co.title || '').replace(/"/g,'&quot;')}" data-amount="${co.amount || 0}"
+               checked style="cursor:pointer;width:15px;height:15px;">
+      </td>
+      <td style="padding:8px 10px;color:#78350f;">
+        <span style="font-size:10px;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:1px 5px;font-weight:700;margin-right:4px;">CO</span>
+        CO ${co.co_number || '—'}${co.title ? ' — ' + co.title : ''}
+      </td>
+      <td style="padding:8px 10px;text-align:right;color:#92400e;font-weight:600;">${CURRENCY_SYMBOL}${parseFloat(co.amount||0).toFixed(2)}</td>
+      <td style="padding:8px 10px;color:#0f766e;font-size:11px;">Ready to invoice</td>
+    </tr>`;
+  });
+
+  html += '</table></div>';
+  body.innerHTML = html;
+  const confirmButton = document.getElementById('stagePickerConfirmBtn');
+  const updateConfirm = () => { confirmButton.disabled = !body.querySelector('input[type="checkbox"]:checked'); };
+  body.onchange = updateConfirm;
+  updateConfirm();
+
+  const modal = new bootstrap.Modal(document.getElementById('stagePickerModal'));
+  modal.show();
+}
+
+// Any way of leaving the modal WITHOUT clicking "Load Selected" — the
+// footer's Cancel button, the header's × , the Esc key, or clicking the
+// backdrop — all fire Bootstrap's hidden.bs.modal, and all of them should
+// undo the project selection that opened the picker, not leave it half-set
+// with no stage attached. Only confirmStagePicker() sets the "confirmed"
+// flag first, so that path is the one exception.
+let _stagePickerConfirmed = false;
+document.getElementById('stagePickerModal').addEventListener('hidden.bs.modal', function() {
+  if (!_stagePickerConfirmed) {
+    resetStagePickerRow();
+  }
+  _stagePickerConfirmed = false;
+  _stagePickerRow = null;
+  _stagePickerData = null;
+  refreshInvoiceProjectChoices();
+});
+
+function resetStagePickerRow() {
+  if (!_stagePickerRow) return;
+  const sel = _stagePickerRow.querySelector('select[name="item_project[]"]');
+  if (sel) {
+    sel.value = '';
+    const wrap = sel.closest('.ss-wrap');
+    const visibleInput = wrap ? wrap.querySelector('input[type="text"]') : null;
+    if (visibleInput) visibleInput.value = '';
+  }
+  ['item_stage_index[]', 'item_co_number[]', 'item_co_firebase_id[]', 'item_powo_number[]'].forEach(name => {
+    const el = _stagePickerRow.querySelector(`input[name="${name}"]`);
+    if (el) el.value = '';
+  });
+}
+
+function confirmStagePicker() {
+  if (!_stagePickerRow || !_stagePickerData) {
+    bootstrap.Modal.getInstance(document.getElementById('stagePickerModal'))?.hide();
+    return;
+  }
+  const projNum = _stagePickerData.project_number || '';
+  const projName = _stagePickerData.project_name || '';
+
+  const picks = [];
+  document.querySelectorAll('#stagePickerBody .sp-stage-checkbox:checked').forEach(cb => {
+    picks.push({
+      description: cb.dataset.stageName ? `${projName} — ${cb.dataset.stageName}` : `${projName} — ${projNum}`,
+      amount: parseFloat(cb.dataset.amount || 0) || 0,
+      stageIdx: cb.dataset.stageIdx,
+      coNumber: '', coFirebaseId: '', powoNumber: ''
+    });
+  });
+  document.querySelectorAll('#stagePickerBody .sp-co-checkbox:checked').forEach(cb => {
+    picks.push({
+      description: cb.dataset.title ? `${cb.dataset.title} (${cb.dataset.coNumber})` : cb.dataset.coNumber,
+      amount: parseFloat(cb.dataset.amount || 0) || 0,
+      stageIdx: cb.dataset.stageIdx,
+      coNumber: cb.dataset.coNumber, coFirebaseId: cb.dataset.coFirebaseId, powoNumber: cb.dataset.powo
+    });
+  });
+
+  const used = usedStageKeys(projNum, _stagePickerRow);
+  const uniquePicks = picks.filter(pick => {
+    const keys = stageIdentityKeys(pick);
+    if (keys.some(key => used.has(key))) return false;
+    keys.forEach(key => used.add(key));
+    return true;
+  });
+  if (!uniquePicks.length) return;
+  if (uniquePicks.length > 0) {
+    // First pick fills the row whose project select triggered the picker.
+    setRowStageFields(_stagePickerRow, uniquePicks[0]);
+    // Any further picks each get their own new line item, same project.
+    for (let i = 1; i < uniquePicks.length; i++) {
+      appendStageRow(projNum, uniquePicks[i]);
+    }
+    calcTotals();
+  }
+
+  _stagePickerConfirmed = true;
+  bootstrap.Modal.getInstance(document.getElementById('stagePickerModal'))?.hide();
+}
+
+function setRowStageFields(row, info) {
+  const descInput  = row.querySelector('input[name="item_description[]"]');
+  const priceInput = row.querySelector('input[name="item_unit_price[]"]');
+  const stageInput = row.querySelector('input[name="item_stage_index[]"]');
+  const coNumInput = row.querySelector('input[name="item_co_number[]"]');
+  const coFbInput  = row.querySelector('input[name="item_co_firebase_id[]"]');
+  const powoInput  = row.querySelector('input[name="item_powo_number[]"]');
+  if (descInput)  descInput.value  = info.description;
+  if (priceInput) { priceInput.value = info.amount.toFixed(2); calcRow(priceInput); }
+  if (stageInput) stageInput.value = (info.stageIdx === undefined || info.stageIdx === null) ? '' : info.stageIdx;
+  if (coNumInput) coNumInput.value = info.coNumber || '';
+  if (coFbInput)  coFbInput.value  = info.coFirebaseId || '';
+  if (powoInput)  powoInput.value  = info.powoNumber || '';
+  refreshInvoiceProjectChoices();
+}
+
+function appendStageRow(projectNumber, info) {
+  const tbody = document.getElementById('lineItemsBody');
+  const row   = document.createElement('tr');
+  row.className = 'line-item-row';
+  row.innerHTML = `
+    <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="${escAttr(info.description)}" required></td>
+    <td>
+      <select name="item_project[]" class="form-select form-select-sm">${projectOptionsHtml}</select>
+      <input type="hidden" name="item_stage_index[]" value="${(info.stageIdx === undefined || info.stageIdx === null) ? '' : info.stageIdx}">
+      <input type="hidden" name="item_co_number[]" value="${escAttr(info.coNumber || '')}">
+      <input type="hidden" name="item_co_firebase_id[]" value="${escAttr(info.coFirebaseId || '')}">
+      <input type="hidden" name="item_powo_number[]" value="${escAttr(info.powoNumber || '')}">
+    </td>
+    <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
+    <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="${info.amount.toFixed(2)}" min="0" step="0.01" oninput="calcRow(this)"></td>
+    <td><input type="text" class="form-control form-control-sm item-total bg-light" value="${info.amount.toFixed(2)}" readonly></td>
+    <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>`;
+  tbody.appendChild(row);
+  row.querySelector('select[name="item_project[]"]').value = projectNumber;
+  enhanceProjectSelect(row.querySelector('select[name="item_project[]"]'));
+  refreshInvoiceProjectChoices();
+}
 </script>
 {% endblock %}
