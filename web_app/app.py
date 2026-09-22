@@ -25961,10 +25961,16 @@ def _load_all_users() -> List[dict]:
     return []
 
 def _activity_usage_summary() -> List[dict]:
-    """Per-employee today/this-week active-in-app minutes, from /activity_sessions."""
+    """Per-employee today/this-week active-in-app minutes, from /activity_sessions.
+
+    /activity_sessions is never pruned when a user is deleted, so without a
+    live-user check a removed employee's old sessions would keep showing up
+    here indefinitely.
+    """
     raw = fb_get("/activity_sessions") or {}
     today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     week_start = _week_monday()
+    live_uids = {u.get("firebase_uid") for u in _load_all_users() if u.get("firebase_uid")}
 
     by_employee: Dict[str, dict] = {}
     if isinstance(raw, dict):
@@ -25972,7 +25978,7 @@ def _activity_usage_summary() -> List[dict]:
             if not isinstance(s, dict):
                 continue
             uid = s.get("employee_uid", "")
-            if not uid:
+            if not uid or uid not in live_uids:
                 continue
             try:
                 login_at = datetime.fromisoformat(s.get("login_at", ""))
