@@ -28374,7 +28374,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
     qr_img = None
     if qr_path.exists():
         try:
-            qr_img = Image(str(qr_path), width=1.0*inch, height=1.0*inch)
+            qr_img = Image(str(qr_path), width=1.45*inch, height=1.45*inch)
         except (IOError, OSError):
             qr_img = None
 
@@ -28397,7 +28397,8 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         Table([[Paragraph("<b>Option 3: Bank ACH Transfer</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
               style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EA9999")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
         Spacer(1, 1*mm),
-        Paragraph("Please contact MABS Admin to get our bank information for ACH transfers", InvValue),
+        Paragraph("<b>Account Type:</b> Checking<br/><b>Bank Name:</b> First Citizens Bank<br/><b>Routing Number:</b> 101089810<br/><b>Acct. Number:</b> 4834994317", InvValue),
+        Spacer(1, 2.5*mm),
     ]
 
     payment_table = Table([[left_section, right_section]], colWidths=[doc.width * 0.55, doc.width * 0.40])
@@ -28835,7 +28836,7 @@ def _generate_quote_pdf_bytes(quote_id: str):
             ])
         ),
         Table(
-            [[Paragraph("<b>Account Type:</b> Checking<br/><b>Bank Name:</b> BMO Harris Bank<br/><b>Routing Number:</b> 071025661<br/><b>Acct. Number:</b> 4834994317", form_value)]],
+            [[Paragraph("<b>Account Type:</b> Checking<br/><b>Bank Name:</b> First Citizens Bank<br/><b>Routing Number:</b> 101089810<br/><b>Acct. Number:</b> 4834994317", form_value)]],
             colWidths=[available_width * 0.60],
             style=TableStyle([
                 ("ALIGN", (0,0), (-1,-1), "LEFT"),
