@@ -28394,7 +28394,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         Spacer(1, 1*mm),
         Paragraph("<b>Payable to:</b> MABS Engineering LLC<br/><b>Mailing Address:</b> 15455 Manchester Rd, PO Box 1144 Manchester, MO 63011", InvValue),
         Spacer(1, 4*mm),
-        Table([[Paragraph("<b>Option 3: Bank ACH Transfer</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
+        Table([[Paragraph("<b>Option 3: ACH Transfer</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
               style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EA9999")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
         Spacer(1, 1*mm),
         Paragraph("<b>Account Type:</b> Checking<br/><b>Bank Name:</b> First Citizens Bank<br/><b>Routing Number:</b> 101089810<br/><b>Acct. Number:</b> 4834994317", InvValue),
@@ -28825,7 +28825,7 @@ def _generate_quote_pdf_bytes(quote_id: str):
             ])
         ),
         Table(
-            [[Paragraph("<b>Option 3: Bank ACH Transfer</b>", form_label)]],
+            [[Paragraph("<b>Option 3: ACH Transfer</b>", form_label)]],
             colWidths=[available_width * 0.60],
             rowHeights=[7*mm],
             style=TableStyle([
