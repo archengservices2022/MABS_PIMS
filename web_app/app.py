@@ -3750,7 +3750,7 @@ def _load_project_items(raw, raw_inv, persist=True):
     for pid, pdata in (raw.items() if isinstance(raw, dict) else []):
         if pdata and isinstance(pdata, dict):
             pdata["firebase_id"] = pid
-            pdata["_has_overdue"] = _project_has_overdue_stage(pdata.get("payment_stages"), raw_inv)
+            pdata["_has_overdue"] = _project_has_overdue_stage(pdata.get("payment_stages"), raw_inv, pdata)
             _sync_contract_value_from_cos(pid, pdata, persist=persist)
             # Repair status if amount_paid contradicts stored status
             _amt   = _safe_float(pdata.get("amount_paid", 0))
@@ -26361,11 +26361,19 @@ def _send_project_completion_email(project_number: str, project_data: dict) -> N
     except Exception as exc:
         log.error("Completion email error (project %s): %s", project_number, exc)
 
-def _project_has_overdue_stage(payment_stages, raw_inv: dict) -> bool:
+def _project_has_overdue_stage(payment_stages, raw_inv: dict, project: dict = None) -> bool:
     """True if any payment stage is Invoiced/Partially Paid and its linked
-    invoice's due date has passed without being fully paid."""
+    invoice's due date has passed without being fully paid.
+
+    The invoice itself is checked: a stage that still says "Invoiced" but whose invoice has
+    since been paid in full (or cancelled) is not overdue, and neither is a project that has
+    been paid in full."""
     if not isinstance(payment_stages, list):
         return False
+    if isinstance(project, dict):
+        _cv = _safe_float(project.get("contract_value", 0))
+        if _cv > 0 and _safe_float(project.get("amount_paid", 0)) >= _cv - 0.01:
+            return False
     today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     for stage in payment_stages:
         if not isinstance(stage, dict):
@@ -26374,6 +26382,8 @@ def _project_has_overdue_stage(payment_stages, raw_inv: dict) -> bool:
             continue
         inv = raw_inv.get(stage.get("invoice_id", ""))
         if not isinstance(inv, dict):
+            continue
+        if _calculate_invoice_status(inv) in ("Paid", "Cancelled"):
             continue
         due_date = inv.get("meta", {}).get("due_date", "")
         if due_date and due_date < today:
