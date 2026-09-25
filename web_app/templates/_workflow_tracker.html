@@ -55,7 +55,7 @@
           <div class="wf-num-text">{{ wf_project.get('project_number','') }}</div>
           <div class="mt-1">
             <span class="badge bg-info" title="Multiple projects in this invoice">
-              <i class="bi bi-diagram-3 me-1"></i>{{ wf_project.get('_count', '') }} projects
+              <i class="bi bi-diagram-3 me-1"></i>{{ wf_project.get('_count', '') }} {{ 'item' if wf_project.get('_count') == 1 else 'items' }}
             </span>
           </div>
         {% elif wf_step == 2 %}
