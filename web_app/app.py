@@ -26367,10 +26367,12 @@ def _project_has_overdue_stage(payment_stages, raw_inv: dict, project: dict = No
 
     The invoice itself is checked: a stage that still says "Invoiced" but whose invoice has
     since been paid in full (or cancelled) is not overdue, and neither is a project that has
-    been paid in full."""
+    been paid in full or cancelled."""
     if not isinstance(payment_stages, list):
         return False
     if isinstance(project, dict):
+        if (project.get("status") or "").strip() in ("Cancelled", "Cancel"):
+            return False   # a cancelled project has nothing left to collect
         _cv = _safe_float(project.get("contract_value", 0))
         if _cv > 0 and _safe_float(project.get("amount_paid", 0)) >= _cv - 0.01:
             return False
