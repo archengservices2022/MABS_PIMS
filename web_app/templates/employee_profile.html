@@ -398,7 +398,7 @@
         <tbody>
         {% for a in recent_advances %}
         {% set bal = [a.get('amount',0)|float - a.get('adjusted',0)|float, 0]|max %}
-        <tr onclick="window.location='{% if a.firebase_id %}{{ url_for('advance_detail', advance_id=a.firebase_id) }}{% else %}{{ url_for('payroll') }}{% endif %}'">
+        <tr onclick="window.location='{% if a.get('employee_name') %}{{ url_for('advance_employee_detail', employee_name=a.get('employee_name')) }}{% else %}{{ url_for('payroll') }}{% endif %}'">
           <td class="text-muted small">{{ (a.get('date') or '—') | format_date }}</td>
           <td class="text-end fw-600">{{ currency_symbol }}{{ '{:,.2f}'.format(a.get('amount',0)|float) }}</td>
           <td class="text-end text-muted">{{ currency_symbol }}{{ '{:,.2f}'.format(a.get('adjusted',0)|float) }}</td>

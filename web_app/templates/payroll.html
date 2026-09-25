@@ -196,6 +196,23 @@
 .mb-1 { margin-bottom: 0.25rem; }
 .mb-3 { margin-bottom: 1rem; }
 .mb-4 { margin-bottom: 1.5rem; }
+
+/* Advance & Commission Adjustment — employee summary */
+.adv-table { width: 100%; border-collapse: collapse; }
+.adv-table thead { background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
+.adv-table th { padding: 13px 14px; text-align: center; font-weight: 700; color: #0f172a; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
+.adv-table td { padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; color: #1f2937; text-align: center; vertical-align: middle; }
+.adv-table .num { font-variant-numeric: tabular-nums; }
+.adv-table tbody tr:last-child td { border-bottom: none; }
+.adv-row { cursor: pointer; transition: background .15s; }
+.adv-row:hover { background: #f8fafc; }
+.adv-emp-link { color: #0d9488; font-weight: 700; text-decoration: none; }
+.adv-emp-link:hover { text-decoration: underline; }
+.adv-badge { display: inline-block; padding: 4px 12px; border-radius: 16px; font-size: 11.5px; font-weight: 700; }
+.adv-badge-open { background: #dbeafe; color: #1d4ed8; }
+.adv-badge-closed { background: #dcfce7; color: #15803d; }
+.adv-total-row td { background: #f0f9ff; border-top: 2px solid #cbd5e1; font-weight: 700; }
+@media (max-width: 768px) { .summary-cards { grid-template-columns: repeat(2, 1fr); } }
 </style>
 {% endblock %}
 
@@ -213,7 +230,7 @@
       <i class="bi bi-percent me-2" style="font-size:16px;"></i>Commission Management
     </button>
     <button class="payroll-tab-button" onclick="switchTab('employee-advance', event)">
-      <i class="bi bi-wallet2 me-2" style="font-size:16px;"></i>Employee Advance
+      <i class="bi bi-wallet2 me-2" style="font-size:16px;"></i>Advances &amp; Adjustments
     </button>
     <button class="payroll-tab-button" onclick="switchTab('export', event)">
       <i class="bi bi-download me-2" style="font-size:16px;"></i>Export
@@ -608,132 +625,75 @@
     </div>
   </div>
 
-  <!-- ?? Employee Advance Tab ?????????????????????????????????????? -->
+  <!-- ── Advance & Commission Adjustment Tab ─────────────────────────── -->
   <div id="employee-advance" class="payroll-tab-content">
     <div>
-      <h5 style="margin-bottom:15px;font-weight:700;color:#0f172a;">Employee Advance Entry</h5>
-
-      <!-- Advance Entry Form -->
-      <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:20px;">
-        <h6 style="margin:0 0 12px 0;font-weight:700;color:#1f2937;font-size:14px;">Employee Advance Entry</h6>
-        <form id="advanceForm" onsubmit="addAdvance(event)">
-          <input type="hidden" id="advance_id" value="">
-
-          <!-- Row 1: Advance No, Date, Employee -->
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px;">
-            <div class="form-group">
-              <label for="adv_no" style="font-size:12px;margin-bottom:4px;">Advance No</label>
-              <input type="text" id="adv_no" readonly style="background:#f8fafc;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;" />
-              <small style="color:#94a3b8;font-size:11px;margin-top:3px;display:block;">(Auto)</small>
-            </div>
-
-            <div class="form-group">
-              <label for="adv_date" style="font-size:12px;margin-bottom:4px;">Date</label>
-              <input type="date" id="adv_date" required style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;" />
-            </div>
-
-            <div class="form-group">
-              <label for="adv_employee" style="font-size:12px;margin-bottom:4px;">Employee</label>
-              <select id="adv_employee" required style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;background:white;">
-                <option value="">Select employee...</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Row 2: Advance Amount, Reason, Payment Method -->
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px;">
-            <div class="form-group">
-              <label for="adv_amount" style="font-size:12px;margin-bottom:4px;">Advance Amount</label>
-              <input type="number" id="adv_amount" step="0.01" min="0" required style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;" />
-            </div>
-
-            <div class="form-group">
-              <label for="adv_reason" style="font-size:12px;margin-bottom:4px;">Reason</label>
-              <input type="text" id="adv_reason" placeholder="Medical Emergency" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;" />
-            </div>
-
-            <div class="form-group">
-              <label for="adv_payment_method" style="font-size:12px;margin-bottom:4px;">Payment Method</label>
-              <select id="adv_payment_method" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;background:white;">
-                <option value="Cash">Cash</option>
-                <option value="Bank Transfer">Bank Transfer</option>
-                <option value="Cheque">Cheque</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Row 3: Status -->
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px;">
-            <div class="form-group">
-              <label for="adv_status" style="font-size:12px;margin-bottom:4px;">Status</label>
-              <input type="text" id="adv_status" value="Open" readonly style="width:100%;background:#f8fafc;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;" />
-            </div>
-          </div>
-
-          <!-- Buttons -->
-          <div style="display:flex;gap:10px;margin-top:8px;justify-content:flex-end;">
-            <button type="submit" class="btn-primary" id="submitAdvanceBtn" style="background:#0d9488;color:white;padding:8px 16px;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:6px;">
-              <i class="bi bi-check-circle"></i><span id="submitAdvanceBtnText">Save Advance</span>
-            </button>
-            <button type="reset" class="btn-secondary" onclick="clearAdvanceForm()" style="background:#e2e8f0;color:#0f172a;padding:8px 16px;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px;">Cancel</button>
-          </div>
-        </form>
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2" style="margin-bottom:20px;">
+        <div>
+          <h5 style="margin:0;font-size:19px;font-weight:700;color:#0f172a;letter-spacing:-.01em;">Employee Advances &amp; Adjustments</h5>
+          <p style="margin:5px 0 0;font-size:13.5px;line-height:1.5;color:#64748b;font-weight:400;">Manage employee advances, adjustments, and outstanding balances.</p>
+        </div>
+        <button type="button" class="btn-advance" onclick="AdvanceDialog.open()" style="font-size:13px;padding:9px 16px;">
+          <i class="bi bi-plus-circle"></i> Add Advance Entry
+        </button>
       </div>
 
-      <!-- Advance List -->
-      <div style="margin-bottom:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <h6 style="margin:0;font-weight:600;color:#374151;font-size:14px;">Advance List</h6>
+      <!-- Summary Cards -->
+      <div class="summary-cards" id="advanceCards">
+        <div class="summary-card" style="border-left:4px solid #3b82f6;">
+          <div class="summary-card-label">Employees With Advances</div>
+          <div class="summary-card-value" id="advCardEmployees" style="color:#3b82f6;">0</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;" id="advCardEmployeesSub">&nbsp;</div>
         </div>
-
-        <!-- Filters -->
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-          <!-- Status Filter Dropdown -->
-          <div style="display:flex;gap:8px;align-items:center;">
-            <label for="advanceStatusDropdown" style="font-size:12px;font-weight:500;color:#6b7280;">Status:</label>
-            <select id="advanceStatusDropdown" onchange="filterAdvanceByStatus(this.value)"
-                    style="padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;color:#374151;background:white;font-family:inherit;">
-              <option value="All">All</option>
-              <option value="Open">Open</option>
-              <option value="Closed">Closed</option>
-            </select>
-          </div>
-
-          <!-- Search Bar -->
-          <div style="position:relative;width:220px;">
-            <input type="text" id="advanceSearchInput" placeholder="Search..."
-                   style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;font-family:inherit;background:white;"
-                   oninput="filterAdvanceTable()" />
-          </div>
+        <div class="summary-card" style="border-left:4px solid #8b5cf6;">
+          <div class="summary-card-label">Total Advanced</div>
+          <div class="summary-card-value" id="advCardAdvance" style="color:#8b5cf6;">{{ currency_symbol }}0.00</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;" id="advCardAdvanceSub">&nbsp;</div>
+        </div>
+        <div class="summary-card" style="border-left:4px solid #10b981;">
+          <div class="summary-card-label">Total Adjusted</div>
+          <div class="summary-card-value" id="advCardAdjusted" style="color:#10b981;">{{ currency_symbol }}0.00</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Commission &amp; other adjustments</div>
+        </div>
+        <div class="summary-card" style="border-left:4px solid #f59e0b;">
+          <div class="summary-card-label">Outstanding Balance</div>
+          <div class="summary-card-value" id="advCardBalance" style="color:#f59e0b;">{{ currency_symbol }}0.00</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Remaining to be recovered</div>
         </div>
       </div>
+
+      <!-- Filters -->
+      <div class="d-flex gap-2 align-items-center flex-wrap justify-content-between" style="margin-bottom:16px;">
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <input type="text" id="advEmpSearch" placeholder="Search employee..." class="form-control form-control-sm" style="width:220px;" oninput="renderAdvanceSummary()">
+          <select id="advEmpStatus" class="form-select form-select-sm" style="width:170px;" onchange="renderAdvanceSummary()">
+            <option value="">All Status</option>
+            <option value="outstanding">Open</option>
+            <option value="settled">Closed</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Employee summary (click a row to open that employee's ledger) -->
       <div class="table-wrapper">
-        <table class="payroll-table">
+        <table class="adv-table" id="advEmpTable">
           <thead>
             <tr>
-              <th>Advance No</th>
-              <th style="min-width: 110px;">Date</th>
-              <th style="min-width: 150px;">Employee</th>
-              <th style="min-width: 130px;">Adv Amount</th>
-              <th style="min-width: 130px;">Adjusted</th>
-              <th style="min-width: 130px;">Remaining Balance</th>
+              <th>Employee</th>
+              <th class="num">Advances</th>
+              <th class="num">Total Advance</th>
+              <th class="num">Advance Adjusted</th>
+              <th class="num">Balance</th>
+              <th>Last Activity</th>
               <th>Status</th>
-              <th style="min-width: 200px;">Adv Adjustment Details</th>
-              <th>Actions</th>
             </tr>
           </thead>
-          <tbody id="advanceTableBody">
-            <tr>
-              <td colspan="9" style="text-align:center;color:#94a3b8;padding:40px;">
-                No advances found. Create one using the form above.
-              </td>
-            </tr>
+          <tbody id="advEmpBody">
+            <tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:40px;">No advances yet. Use “Add Advance Entry” to create one.</td></tr>
           </tbody>
         </table>
       </div>
-      <div style="color:#6b7280;font-size:12px;padding:10px 0;">
-        <span id="advanceTotal">Total: 0 Record(s)</span>
-      </div>
+      <div style="color:#6b7280;font-size:12px;padding:10px 0;"><span id="advEmpCount">0 employee(s)</span></div>
     </div>
   </div>
 
@@ -1416,11 +1376,12 @@ document.addEventListener('DOMContentLoaded', () => {
   buildPayrollExportLinks();
   handleExportTypeChange();
 
+  // Render the Advance & Commission Adjustment employee summary
+  renderAdvanceSummary();
+
   // Load salary delete permissions immediately
   refreshSalaryDeletePerms();
 
-  // Initialize advance tab data
-  initializeAdvanceTab();
 
   // Refresh permissions when returning to page (admin approval detection)
   window.addEventListener('focus', function() {
@@ -1504,25 +1465,88 @@ function localDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-// ?? Employee Advance Functions ????????????????????????????????????
-let allEmployees = [];
-let allAdvances = {{ advances|safe }};
-let advanceDeletePerms = new Set({{ advance_delete_perms|tojson|safe }});
-let salaryDeletePerms = new Set({{ salary_delete_perms|tojson|safe }});
-let isProcessingAdvanceEdit = false;
-let isSalaryDeleting = false;
+// ── Advance & Commission Adjustment (employee summary) ──────────────────────────
+let advanceSummary = {{ advance_summary|tojson|safe }};
 
-// Refresh delete permissions from server
-async function refreshAdvanceDeletePerms() {
-  try {
-    const response = await fetch('{{ url_for("advance_delete_perms") }}');
-    const data = await response.json();
-    advanceDeletePerms = new Set(data.delete_perms || []);
-    refreshAdvanceTable();
-  } catch (e) {
-    console.error('Error refreshing perms:', e);
-  }
+const ADV_CUR = '{{ currency_symbol }}';
+function advMoney(n) {
+  const v = parseFloat(n) || 0;
+  return (v < 0 ? '-' : '') + ADV_CUR + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+function advEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// YYYY-MM-DD -> MM-DD-YYYY (same format the rest of Payroll uses)
+function advDate(d) {
+  const p = (d || '').split('-');
+  return p.length === 3 ? `${p[1]}-${p[2]}-${p[0]}` : (d || '—');
+}
+function advEmployeeUrl(name) {
+  return '{{ url_for("advance_employee_detail", employee_name="EMPLOYEE_NAME") }}'.replace('EMPLOYEE_NAME', encodeURIComponent(name));
+}
+
+function advVisibleRows() {
+  const q = (document.getElementById('advEmpSearch').value || '').trim().toLowerCase();
+  const status = document.getElementById('advEmpStatus').value;
+  return advanceSummary.filter(r => {
+    if (q && !r.employee_name.toLowerCase().includes(q)) return false;
+    if (status === 'outstanding' && !(r.balance > 0.005)) return false;
+    if (status === 'settled' && r.balance > 0.005) return false;
+    return true;
+  });
+}
+
+function renderAdvanceSummary() {
+  const rows = advVisibleRows();
+  const body = document.getElementById('advEmpBody');
+
+  // Cards follow the filters: they total exactly the employees shown in the table
+  const filtered = rows.length !== advanceSummary.length;
+  const totAdv = rows.reduce((s, r) => s + r.total_advance, 0);
+  const totAdj = rows.reduce((s, r) => s + r.total_adjusted, 0);
+  const owing = rows.filter(r => r.balance > 0.005).length;
+  document.getElementById('advCardEmployees').textContent = rows.length;
+  document.getElementById('advCardEmployeesSub').textContent = filtered ? `${rows.length} of ${advanceSummary.length} employees` : (owing ? `${owing} currently open` : 'All closed');
+  document.getElementById('advCardAdvance').textContent = advMoney(totAdv);
+  const advCount = rows.reduce((s, r) => s + r.advance_count, 0);
+  document.getElementById('advCardAdvanceSub').textContent = `Across ${advCount} advance${advCount === 1 ? '' : 's'}`;
+  document.getElementById('advCardAdjusted').textContent = advMoney(totAdj);
+  document.getElementById('advCardBalance').textContent = advMoney(totAdv - totAdj);
+
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:40px;">${
+      advanceSummary.length ? 'No employees match your filters.' : 'No advances yet. Use “Add Advance Entry” to create one.'}</td></tr>`;
+    document.getElementById('advEmpCount').textContent = '0 employee(s)';
+    return;
+  }
+
+  const sumBal = rows.reduce((s, r) => s + r.balance, 0);
+  body.innerHTML = rows.map(r => {
+    const url = advEmployeeUrl(r.employee_name);
+    const settled = !(r.balance > 0.005);
+    return `<tr class="adv-row" onclick="window.location='${url}'">
+      <td><a href="${url}" class="adv-emp-link">${advEsc(r.employee_name)}</a></td>
+      <td class="num">${r.advance_count}</td>
+      <td class="num" style="color:#2563eb;font-weight:600;">${advMoney(r.total_advance)}</td>
+      <td class="num" style="color:#16a34a;font-weight:600;">${advMoney(r.total_adjusted)}</td>
+      <td class="num" style="color:${settled ? '#15803d' : '#dc2626'};font-weight:700;">${advMoney(r.balance)}</td>
+      <td style="white-space:nowrap;">${advDate(r.last_date)}</td>
+      <td><span class="adv-badge ${settled ? 'adv-badge-closed' : 'adv-badge-open'}">${settled ? 'Closed' : 'Open'}</span></td>
+    </tr>`;
+  }).join('') + `<tr class="adv-total-row">
+      <td>Total (${rows.length})</td>
+      <td class="num">${rows.reduce((s, r) => s + r.advance_count, 0)}</td>
+      <td class="num" style="color:#2563eb;">${advMoney(totAdv)}</td>
+      <td class="num" style="color:#16a34a;">${advMoney(totAdj)}</td>
+      <td class="num" style="color:${sumBal > 0.005 ? '#dc2626' : '#15803d'};">${advMoney(sumBal)}</td>
+      <td colspan="2"></td>
+    </tr>`;
+  document.getElementById('advEmpCount').textContent = `${rows.length} employee(s)`;
+}
+
+// ── Salary delete permissions ──────────────────────────────────────────────────
+let salaryDeletePerms = new Set({{ salary_delete_perms|tojson|safe }});
+let isSalaryDeleting = false;
 
 async function refreshSalaryDeletePerms() {
   try {
@@ -1536,383 +1560,6 @@ async function refreshSalaryDeletePerms() {
   }
 }
 
-// Initialize advance tab
-function initializeAdvanceTab() {
-  const today = new Date();
-  const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const dd = String(today.getDate()).padStart(2, '0');
-  const yyyy = today.getFullYear();
-  document.getElementById('adv_date').value = `${yyyy}-${mm}-${dd}`;
-
-  // Check if there's advance data to edit
-  const editDataStr = sessionStorage.getItem('editAdvanceData');
-  if (editDataStr && !isProcessingAdvanceEdit) {
-    isProcessingAdvanceEdit = true;
-    const editData = JSON.parse(editDataStr);
-    sessionStorage.removeItem('editAdvanceData');
-
-    // Set advance_id to indicate editing mode FIRST
-    const advIdField = document.getElementById('advance_id');
-    if (advIdField) advIdField.value = editData.advance_id;
-
-    // Autofill the form with advance data (with safety checks)
-    const advNoField = document.getElementById('adv_no');
-    if (advNoField) {
-      advNoField.value = editData.advance_no;
-      // Force readonly value update
-      advNoField.setAttribute('value', editData.advance_no);
-    }
-
-    const amountField = document.getElementById('adv_amount');
-    if (amountField) amountField.value = editData.amount;
-
-    const dateField = document.getElementById('adv_date');
-    if (dateField) dateField.value = editData.date;
-
-    const reasonField = document.getElementById('adv_reason');
-    if (reasonField) reasonField.value = editData.reason || '';
-
-    const paymentField = document.getElementById('adv_payment_method');
-    if (paymentField) paymentField.value = editData.payment_method || 'Cash';
-
-    const statusField = document.getElementById('adv_status');
-    if (statusField) statusField.value = editData.status || 'Open';
-
-    // Set employee dropdown - need to wait for employees to load
-    const employeeName = editData.employee_name;
-    loadEmployees(() => {
-      setTimeout(() => {
-        const employeeSelect = document.getElementById('adv_employee');
-        if (employeeSelect) {
-          // Find option matching the employee name
-          const options = employeeSelect.querySelectorAll('option');
-          let found = false;
-          for (let opt of options) {
-            if (opt.value === employeeName || opt.textContent === employeeName) {
-              employeeSelect.value = opt.value;
-              found = true;
-              break;
-            }
-          }
-          // If not found with exact match, try trimmed comparison
-          if (!found) {
-            for (let opt of options) {
-              if ((opt.value || '').trim() === (employeeName || '').trim() ||
-                  (opt.textContent || '').trim() === (employeeName || '').trim()) {
-                employeeSelect.value = opt.value;
-                break;
-              }
-            }
-          }
-        }
-      }, 100);
-    });
-
-    // Change button text to indicate editing
-    const btnText = document.getElementById('submitAdvanceBtnText');
-    if (btnText) {
-      btnText.textContent = 'Update Advance';
-    }
-    const submitBtn = document.getElementById('submitAdvanceBtn');
-    if (submitBtn) {
-      submitBtn.style.background = '#10b981'; // Green for update
-    }
-
-    // Refresh table with embedded data (don't fetch to avoid overwriting with empty data)
-    refreshAdvanceTable();
-  } else if (!isProcessingAdvanceEdit) {
-    // Set initial advance number
-    if (allAdvances.length > 0) {
-      document.getElementById('adv_no').value = generateAdvanceNo();
-    } else {
-      document.getElementById('adv_no').value = 'ADV-00001';
-    }
-
-    loadEmployees();
-
-    // Show table immediately with existing data from template
-    refreshAdvanceTable();
-
-    // Then fetch permissions and fresh data from server
-    (async () => {
-      await refreshAdvanceDeletePerms();
-      loadAdvances();
-    })();
-  }
-}
-
-// Set up employee dropdown
-function setupAdvanceEmployeeDropdown() {
-  const input = document.getElementById('adv_employee');
-  const dropdown = document.getElementById('adv_employee_dropdown');
-
-  input.addEventListener('input', function() {
-    const search = this.value.toLowerCase();
-    const filtered = allEmployees.filter(emp =>
-      emp.toLowerCase().includes(search)
-    );
-
-    if (search && filtered.length > 0) {
-      dropdown.innerHTML = filtered.map(emp =>
-        `<div class="option" onclick="selectAdvanceEmployee('${emp}')">${emp}</div>`
-      ).join('');
-      dropdown.classList.add('show');
-    } else {
-      dropdown.classList.remove('show');
-    }
-  });
-
-  document.addEventListener('click', function(e) {
-    if (!e.target.closest('#adv_employee') && !e.target.closest('#adv_employee_dropdown')) {
-      dropdown.classList.remove('show');
-    }
-  });
-}
-
-function selectAdvanceEmployee(employee) {
-  document.getElementById('adv_employee').value = employee;
-  document.getElementById('adv_employee_dropdown').classList.remove('show');
-}
-
-function loadEmployees(callback) {
-  // Add cache-busting query parameter to ensure fresh data
-  const timestamp = new Date().getTime();
-  fetch(`{{ url_for("get_employees") }}?t=${timestamp}`)
-    .then(r => r.json())
-    .then(data => {
-      allEmployees = data.employees || [];
-      setupAdvanceEmployeeDropdown();
-      // Populate dropdown select
-      const select = document.getElementById('adv_employee');
-      select.innerHTML = '<option value="">Select employee...</option>';
-      allEmployees.forEach(emp => {
-        const option = document.createElement('option');
-        option.value = emp;
-        option.textContent = emp;
-        select.appendChild(option);
-      });
-      // Call callback if provided (even if currently editing)
-      if (callback) callback();
-    })
-    .catch(e => console.error('Error loading employees:', e));
-}
-
-function generateAdvanceNo() {
-  if (allAdvances.length === 0) return 'ADV-00001';
-  const maxNum = Math.max(...allAdvances.map(a => {
-    const match = a.advance_no?.match(/ADV-(\d+)/);
-    return match ? parseInt(match[1]) : 0;
-  }));
-  return `ADV-${String(maxNum + 1).padStart(5, '0')}`;
-}
-
-function clearAdvanceForm() {
-  document.getElementById('advanceForm').reset();
-  document.getElementById('advance_id').value = '';
-
-  // Generate and set advance number
-  setAdvanceNumber();
-
-  const today = new Date();
-  const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const dd = String(today.getDate()).padStart(2, '0');
-  const yyyy = today.getFullYear();
-  document.getElementById('adv_date').value = `${yyyy}-${mm}-${dd}`;
-  document.getElementById('adv_employee').value = '';
-  document.getElementById('adv_status').value = 'Open';
-  document.getElementById('submitAdvanceBtnText').textContent = 'Save Advance';
-
-  // Re-enable the submit button
-  const submitBtn = document.querySelector('#advanceForm button[type="submit"]');
-  if (submitBtn) {
-    submitBtn.disabled = false;
-    submitBtn.style.opacity = '1';
-    submitBtn.style.cursor = 'pointer';
-  }
-
-  // Reset button styling to default (Save state, not Update state)
-  const submitBtnElement = document.getElementById('submitAdvanceBtn');
-  if (submitBtnElement) {
-    submitBtnElement.style.background = '#10b981'; // Green for add/save
-  }
-}
-
-function setAdvanceNumber() {
-  const nextAdvNo = generateAdvanceNo();
-  const advNoField = document.getElementById('adv_no');
-  if (advNoField) {
-    advNoField.value = nextAdvNo;
-    advNoField.setAttribute('value', nextAdvNo);
-  }
-}
-
-function editAdvanceEntry(advanceId) {
-  // Find the advance by ID, not by index
-  const adv = allAdvances.find(a => a.id === advanceId);
-  if (!adv) {
-    console.error('Advance not found:', advanceId);
-    return;
-  }
-
-  // Store the advance ID for editing
-  document.getElementById('advance_id').value = adv.id || '';
-
-  // Get updated employee name in case it changed
-  const updatedEmployeeName = getUpdatedEmployeeName(adv.employee_name);
-
-  // Populate form
-  document.getElementById('adv_no').value = adv.advance_no || '';
-
-  // Set date directly (type=date expects YYYY-MM-DD format)
-  document.getElementById('adv_date').value = adv.date || '';
-
-  document.getElementById('adv_employee').value = updatedEmployeeName || '';
-  document.getElementById('adv_amount').value = adv.amount || '';
-  document.getElementById('adv_reason').value = adv.reason || '';
-  document.getElementById('adv_payment_method').value = adv.payment_method || 'Cash';
-  document.getElementById('adv_status').value = adv.status || 'Open';
-
-  // Update button text
-  document.getElementById('submitAdvanceBtnText').textContent = 'Update Advance';
-
-  // Scroll to top of page first
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-
-  // Focus on employee field after scroll
-  setTimeout(() => {
-    document.getElementById('adv_employee').focus();
-  }, 500);
-}
-
-function addAdvance(event) {
-  event.preventDefault();
-
-  const isEditing = document.getElementById('advance_id').value !== '';
-
-  // Disable submit button to prevent double submission
-  const submitBtn = document.querySelector('#advanceForm button[type="submit"]');
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.style.opacity = '0.6';
-    submitBtn.style.cursor = 'not-allowed';
-  }
-
-  // Date is already in YYYY-MM-DD format from type=date input
-  const dateValue = document.getElementById('adv_date').value;
-
-  const advance = {
-    advance_no: document.getElementById('adv_no').value,
-    date: dateValue,
-    employee_name: document.getElementById('adv_employee').value,
-    amount: parseFloat(document.getElementById('adv_amount').value),
-    reason: document.getElementById('adv_reason').value,
-    payment_method: document.getElementById('adv_payment_method').value,
-    status: document.getElementById('adv_status').value,
-    adjusted: 0
-  };
-
-  if (!advance.employee_name || !advance.amount) {
-    alert('Please fill in all required fields');
-    // Re-enable button on error
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.style.opacity = '1';
-      submitBtn.style.cursor = 'pointer';
-    }
-    return;
-  }
-
-  const endpoint = isEditing ? '{{ url_for("update_employee_advance") }}' : '{{ url_for("add_employee_advance") }}';
-
-  if (isEditing) {
-    advance.advance_id = document.getElementById('advance_id').value;
-  }
-
-  fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(advance)
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.success) {
-      const advanceNo = advance.advance_no;
-      clearAdvanceForm();
-      // Load advances first, then show success modal
-      loadAdvancesAndShowModal(advanceNo, isEditing);
-    } else {
-      alert('Error: ' + (data.error || 'Unknown error'));
-      // Re-enable button on error
-      const submitBtn = document.querySelector('#advanceForm button[type="submit"]');
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.style.opacity = '1';
-        submitBtn.style.cursor = 'pointer';
-      }
-    }
-  })
-  .catch(e => {
-    console.error('Error:', e);
-    alert('Error saving advance');
-    // Re-enable button on error
-    const submitBtn = document.querySelector('#advanceForm button[type="submit"]');
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.style.opacity = '1';
-      submitBtn.style.cursor = 'pointer';
-    }
-  });
-}
-
-function loadAdvances() {
-  // Refresh employee list to get updated names
-  loadEmployees();
-
-  // Add cache-busting query parameter to ensure fresh data
-  const timestamp = new Date().getTime();
-  fetch(`{{ url_for("get_employee_advances") }}?t=${timestamp}`)
-    .then(r => r.json())
-    .then(data => {
-      allAdvances = data.advances || [];
-      refreshAdvanceDeletePerms();
-
-      // Only reset form fields if not in edit mode
-      const isEditingId = document.getElementById('advance_id').value;
-      if (!isEditingId) {
-        if (allAdvances.length === 0) {
-          document.getElementById('adv_no').value = 'ADV-00001';
-        } else {
-          document.getElementById('adv_no').value = generateAdvanceNo();
-        }
-      }
-    })
-    .catch(e => console.error('Error loading advances:', e));
-}
-
-function loadAdvancesAndShowModal(advanceNo, isEditing) {
-  // Load employees first
-  loadEmployees();
-
-  // Add cache-busting query parameter to ensure fresh data
-  const timestamp = new Date().getTime();
-  fetch(`{{ url_for("get_employee_advances") }}?t=${timestamp}`)
-    .then(r => r.json())
-    .then(data => {
-      allAdvances = data.advances || [];
-      refreshAdvanceDeletePerms();
-      refreshAdvanceTable();
-
-      // Update the advance number in the form to the next one (now that we have fresh data)
-      setAdvanceNumber();
-
-      // Now show the success modal after UI updates
-      document.getElementById('advanceSuccessTitle').textContent = isEditing ? 'Advance Updated' : 'Advance Added';
-      document.getElementById('advanceSuccessMsg').textContent = `Advance ${advanceNo} has been successfully ${isEditing ? 'updated' : 'added'}.`;
-      new bootstrap.Modal(document.getElementById('payrollAdvanceSuccessModal')).show();
-    })
-    .catch(e => console.error('Error loading advances:', e));
-}
-
 function loadSalariesAndShowModal(isEditing, salaryType) {
   // Store success message and reload page to fetch fresh data
   const type = salaryType || document.getElementById('sal_type').value || 'Salary';
@@ -1921,351 +1568,6 @@ function loadSalariesAndShowModal(isEditing, salaryType) {
   sessionStorage.setItem('salarySuccessMsg', message);
   sessionStorage.setItem('salaryType', type);
   location.reload();
-}
-
-function getUpdatedEmployeeName(storedName) {
-  // If exact match exists, use it
-  if (allEmployees.includes(storedName)) {
-    return storedName;
-  }
-
-  // Try to find by partial match (first part of the name)
-  const nameParts = storedName.split(' ');
-  const firstName = nameParts[0];
-
-  // Look for employees starting with the same first name
-  const matchedEmployee = allEmployees.find(emp =>
-    emp.toLowerCase().startsWith(firstName.toLowerCase())
-  );
-
-  return matchedEmployee || storedName;
-}
-
-// Format a YYYY-MM-DD (or ISO) date string as "Sep 1, 2026"
-function formatProfessionalDate(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-}
-
-// Build the "Adjustment Details" cell for an advance: lists every adjustment made against it,
-// linking commission-deduction project numbers to that project's Commission Details page.
-// Non-commission adjustments of the same type are combined into one line with a summed amount.
-function buildAdvanceAdjustmentDetails(adv, employeeName) {
-  const adjustments = adv.adjustments && typeof adv.adjustments === 'object' ? Object.values(adv.adjustments) : [];
-  const sortedAdjustments = adjustments
-    .filter(a => a && a.type)
-    .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-
-  if (sortedAdjustments.length === 0) {
-    return '<span style="color:#94a3b8;">—</span>';
-  }
-
-  const projectLink = projNum => {
-    const url = `/commission/${encodeURIComponent(employeeName)}?q=${encodeURIComponent(projNum)}`;
-    return `<a href="${url}" style="font-weight:600;color:#0d9488;text-decoration:underline;">${projNum}</a>`;
-  };
-
-  const lines = [];
-
-  // Commission deductions: one line per adjustment (each ties to its own project/date)
-  sortedAdjustments.filter(a => (a.type || '').trim() === 'Commission Deduction').forEach(a => {
-    const breakdown = Array.isArray(a.project_breakdown) ? a.project_breakdown.filter(b => b && b.project_number) : [];
-
-    let destinationText;
-    if (breakdown.length > 1) {
-      // One payment covering multiple projects: show each project with its own share
-      destinationText = breakdown.map(b =>
-        `${projectLink(b.project_number)} ({{ currency_symbol }}${parseFloat(b.amount || 0).toFixed(2)})`
-      ).join(', ');
-    } else if (breakdown.length === 1) {
-      destinationText = `${projectLink(breakdown[0].project_number)} ({{ currency_symbol }}${parseFloat(breakdown[0].amount || a.amount || 0).toFixed(2)})`;
-    } else {
-      const fallback = (a.remarks || a.reference || 'commission').toString().trim();
-      destinationText = `<span style="font-weight:600;">${fallback}</span> ({{ currency_symbol }}${parseFloat(a.amount || 0).toFixed(2)})`;
-    }
-
-    lines.push(`<div style="font-size:12.5px;color:#374151;line-height:1.5;margin-bottom:4px;">Commission Adjusted from ${destinationText}</div>`);
-  });
-
-  // Other adjustment types: combine same-type entries into one summed line
-  const otherGroups = new Map();
-  sortedAdjustments.filter(a => (a.type || '').trim() !== 'Commission Deduction').forEach(a => {
-    const type = (a.type || '').trim();
-    if (!otherGroups.has(type)) otherGroups.set(type, []);
-    otherGroups.get(type).push(a);
-  });
-
-  otherGroups.forEach((items, type) => {
-    const total = items.reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0);
-    let text = `${type} ({{ currency_symbol }}${total.toFixed(2)})`;
-    if (items.length === 1) {
-      const detail = (items[0].reference || items[0].remarks || '').toString().trim();
-      if (detail) text += ` — ${detail}`;
-    }
-    lines.push(`<div style="font-size:12.5px;color:#374151;line-height:1.5;margin-bottom:4px;">${text}</div>`);
-  });
-
-  return lines.join('');
-}
-
-function refreshAdvanceTable() {
-  const tbody = document.getElementById('advanceTableBody');
-
-  if (allAdvances.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:40px;">
-      No advances found. Create one using the form above.
-    </td></tr>`;
-    document.getElementById('advanceTotal').textContent = 'Total: 0 Record(s)';
-    return;
-  }
-
-  // Sort by date descending (newest first) - with fallback to created_at for time precision
-  const sortedAdvances = [...allAdvances].sort((a, b) => {
-    // First try to sort by created_at (includes time)
-    const createdA = a.created_at ? new Date(a.created_at) : null;
-    const createdB = b.created_at ? new Date(b.created_at) : null;
-
-    if (createdA && createdB) {
-      return createdB - createdA;
-    }
-
-    // Fallback to date field if created_at not available
-    const dateA = new Date(a.date || '');
-    const dateB = new Date(b.date || '');
-    return dateB - dateA;
-  });
-
-  // Clear search input and reset status filter when refreshing
-  document.getElementById('advanceSearchInput').value = '';
-  advanceStatusFilter = 'All';
-  document.getElementById('advanceStatusDropdown').value = 'All';
-
-  tbody.innerHTML = sortedAdvances.map((adv, idx) => {
-    const balance = (adv.amount || 0) - (adv.adjusted || 0);
-    const advanceId = adv.id || '';
-    const detailUrl = `{{ url_for('advance_detail', advance_id='ADVANCE_ID') }}`.replace('ADVANCE_ID', advanceId);
-
-    // Format date as MM-DD-YYYY
-    let formattedDate = adv.date || 'N/A';
-    if (adv.date && adv.date.includes('-')) {
-      const dateParts = adv.date.split('-');
-      if (dateParts.length === 3) {
-        formattedDate = `${dateParts[1]}-${dateParts[2]}-${dateParts[0]}`;
-      }
-    }
-
-    // Get current employee name - handles updated names
-    const employeeName = getUpdatedEmployeeName(adv.employee_name);
-
-    return `
-      <tr style="cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''" onclick="window.location='${detailUrl}'" data-created-at="${adv.created_at || ''}">
-        <td><a href="${detailUrl}" style="color:#0d9488;text-decoration:underline;font-weight:bold;">${adv.advance_no || 'N/A'}</a></td>
-        <td style="white-space:nowrap;">${formattedDate}</td>
-        <td>${employeeName}</td>
-        <td style="color:#2563eb;font-weight:600;">{{ currency_symbol }}${parseFloat(adv.amount || 0).toFixed(2)}</td>
-        <td style="color:#16a34a;font-weight:600;">{{ currency_symbol }}${parseFloat(adv.adjusted || 0).toFixed(2)}</td>
-        <td style="color:#dc2626;font-weight:600;">{{ currency_symbol }}${parseFloat(balance).toFixed(2)}</td>
-        <td><span style="display:inline-block;padding:6px 14px;border-radius:16px;font-size:12px;font-weight:700;
-          ${adv.status === 'Closed' ? 'background:#dcfce7;color:#15803d;' : 'background:#dbeafe;color:#1d4ed8;'}">
-          ${adv.status || 'Open'}</span></td>
-        <td onclick="event.stopPropagation()">${buildAdvanceAdjustmentDetails(adv, employeeName)}</td>
-        <td onclick="event.stopPropagation()" style="padding:0;">
-          <div class="d-flex gap-1" style="padding:10px;">
-            <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit"
-              onclick="editAdvanceEntry('${advanceId}')"><i class="bi bi-pencil"></i></button>
-            ${advanceDeletePerms.has(adv.advance_no) ?
-              `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="deleteAdvance('${adv.advance_no || ''}')"><i class="bi bi-trash"></i></button>` :
-              `<button type="button" class="btn btn-xs btn-outline-warning" title="Request Delete" onclick="openDeleteRequestModal('advance','${adv.advance_no || ''}','Advance: ${adv.advance_no || ''}')"><i class="bi bi-send"></i></button>`
-            }
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
-
-  // Add totals row
-  let totalAmount = 0;
-  let totalAdjusted = 0;
-  let totalBalance = 0;
-
-  sortedAdvances.forEach(adv => {
-    totalAmount += parseFloat(adv.amount || 0);
-    totalAdjusted += parseFloat(adv.adjusted || 0);
-    totalBalance += (parseFloat(adv.amount || 0) - parseFloat(adv.adjusted || 0));
-  });
-
-  const totalsRow = `
-    <tr class="totals-row" style="background:#f0f9ff;border-top:2px solid #cbd5e1;font-weight:600;">
-      <td colspan="3" style="text-align:right;padding:12px 10px;color:#1f2937;">Totals (${sortedAdvances.length} advances)</td>
-      <td style="padding:12px 10px;color:#2563eb;">{{ currency_symbol }}${parseFloat(totalAmount).toFixed(2)}</td>
-      <td style="padding:12px 10px;color:#16a34a;">{{ currency_symbol }}${parseFloat(totalAdjusted).toFixed(2)}</td>
-      <td style="padding:12px 10px;color:#dc2626;">{{ currency_symbol }}${parseFloat(totalBalance).toFixed(2)}</td>
-      <td></td>
-      <td></td>
-      <td></td>
-    </tr>
-  `;
-
-  tbody.innerHTML += totalsRow;
-  document.getElementById('advanceTotal').textContent = `Total: ${allAdvances.length} Record(s)`;
-}
-
-// Global status filter variable
-let advanceStatusFilter = 'All';
-
-function filterAdvanceByStatus(status) {
-  advanceStatusFilter = status;
-  // Update dropdown value
-  document.getElementById('advanceStatusDropdown').value = status;
-  filterAdvanceTable();
-}
-
-function filterAdvanceTable() {
-  const searchInput = document.getElementById('advanceSearchInput').value.toLowerCase();
-  const tbody = document.getElementById('advanceTableBody');
-  const rows = tbody.querySelectorAll('tr:not(.no-results):not(.totals-row)');
-  const visibleRows = [];
-  let visibleCount = 0;
-
-  rows.forEach(row => {
-    const advanceNo = row.cells[0]?.textContent.toLowerCase() || '';
-    const date = row.cells[1]?.textContent.toLowerCase() || '';
-    const employee = row.cells[2]?.textContent.toLowerCase() || '';
-    const status = row.cells[6]?.textContent.toLowerCase().trim() || '';
-
-    // Check search match
-    const searchMatches = advanceNo.includes(searchInput) ||
-                         date.includes(searchInput) ||
-                         employee.includes(searchInput);
-
-    // Check status filter
-    const statusMatches = advanceStatusFilter === 'All' ||
-                         (advanceStatusFilter === 'Open' && status.includes('open')) ||
-                         (advanceStatusFilter === 'Closed' && status.includes('closed'));
-
-    const shouldShow = searchMatches && statusMatches;
-    row.style.display = shouldShow ? '' : 'none';
-    if (shouldShow) {
-      visibleCount++;
-      visibleRows.push(row);
-    }
-  });
-
-  // Sort visible rows by created_at timestamp ascending (oldest first) - includes date and time
-  visibleRows.sort((a, b) => {
-    const timeA = a.dataset.createdAt ? new Date(a.dataset.createdAt) : new Date();
-    const timeB = b.dataset.createdAt ? new Date(b.dataset.createdAt) : new Date();
-
-    return timeA - timeB;
-  });
-
-  // Re-order rows in DOM based on sort
-  visibleRows.forEach(row => {
-    row.parentNode.appendChild(row);
-  });
-
-  // Move totals row to the end (after all data rows)
-  const totalsRowElement = tbody.querySelector('tr.totals-row');
-  if (totalsRowElement) {
-    tbody.appendChild(totalsRowElement);
-  }
-
-  // Show or hide "no results" message
-  if (visibleCount === 0 && allAdvances.length > 0) {
-    const noResults = tbody.querySelector('.no-results');
-    if (!noResults) {
-      const noResultsRow = document.createElement('tr');
-      noResultsRow.className = 'no-results';
-      noResultsRow.innerHTML = `<td colspan="9" style="text-align:center;color:#94a3b8;padding:30px;">
-        No advances match your filters.
-      </td>`;
-      tbody.appendChild(noResultsRow);
-    }
-    // Remove totals row if no results
-    const totalsRow = tbody.querySelector('tr.totals-row');
-    if (totalsRow) totalsRow.remove();
-  } else {
-    const noResults = tbody.querySelector('.no-results');
-    if (noResults) noResults.remove();
-
-    // Recalculate and update totals for visible rows
-    if (visibleCount > 0) {
-      let filteredTotal = 0;
-      let filteredAdjusted = 0;
-      let filteredBalance = 0;
-
-      rows.forEach(row => {
-        if (row.style.display !== 'none') {
-          const amount = parseFloat(row.cells[3]?.textContent.replace('$', '') || 0);
-          const adjusted = parseFloat(row.cells[4]?.textContent.replace('$', '') || 0);
-          const balance = parseFloat(row.cells[5]?.textContent.replace('$', '') || 0);
-
-          filteredTotal += amount;
-          filteredAdjusted += adjusted;
-          filteredBalance += balance;
-        }
-      });
-
-      // Update or create totals row
-      let totalsRow = tbody.querySelector('tr.totals-row');
-      if (!totalsRow && visibleCount > 0) {
-        // Create totals row if it doesn't exist
-        totalsRow = document.createElement('tr');
-        totalsRow.className = 'totals-row';
-        totalsRow.style.background = '#f0f9ff';
-        totalsRow.style.borderTop = '2px solid #cbd5e1';
-        totalsRow.style.fontWeight = '600';
-        totalsRow.style.color = '#1f2937';
-        tbody.appendChild(totalsRow);
-      }
-
-      if (totalsRow) {
-        totalsRow.innerHTML = `
-          <td colspan="3" style="text-align:right;padding:12px 10px;font-weight:600;color:#1f2937;">Totals (${visibleCount} advances)</td>
-          <td style="padding:12px 10px;font-weight:600;color:#2563eb;">{{ currency_symbol }}${parseFloat(filteredTotal).toFixed(2)}</td>
-          <td style="padding:12px 10px;font-weight:600;color:#16a34a;">{{ currency_symbol }}${parseFloat(filteredAdjusted).toFixed(2)}</td>
-          <td style="padding:12px 10px;font-weight:600;color:#dc2626;">{{ currency_symbol }}${parseFloat(filteredBalance).toFixed(2)}</td>
-          <td colspan="3"></td>
-        `;
-      }
-
-      // Update bottom record count to show filtered count
-      document.getElementById('advanceTotal').textContent = `Total: ${visibleCount} Record(s)`;
-    }
-  }
-}
-
-var currentPayrollAdvanceNo = null;
-
-function deleteAdvance(advanceNo) {
-  currentPayrollAdvanceNo = advanceNo;
-  document.getElementById('deleteAdvanceConfirmMsg').textContent = `Are you sure you want to delete advance ${advanceNo}? This action cannot be undone.`;
-  new bootstrap.Modal(document.getElementById('payrollDeleteAdvanceConfirmModal')).show();
-}
-
-function performDeleteAdvance() {
-  if (!currentPayrollAdvanceNo) return;
-  bootstrap.Modal.getInstance(document.getElementById('payrollDeleteAdvanceConfirmModal')).hide();
-
-  fetch('{{ url_for("delete_employee_advance") }}', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ advance_no: currentPayrollAdvanceNo })
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.success) {
-      location.reload();
-    } else {
-      alert('Error: ' + (data.error || 'Unknown error'));
-    }
-  })
-  .catch(e => {
-    console.error('Error:', e);
-    alert('Error deleting advance');
-  });
 }
 
 // Handle hash-based tab navigation
@@ -2282,10 +1584,6 @@ function handleHashNavigation() {
       tabContent.classList.add('active');
       const button = document.querySelector(`button[onclick="switchTab('${hash}', event)"]`);
       if (button) button.classList.add('active');
-
-      if (hash === 'employee-advance') {
-        initializeAdvanceTab();
-      }
     }
   }
 }
@@ -2300,59 +1598,16 @@ document.addEventListener('DOMContentLoaded', function() {
     originalSwitchTab.call(this, tabName, event);
     // Update hash when tab switches
     window.location.hash = tabName;
-    if (tabName === 'employee-advance') {
-      initializeAdvanceTab();
-    }
   };
 });
 
 // Listen for hash changes (browser back/forward)
 window.addEventListener('hashchange', handleHashNavigation);
 
-// Refresh advance delete permissions when page regains focus
-window.addEventListener('focus', function() {
-  const advanceTab = document.getElementById('employee-advance');
-  if (advanceTab && advanceTab.classList.contains('active')) {
-    refreshAdvanceDeletePerms();
-  }
-});
 </script>
-
-<!-- ?? Delete Advance Modal ????????????????????????????????????????????????????????? -->
-<div class="modal fade" id="payrollDeleteAdvanceModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header py-2">
-        <h6 class="modal-title">Confirm Delete Advance</h6>
-        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body pb-2">
-        <p style="color: #475569; margin-bottom: 16px;">Type <strong style="color: #dc2626;">DELETE</strong> to confirm deletion of this advance:</p>
-        <input type="text" id="payrollAdvanceDeleteText" placeholder="Type 'DELETE'" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; box-sizing: border-box; margin-bottom: 16px;">
-      </div>
-      <div class="modal-footer py-2">
-        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button id="payrollAdvanceDeleteBtn" class="btn btn-sm btn-danger" onclick="confirmPayrollDeleteAdvance()" style="opacity: 0.5;" disabled>
-          <i class="bi bi-trash me-1"></i>Delete Advance
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  const deleteInput = document.getElementById('payrollAdvanceDeleteText');
-  const deleteBtn = document.getElementById('payrollAdvanceDeleteBtn');
-
-  const updateDeleteButtonState = () => {
-    const isValid = deleteInput.value === 'DELETE';
-    deleteBtn.style.opacity = isValid ? '1' : '0.5';
-    deleteBtn.disabled = !isValid;
-  };
-
-  deleteInput.addEventListener('input', updateDeleteButtonState);
-
   // Salary delete modal validation
   const salaryDeleteInput = document.getElementById('payrollSalaryDeleteText');
   const salaryDeleteBtn = document.getElementById('payrollSalaryDeleteBtn');
@@ -2389,27 +1644,7 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 </div>
 
-<!-- Success Modal: Advance Added/Updated -->
-<div class="modal fade" id="payrollAdvanceSuccessModal" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content" style="border-top: 4px solid #10b981;">
-      <div class="modal-header py-3" style="background-color: #f0fdf4; border-bottom: 1px solid #d1fae5;">
-        <h6 class="modal-title" style="color: #059669;">
-          <i class="bi bi-check-circle me-2"></i><span id="advanceSuccessTitle">Advance Added</span>
-        </h6>
-        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body py-4" style="color: #475569;">
-        <p id="advanceSuccessMsg">Employee advance has been successfully added.</p>
-      </div>
-      <div class="modal-footer py-3">
-        <button class="btn btn-sm btn-success" data-bs-dismiss="modal">
-          <i class="bi bi-check me-1"></i>OK
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
+{% include "_advance_entry_modal.html" %}
 
 <!-- Success Modal: Salary Added/Updated -->
 <div class="modal fade" id="payrollSalarySuccessModal" tabindex="-1">
@@ -2427,29 +1662,6 @@ document.addEventListener('DOMContentLoaded', function() {
       <div class="modal-footer py-3">
         <button class="btn btn-sm btn-success" data-bs-dismiss="modal">
           <i class="bi bi-check me-1"></i>OK
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Confirmation Modal: Delete Advance Confirm -->
-<div class="modal fade" id="payrollDeleteAdvanceConfirmModal" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content" style="border-top: 4px solid #ef4444;">
-      <div class="modal-header py-3" style="background-color: #fef2f2; border-bottom: 1px solid #fee2e2;">
-        <h6 class="modal-title" style="color: #dc2626;">
-          <i class="bi bi-trash me-2"></i>Delete Advance
-        </h6>
-        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body py-4" style="color: #475569;">
-        <p id="deleteAdvanceConfirmMsg">Are you sure you want to delete this advance? This action cannot be undone.</p>
-      </div>
-      <div class="modal-footer py-3">
-        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-sm btn-danger" id="confirmDeleteAdvanceBtn" onclick="performDeleteAdvance()">
-          <i class="bi bi-trash me-1"></i>Delete
         </button>
       </div>
     </div>
@@ -2769,24 +1981,6 @@ function renderProjectDetailsModal(personName) {
             <td style="font-size:13px;">${CURRENCY_SYMBOL}${fmt(earned)}</td>
             <td style="font-size:13px;">
               ${adjusted > 0 ? `<div style="font-weight:600;margin-bottom:4px;">${CURRENCY_SYMBOL}${fmt(adjusted)}</div>` : '—'}
-              ${Array.isArray(comm.deductions_list) && comm.deductions_list.length > 0 ? (() => {
-                const uniqueDeductions = [];
-                const seenAdvNo = new Set();
-                comm.deductions_list.forEach(d => {
-                  const advNo = d.advance_no || '';
-                  if (advNo && !seenAdvNo.has(advNo)) {
-                    seenAdvNo.add(advNo);
-                    uniqueDeductions.push(d);
-                  }
-                });
-                return uniqueDeductions.map(d => {
-                  const advId = d.advance_id || '';
-                  const advNo = d.advance_no || '';
-                  const detailUrl = advId ? `/advance/${advId}` : `javascript:void(0)`;
-                  const linkStyle = advId ? 'color:#0d9488;text-decoration:underline;cursor:pointer;' : 'color:#94a3b8;cursor:not-allowed;';
-                  return `<div style="font-size:11px;margin-top:3px;${linkStyle}"><a href="${detailUrl}" style="${linkStyle}">${advNo}</a></div>`;
-                }).join('');
-              })() : ''}
             </td>
             <td style="font-size:13px;"><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
             <td>
@@ -2823,24 +2017,6 @@ function renderProjectDetailsModal(personName) {
           <td>${CURRENCY_SYMBOL}${fmt(earned)}</td>
           <td style="font-size:13px;">
             ${adjusted > 0 ? `<div style="font-weight:600;margin-bottom:4px;">${CURRENCY_SYMBOL}${fmt(adjusted)}</div>` : '—'}
-            ${Array.isArray(comm.deductions_list) && comm.deductions_list.length > 0 ? (() => {
-              const uniqueDeductions = [];
-              const seenAdvNo = new Set();
-              comm.deductions_list.forEach(d => {
-                const advNo = d.advance_no || '';
-                if (advNo && !seenAdvNo.has(advNo)) {
-                  seenAdvNo.add(advNo);
-                  uniqueDeductions.push(d);
-                }
-              });
-              return uniqueDeductions.map(d => {
-                const advId = d.advance_id || '';
-                const advNo = d.advance_no || '';
-                const detailUrl = advId ? `/advance/${advId}` : `javascript:void(0)`;
-                const linkStyle = advId ? 'color:#0d9488;text-decoration:underline;cursor:pointer;' : 'color:#94a3b8;cursor:not-allowed;';
-                return `<div style="font-size:11px;margin-top:3px;${linkStyle}"><a href="${detailUrl}" style="${linkStyle}">${advNo}</a></div>`;
-              }).join('');
-            })() : ''}
           </td>
           <td><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
           <td>
@@ -2963,24 +2139,6 @@ function renderProjectDetailsInContainer(personName, container) {
             <td style="font-size:13px;">${CURRENCY_SYMBOL}${fmt(earned)}</td>
             <td style="font-size:13px;">
               ${adjusted > 0 ? `<div style="font-weight:600;margin-bottom:4px;">${CURRENCY_SYMBOL}${fmt(adjusted)}</div>` : '—'}
-              ${Array.isArray(comm.deductions_list) && comm.deductions_list.length > 0 ? (() => {
-                const uniqueDeductions = [];
-                const seenAdvNo = new Set();
-                comm.deductions_list.forEach(d => {
-                  const advNo = d.advance_no || '';
-                  if (advNo && !seenAdvNo.has(advNo)) {
-                    seenAdvNo.add(advNo);
-                    uniqueDeductions.push(d);
-                  }
-                });
-                return uniqueDeductions.map(d => {
-                  const advId = d.advance_id || '';
-                  const advNo = d.advance_no || '';
-                  const detailUrl = advId ? `/advance/${advId}` : `javascript:void(0)`;
-                  const linkStyle = advId ? 'color:#0d9488;text-decoration:underline;cursor:pointer;' : 'color:#94a3b8;cursor:not-allowed;';
-                  return `<div style="font-size:11px;margin-top:3px;${linkStyle}"><a href="${detailUrl}" style="${linkStyle}">${advNo}</a></div>`;
-                }).join('');
-              })() : ''}
             </td>
             <td style="font-size:13px;"><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
             <td>
@@ -3017,24 +2175,6 @@ function renderProjectDetailsInContainer(personName, container) {
           <td>${CURRENCY_SYMBOL}${fmt(earned)}</td>
           <td style="font-size:13px;">
             ${adjusted > 0 ? `<div style="font-weight:600;margin-bottom:4px;">${CURRENCY_SYMBOL}${fmt(adjusted)}</div>` : '—'}
-            ${Array.isArray(comm.deductions_list) && comm.deductions_list.length > 0 ? (() => {
-              const uniqueDeductions = [];
-              const seenAdvNo = new Set();
-              comm.deductions_list.forEach(d => {
-                const advNo = d.advance_no || '';
-                if (advNo && !seenAdvNo.has(advNo)) {
-                  seenAdvNo.add(advNo);
-                  uniqueDeductions.push(d);
-                }
-              });
-              return uniqueDeductions.map(d => {
-                const advId = d.advance_id || '';
-                const advNo = d.advance_no || '';
-                const detailUrl = advId ? `/advance/${advId}` : `javascript:void(0)`;
-                const linkStyle = advId ? 'color:#0d9488;text-decoration:underline;cursor:pointer;' : 'color:#94a3b8;cursor:not-allowed;';
-                return `<div style="font-size:11px;margin-top:3px;${linkStyle}"><a href="${detailUrl}" style="${linkStyle}">${advNo}</a></div>`;
-              }).join('');
-            })() : ''}
           </td>
           <td><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
           <td>
@@ -3156,24 +2296,6 @@ function renderProjectDetailsByPerson(filtered, personName, tbody) {
             <td style="font-size:13px;">${CURRENCY_SYMBOL}${fmt(earned)}</td>
             <td style="font-size:13px;">
               ${adjusted > 0 ? `<div style="font-weight:600;margin-bottom:4px;">${CURRENCY_SYMBOL}${fmt(adjusted)}</div>` : '—'}
-              ${Array.isArray(comm.deductions_list) && comm.deductions_list.length > 0 ? (() => {
-                const uniqueDeductions = [];
-                const seenAdvNo = new Set();
-                comm.deductions_list.forEach(d => {
-                  const advNo = d.advance_no || '';
-                  if (advNo && !seenAdvNo.has(advNo)) {
-                    seenAdvNo.add(advNo);
-                    uniqueDeductions.push(d);
-                  }
-                });
-                return uniqueDeductions.map(d => {
-                  const advId = d.advance_id || '';
-                  const advNo = d.advance_no || '';
-                  const detailUrl = advId ? `/advance/${advId}` : `javascript:void(0)`;
-                  const linkStyle = advId ? 'color:#0d9488;text-decoration:underline;cursor:pointer;' : 'color:#94a3b8;cursor:not-allowed;';
-                  return `<div style="font-size:11px;margin-top:3px;${linkStyle}"><a href="${detailUrl}" style="${linkStyle}">${advNo}</a></div>`;
-                }).join('');
-              })() : ''}
             </td>
             <td style="font-size:13px;"><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
             <td>
@@ -3216,24 +2338,6 @@ function renderProjectDetailsByPerson(filtered, personName, tbody) {
           <td>${CURRENCY_SYMBOL}${fmt(earned)}</td>
           <td style="font-size:13px;">
             ${adjusted > 0 ? `<div style="font-weight:600;margin-bottom:4px;">${CURRENCY_SYMBOL}${fmt(adjusted)}</div>` : '—'}
-            ${Array.isArray(comm.deductions_list) && comm.deductions_list.length > 0 ? (() => {
-              const uniqueDeductions = [];
-              const seenAdvNo = new Set();
-              comm.deductions_list.forEach(d => {
-                const advNo = d.advance_no || '';
-                if (advNo && !seenAdvNo.has(advNo)) {
-                  seenAdvNo.add(advNo);
-                  uniqueDeductions.push(d);
-                }
-              });
-              return uniqueDeductions.map(d => {
-                const advId = d.advance_id || '';
-                const advNo = d.advance_no || '';
-                const detailUrl = advId ? `/advance/${advId}` : `javascript:void(0)`;
-                const linkStyle = advId ? 'color:#0d9488;text-decoration:underline;cursor:pointer;' : 'color:#94a3b8;cursor:not-allowed;';
-                return `<div style="font-size:11px;margin-top:3px;${linkStyle}"><a href="${detailUrl}" style="${linkStyle}">${advNo}</a></div>`;
-              }).join('');
-            })() : ''}
           </td>
           <td><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
           <td>

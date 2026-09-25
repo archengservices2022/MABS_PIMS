@@ -276,7 +276,7 @@ def _generate_co_firebase_id() -> str:
     """Generate unique Firebase ID for change order."""
     return f"co_{uuid.uuid4().hex[:20]}"
 
-def _sync_contract_value_from_cos(project_id: str, project: dict, change_orders=None) -> bool:
+def _sync_contract_value_from_cos(project_id: str, project: dict, change_orders=None, persist: bool = True) -> bool:
     cos = project.get("change_orders") if change_orders is None else change_orders
     if not _normalise_list(cos):
         return False
@@ -288,11 +288,12 @@ def _sync_contract_value_from_cos(project_id: str, project: dict, change_orders=
     project["base_contract_value"] = base_value
     project["contract_value"] = expected_value
     project["updated_at"] = datetime.now(timezone.utc).isoformat()
-    fb_update(f"/projects/{project_id}", {
-        "base_contract_value": base_value,
-        "contract_value": expected_value,
-        "updated_at": project["updated_at"],
-    })
+    if persist:
+        fb_update(f"/projects/{project_id}", {
+            "base_contract_value": base_value,
+            "contract_value": expected_value,
+            "updated_at": project["updated_at"],
+        })
     return True
 
 def _is_co_stage(s: dict) -> bool:
@@ -818,11 +819,68 @@ def _migrate_add_co_firebase_ids():
         log.error(f"✗ Error during CO firebase_id migration: {e}")
 
 # ── Employee Advance Commission Helpers ────────────────────────────────────
+def _norm_person_name(name) -> str:
+    """Comparable form of a person name: case-insensitive, underscores read as spaces."""
+    return " ".join(str(name or "").replace("_", " ").split()).lower()
+
+def _resolve_commission_name(employee_name: str) -> str:
+    """The salesperson name an employee's commissions are stored under.
+
+    Only the SAME name counts (ignoring case, extra spaces and underscores, since a project
+    shows the login name with underscores turned into spaces). Two different people such as
+    "Asha" and "Asha ash" never share commissions, even if a user record carries both names.
+    """
+    given = (employee_name or "").strip()
+    if not given:
+        return given
+    try:
+        wanted = _norm_person_name(given)
+        all_proj_comm = fb_get("/project_commissions") or {}
+        found = []
+        if isinstance(all_proj_comm, dict):
+            for comm in all_proj_comm.values():
+                sp = (comm.get("salesperson") or "").strip() if isinstance(comm, dict) else ""
+                if sp and _norm_person_name(sp) == wanted and sp not in found:
+                    found.append(sp)
+        if given in found:
+            return given
+        if found:
+            return found[0]
+    except Exception as e:
+        log.error(f"Error resolving commission name for {employee_name}: {e}")
+    return given
+
+def _employee_full_name(employee_name: str) -> str:
+    """The employee's full name for display (e.g. "Asha ash"), given the short login name ("Asha").
+
+    Picks the longest of the user's username / name / display name; falls back to what was given.
+    """
+    given = (employee_name or "").strip()
+    if not given:
+        return given
+    try:
+        wanted = _norm_person_name(given)
+        users = _load_all_users()
+        fulls = []
+        for u in users:
+            names = [str(u.get(k) or "").strip() for k in ("username", "name", "display_name")]
+            names = [n for n in names if n]
+            if not names:
+                continue
+            best = max(names, key=lambda n: len(n.replace("_", " "))).replace("_", " ")
+            fulls.append(best)
+            if wanted in {_norm_person_name(n) for n in names}:
+                return best
+    except Exception as e:
+        log.error(f"Error resolving full name for {employee_name}: {e}")
+    return given
+
 def _calculate_employee_pending_commission(salesperson_name: str) -> float:
     """Calculate pending (unpaid) commission using same filters as Commission Details page"""
     try:
         if not salesperson_name:
             return 0.0
+        salesperson_name = _resolve_commission_name(salesperson_name)
 
         # Use same filtering logic as commission_detail() page
         all_proj_commissions = fb_get("/project_commissions") or {}
@@ -876,6 +934,29 @@ def _calculate_employee_pending_commission(salesperson_name: str) -> float:
         log.error(f"Error calculating pending commission for {salesperson_name}: {e}")
         return 0.0
 
+_COMMISSION_STUB_KEYS = {"deductions", "total_deducted", "remaining_due", "deduction_status", "deductions_list", "paid_at", "updated_at"}
+
+def _remove_commission_stubs() -> int:
+    """Delete bare /project_commissions records (only deduction bookkeeping, no commission_amount).
+
+    They were left behind by adjustment recalculation on projects that never had a
+    commission record, and they are not real commissions.
+    """
+    removed = 0
+    try:
+        raw = fb_get("/project_commissions") or {}
+        if isinstance(raw, dict):
+            for pid, rec in raw.items():
+                if isinstance(rec, dict) and "commission_amount" not in rec and set(rec.keys()) <= _COMMISSION_STUB_KEYS:
+                    fb_delete(f"/project_commissions/{pid}")
+                    removed += 1
+        if removed:
+            log.info(f"Removed {removed} bare project_commissions record(s)")
+            cache_bust("commission", "financial")
+    except Exception as e:
+        log.error(f"Error removing bare commission records: {e}")
+    return removed
+
 def _recalculate_project_deductions_for_salesperson(salesperson_name: str):
     """Recalculate per-project deductions for a salesperson after adjustment changes"""
     try:
@@ -909,14 +990,14 @@ def _recalculate_project_deductions_for_salesperson(salesperson_name: str):
             if (proj_data.get("sales", "").strip() or "").lower() != salesperson_name.lower():
                 continue
 
-            proj_comm = all_proj_commissions.get(proj_id, {})
-            if not isinstance(proj_comm, dict):
-                continue
+            proj_comm = all_proj_commissions.get(proj_id)
+            if not isinstance(proj_comm, dict) or "commission_amount" not in proj_comm:
+                continue   # no commission on this project - never create a bare record for it
 
             # Update deductions for this project
             new_deductions = deductions_by_project.get(proj_id, {})
             total_deducted = sum(new_deductions.values())
-            remaining_due = max(_safe_float(proj_comm.get("commission_amount", 0)) - total_deducted, 0)
+            remaining_due = max(_safe_float(proj_comm.get("commission_amount", 0)) - _safe_float(proj_comm.get("paid_amount", 0)) - total_deducted, 0)
 
             # Determine status
             if remaining_due <= 0:
@@ -962,6 +1043,40 @@ def _recalculate_project_deductions_for_salesperson(salesperson_name: str):
     except Exception as e:
         log.error(f"Error recalculating project deductions for {salesperson_name}: {e}")
 
+def _plain_number(val) -> str:
+    """100.0 -> "100", 3200.5 -> "3200.5" (no currency symbol, no trailing zeros)."""
+    n = round(_safe_float(val), 2)
+    return str(int(n)) if n == int(n) else f"{n:g}" if abs(n) < 1e6 else f"{n:.2f}"
+
+def _commission_calc_label(comm: dict, project_number: str, applied_amount: float, project: dict = None, with_amount: bool = True) -> str:
+    """Client name plus how the commission was worked out, e.g. "Joshua Thweatt (3200*18.75%)".
+
+    The amount adjusted against this project is always appended, e.g. "... (3200*18.75%) - 600 adjusted".
+    """
+    if not isinstance(comm, dict):
+        return project_number
+    project = project if isinstance(project, dict) else {}
+    # Same sources as the Commission Details page: client and contract value come from the project
+    client = (comm.get("company_name") or comm.get("client_name")
+              or project.get("client_name") or project.get("company_name") or "").strip() or project_number
+    contract = _safe_float(project.get("contract_value") or comm.get("contract_value") or 0)
+    earned = _safe_float(comm.get("commission_amount", 0))
+    rate = (comm.get("rate_display") or "").replace("(default)", "").strip()
+    rate_num = _safe_float(rate.replace("%", "").strip()) if "%" in rate else 0.0
+    if contract > 0 and rate_num > 0:
+        calc = f"{_plain_number(contract)}*{_plain_number(rate_num)}%"
+    elif contract > 0 and earned > 0:
+        # Fixed-amount commission: show the percentage of the contract it works out to
+        calc = f"{_plain_number(contract)}*{_plain_number(earned / contract * 100)}%"
+    elif earned > 0:
+        calc = f"Fixed {_plain_number(earned)}"
+    else:
+        calc = ""
+    label = f"{client} ({calc})" if calc else client
+    if with_amount and applied_amount > 0:
+        label += f" - {_plain_number(applied_amount)} adjusted"
+    return label
+
 def _enrich_advance_adjustments_with_commission_projects(advances_list):
     """Attach the project number(s) and per-project amount a Commission Deduction adjustment
     was applied against, so the Advance List can show which project's commission paid off the advance."""
@@ -973,6 +1088,9 @@ def _enrich_advance_adjustments_with_commission_projects(advances_list):
             if isinstance(pdata, dict)
         }
 
+        all_proj_comm = fb_get("/project_commissions") or {}
+        if not isinstance(all_proj_comm, dict):
+            all_proj_comm = {}
         all_cpay = fb_get("/commission_payments") or {}
         breakdown_by_adjustment_id = {}
         if isinstance(all_cpay, dict):
@@ -989,7 +1107,12 @@ def _enrich_advance_adjustments_with_commission_projects(advances_list):
                     proj_num = proj_number_by_id.get(pid, "")
                     if proj_num and proj_num not in seen_proj_nums:
                         seen_proj_nums.add(proj_num)
-                        breakdown.append({"project_number": proj_num, "amount": _safe_float(amt)})
+                        breakdown.append({
+                            "project_number": proj_num,
+                            "amount": _safe_float(amt),
+                            "label": _commission_calc_label(all_proj_comm.get(pid), proj_num, _safe_float(amt), all_projects.get(pid)),
+                            "label_plain": _commission_calc_label(all_proj_comm.get(pid), proj_num, _safe_float(amt), all_projects.get(pid), with_amount=False),
+                        })
 
         for adv in advances_list:
             adjustments = adv.get("adjustments")
@@ -1076,6 +1199,39 @@ def _cleanup_unpaid_commissions():
                             log.info(f"Cleaned up unpaid commission expense {exp_id} (status: {exp_status})")
     except Exception as e:
         log.error(f"Error cleaning up unpaid commissions: {e}")
+
+def _migrate_adjustment_expense_labels() -> int:
+    """Give existing advance-adjustment expenses the current wording.
+
+    Name: "Advance Adjustment for <employee>" (was "ADV-00010 - <employee>"),
+    Category: "Commission Adjustment" (was "Commission Deduction").
+    Idempotent, so it is safe to run repeatedly.
+    """
+    changed = 0
+    try:
+        expenses = fb_get("/balance_sheet_expenses") or {}
+        if isinstance(expenses, dict):
+            for exp_id, exp in expenses.items():
+                if not isinstance(exp, dict) or not (exp.get("is_adjustment") or exp.get("vendor") == "Advance Adjustments"):
+                    continue
+                updates = {}
+                employee = (exp.get("employee_name") or "").strip()
+                if exp.get("category") == "Commission Deduction":
+                    updates["category"] = "Commission Adjustment"
+                if employee and exp.get("expense_name") != f"Advance Adjustment for {_employee_full_name(employee)}":
+                    updates["expense_name"] = f"Advance Adjustment for {_employee_full_name(employee)}"
+                desc = exp.get("description") or ""
+                if desc.startswith("Commission Deduction"):
+                    updates["description"] = desc.replace("Commission Deduction", "Commission Adjustment", 1)
+                if updates:
+                    fb_update(f"/balance_sheet_expenses/{exp_id}", updates)
+                    changed += 1
+        if changed:
+            log.info(f"Renamed {changed} advance-adjustment expense(s) to the current wording")
+            cache_bust("financial")
+    except Exception as e:
+        log.error(f"Error renaming adjustment expenses: {e}")
+    return changed
 
 def _normalize_all_expense_names():
     """Normalize all expense names to Type: Name format for consistency."""
@@ -1843,6 +1999,23 @@ def dashboard():
             st = p.get("status") or "Not Started"
             proj_status_counts[st] = proj_status_counts.get(st, 0) + 1
 
+    # Project Pipeline: every status the Projects tab has, with its project count and total
+    # contract value. Uses the Projects tab's own loader (read-only here) so counts and
+    # amounts always agree with that page.
+    import copy as _copy
+    _pipe_items = _load_project_items(_copy.deepcopy(projects), invoices, persist=False)
+    _PIPELINE_ORDER = ["Not Started", "In Progress",
+                       "Sent out_Invoiced", "Sent out_Not Invoiced",
+                       "invoiced_Not paid yet", "invoiced_Partially paid", "invoiced_Fully paid",
+                       "On Hold", "Scope Disagreement", "Project Completion Issue", "Cancelled"]
+    _pipe = {st: {"status": st, "count": 0, "amount": 0.0} for st in _PIPELINE_ORDER}
+    for _pi in _pipe_items:
+        _st = _pi.get("status") or "Not Started"
+        _row = _pipe.setdefault(_st, {"status": _st, "count": 0, "amount": 0.0})   # any other status in use
+        _row["count"] += 1
+        _row["amount"] += _safe_float(_pi.get("contract_value", 0))
+    proj_pipeline = list(_pipe.values())
+
     # ── Alert counts — show all warnings (not filtered by year) ──────────────────────────────────────
     today_str     = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     week_str      = (datetime.now(COMPANY_TZ) + timedelta(days=7)).strftime("%Y-%m-%d")
@@ -2362,6 +2535,7 @@ def dashboard():
         pipeline=pipeline,
         inv_status_labels=json.dumps(list(inv_status_counts.keys())),
         inv_status_data=json.dumps(list(inv_status_counts.values())),
+        proj_pipeline=proj_pipeline,
         proj_status_labels=json.dumps(list(proj_status_counts.keys())),
         proj_status_data=json.dumps(list(proj_status_counts.values())),
         ai_enabled=bool(_get_ai_client()),
@@ -3564,19 +3738,20 @@ def _redirect_project_detail(project_id, anchor=""):
         url += anchor
     return redirect(url)
 
-# ── Routes: Projects ──────────────────────────────────────────────────────────
-@app.route("/projects")
-@role_required("projects")
-def projects():
-    raw = fb_get("/projects") or {}
-    raw_inv = fb_get("/invoices") or {}
+def _load_project_items(raw, raw_inv, persist=True):
+    """Every project as the Projects page lists it: contract value synced from approved change
+    orders and the status repaired when the amount paid contradicts it.
+
+    ``persist=False`` applies the same corrections in memory only (the dashboard uses this so
+    it shows the very same statuses and amounts without writing anything).
+    """
     items = []
     _now_iso = datetime.now(timezone.utc).isoformat()
     for pid, pdata in (raw.items() if isinstance(raw, dict) else []):
         if pdata and isinstance(pdata, dict):
             pdata["firebase_id"] = pid
             pdata["_has_overdue"] = _project_has_overdue_stage(pdata.get("payment_stages"), raw_inv)
-            _sync_contract_value_from_cos(pid, pdata)
+            _sync_contract_value_from_cos(pid, pdata, persist=persist)
             # Repair status if amount_paid contradicts stored status
             _amt   = _safe_float(pdata.get("amount_paid", 0))
             _cv    = _safe_float(pdata.get("contract_value", 0))
@@ -3589,22 +3764,35 @@ def projects():
                 if _cv > 0 and _amt >= _cv - 0.01:
                     # Fully paid — also migrates legacy "Completed" → "invoiced_Fully paid"
                     pdata["status"] = "invoiced_Fully paid"
-                    fb_update(f"/projects/{pid}", {"status": "invoiced_Fully paid", "updated_at": _now_iso})
+                    if persist:
+                        fb_update(f"/projects/{pid}", {"status": "invoiced_Fully paid", "updated_at": _now_iso})
                 elif _cv > 0 and 0 < _amt < _cv - 0.01 and _st not in (_MANUAL_ST | {"invoiced_Partially paid"}):
                     # Partial payment — upgrades from any status including "invoiced_Not paid yet"
                     pdata["status"] = "invoiced_Partially paid"
-                    fb_update(f"/projects/{pid}", {"status": "invoiced_Partially paid", "updated_at": _now_iso})
+                    if persist:
+                        fb_update(f"/projects/{pid}", {"status": "invoiced_Partially paid", "updated_at": _now_iso})
                 elif _amt == 0 and _st in ("Not Started", "In Progress", "Active"):
                     # Invoice created but $0 collected yet
                     _stages = pdata.get("payment_stages") or []
                     if any(isinstance(s, dict) and s.get("status") == "Invoiced" for s in _stages):
                         pdata["status"] = "invoiced_Not paid yet"
-                        fb_update(f"/projects/{pid}", {"status": "invoiced_Not paid yet", "updated_at": _now_iso})
+                        if persist:
+                            fb_update(f"/projects/{pid}", {"status": "invoiced_Not paid yet", "updated_at": _now_iso})
                 elif _amt > 0 and _st == "Not Started":
                     pdata["status"] = "In Progress"
-                    fb_update(f"/projects/{pid}", {"status": "In Progress", "updated_at": _now_iso})
+                    if persist:
+                        fb_update(f"/projects/{pid}", {"status": "In Progress", "updated_at": _now_iso})
             items.append(pdata)
     items.sort(key=_project_number_sort_key, reverse=True)
+    return items
+
+# ── Routes: Projects ──────────────────────────────────────────────────────────
+@app.route("/projects")
+@role_required("projects")
+def projects():
+    raw = fb_get("/projects") or {}
+    raw_inv = fb_get("/invoices") or {}
+    items = _load_project_items(raw, raw_inv)
 
     search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
@@ -10836,25 +11024,8 @@ def payroll():
             commission_by_period[_sp][_period] = \
                 commission_by_period[_sp].get(_period, 0.0) + _comm_amt
 
-    # Load employee advances for immediate display
-    _all_advances = fb_get("/employee_advances") or {}
-    advances_list = []
-    if isinstance(_all_advances, dict):
-        for adv_id, adv_data in _all_advances.items():
-            if isinstance(adv_data, dict):
-                adv_copy = dict(adv_data)
-                adv_copy['id'] = adv_id
-                advances_list.append(adv_copy)
-    _enrich_advance_adjustments_with_commission_projects(advances_list)
-    advances_list.sort(key=lambda x: x.get("date", ""), reverse=True)
-
-    # Check delete permissions for advances
-    _uid  = session.get("user_uid", "")
-    _role = normalize_role(session.get("user_role", ""))
-    if _role in ("admin", "accountant"):
-        _advance_del_perms = [a.get("advance_no","") for a in advances_list]
-    else:
-        _advance_del_perms = []
+    # Per-employee Advance & Commission Adjustment summary for the payroll tab
+    advance_summary = _build_advance_employee_summary()
 
     return render_template("payroll.html",
         employee_filter=employee_filter,
@@ -10865,8 +11036,7 @@ def payroll():
         commission_by_period=commission_by_period,
         comm_paid_set=list(comm_paid_set),
         comm_paid_amounts=comm_paid_amounts,
-        advances=json.dumps(advances_list),
-        advance_delete_perms=_advance_del_perms,
+        advance_summary=advance_summary,
         salary_delete_perms=[])
 
 # ── Payroll Export Routes ─────────────────────────────────────────────────────
@@ -13228,65 +13398,6 @@ def _reconcile_advance_adjusted(advance_data, advance_id=None):
             )
     return advance_data
 
-@app.route("/payroll/advance/<advance_id>")
-@login_required
-def advance_detail(advance_id):
-    """Display detailed view of an employee advance"""
-    try:
-        advances_raw = fb_get("/employee_advances") or {}
-        advance_data = None
-        advance_no = None
-
-        if isinstance(advances_raw, dict):
-            for aid, adata in advances_raw.items():
-                if aid == advance_id and isinstance(adata, dict):
-                    advance_data = adata
-                    advance_no = adata.get('advance_no', 'N/A')
-                    break
-
-        if not advance_data:
-            abort(404)
-
-        _reconcile_advance_adjusted(advance_data, advance_id)
-
-        # Get currency symbol from settings or default
-        settings = fb_get("/settings") or {}
-        currency_symbol = settings.get('currency_symbol', '$')
-
-        # Enhance adjustments with proper display names if missing
-        adjustments = advance_data.get('adjustments', {})
-        if isinstance(adjustments, dict):
-            all_users = _load_all_users()
-            for adj_id, adj_data in adjustments.items():
-                if isinstance(adj_data, dict) and not adj_data.get('adjusted_by_name'):
-                    # Look up the display name from users
-                    adjusted_by_username = adj_data.get('adjusted_by', 'Admin')
-                    for user in all_users:
-                        if user.get("username", "").strip().lower() == adjusted_by_username.lower():
-                            adj_data['adjusted_by_name'] = user.get("name", user.get("display_name", adjusted_by_username))
-                            break
-                    if not adj_data.get('adjusted_by_name'):
-                        adj_data['adjusted_by_name'] = adjusted_by_username
-
-        _enrich_advance_adjustments_with_commission_projects([{"adjustments": adjustments}])
-
-        return render_template('advance_detail.html',
-            advance_id=advance_id,
-            advance_no=advance_no,
-            employee_name=advance_data.get('employee_name', 'Unknown'),
-            date=advance_data.get('date', ''),
-            amount=advance_data.get('amount', 0),
-            adjusted=advance_data.get('adjusted', 0),
-            reason=advance_data.get('reason', '') or '—',
-            payment_method=advance_data.get('payment_method', 'N/A') or 'N/A',
-            status=advance_data.get('status', 'Open'),
-            adjustments=adjustments,
-            currency_symbol=currency_symbol
-        )
-    except Exception as e:
-        log.error(f"Error displaying advance detail: {e}")
-        abort(500)
-
 @app.route("/get_employees", methods=["GET"])
 @login_required
 def get_employees():
@@ -13571,33 +13682,59 @@ def migrate_populate_commission_deductions():
         log.error(f"Migration error: {e}")
         return jsonify({"error": str(e)}), 500
 
+def _next_advance_no() -> str:
+    """Next ADV-00001 style number (highest existing number + 1)."""
+    highest = 0
+    advances_raw = fb_get("/employee_advances") or {}
+    if isinstance(advances_raw, dict):
+        for adata in advances_raw.values():
+            if isinstance(adata, dict):
+                m = re.match(r"ADV-(\d+)$", (adata.get("advance_no") or "").strip())
+                if m:
+                    highest = max(highest, int(m.group(1)))
+    return f"ADV-{highest + 1:05d}"
+
 @app.route("/add_employee_advance", methods=["POST"])
 @login_required
 def add_employee_advance():
     """Add a new employee advance"""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
+
+        employee_name = (data.get("employee_name") or "").strip()
+        amount = round(_safe_float(data.get("amount", 0)), 2)
+        if not employee_name:
+            return jsonify({"success": False, "error": "Employee name is required"}), 400
+        if not (data.get("date") or "").strip():
+            return jsonify({"success": False, "error": "Date is required"}), 400
+        if amount <= 0:
+            return jsonify({"success": False, "error": "Advance amount must be greater than 0"}), 400
+
+        # Generate the advance number on the server so two people adding at once never collide
+        advance_no = (data.get("advance_no") or "").strip() or _next_advance_no()
 
         # Create advance record
         advance_data = {
-            "advance_no": data.get("advance_no", ""),
+            "advance_no": advance_no,
             "date": data.get("date", ""),
-            "employee_name": data.get("employee_name", ""),
-            "amount": float(data.get("amount", 0)),
-            "reason": data.get("reason", ""),
+            "employee_name": employee_name,
+            "amount": amount,
+            "reason": (data.get("reason") or "").strip(),
+            "remarks": (data.get("remarks") or "").strip(),
             "payment_method": data.get("payment_method", "Cash"),
             "status": "Open",
             "adjusted": 0,
             "adjustments": {},
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "created_by": session.get("username", "Unknown")
+            "created_by": session.get("user_name") or session.get("username") or "Unknown"
         }
 
         # Use fb_push to create new record with auto-generated ID
         advance_id = fb_push("/employee_advances", advance_data)
         log.info(f"Employee advance created: {advance_data['advance_no']}")
+        cache_bust("financial")
 
-        return jsonify({"success": True, "advance_id": advance_id})
+        return jsonify({"success": True, "advance_id": advance_id, "advance_no": advance_no})
     except Exception as e:
         log.error(f"Error adding advance: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -13623,28 +13760,57 @@ def update_employee_advance():
         if not advance_data:
             return jsonify({"success": False, "error": "Advance not found"}), 404
 
-        # Calculate new balance
-        new_amount = float(data.get("amount", 0))
+        # Adjustments belong to the employee's overall balance, so the advances together just
+        # have to keep covering everything adjusted so far
+        new_amount = round(_safe_float(data.get("amount", 0)), 2)
         adjusted = float(advance_data.get("adjusted", 0))
+        employee_name = (advance_data.get("employee_name") or "").strip()
+        siblings = [(fid, fd) for fid, fd in _employee_advances(employee_name) if fid != advance_id]
+        total_after = round(new_amount + sum(_safe_float(fd.get("amount", 0)) for _, fd in siblings), 2)
+        total_adjusted = round(adjusted + sum(_safe_float(fd.get("adjusted", 0)) for _, fd in siblings), 2)
         new_balance = new_amount - adjusted
+        if new_amount <= 0:
+            return jsonify({"success": False, "error": "Advance amount must be greater than 0"}), 400
+        if total_after < total_adjusted - 0.005:
+            return jsonify({
+                "success": False,
+                "error": f"The employee's advances would total ${total_after:.2f}, which is less than the ${total_adjusted:.2f} already adjusted. Delete or reduce an adjustment first."
+            }), 400
 
         # Update fields
         update_fields = {
             "date": data.get("date", ""),
             "employee_name": data.get("employee_name", ""),
             "amount": new_amount,
-            "reason": data.get("reason", ""),
+            "reason": (data.get("reason") or "").strip(),
+            "remarks": (data.get("remarks") or "").strip(),
             "payment_method": data.get("payment_method", "Cash"),
             "updated_at": datetime.now(timezone.utc).isoformat(),
-            "updated_by": session.get("username", "Unknown")
+            "updated_by": session.get("user_name") or session.get("username") or "Unknown"
         }
 
-        # If balance > 0, reopen the advance (only close when balance = 0)
-        if new_balance > 0:
-            update_fields["status"] = "Open"
+        # Keep the status in step with the balance (reopen if money is owed, close when fully adjusted)
+        update_fields["status"] = "Open" if new_balance > 0.005 else "Closed"
 
         fb_update(f"/employee_advances/{advance_id}", update_fields)
         log.info(f"Employee advance updated: {data.get('advance_no', '')}")
+
+        # If this advance now carries more than it is worth, the excess simply carries on
+        # against the employee's other advances
+        if adjusted > new_amount + 0.005:
+            mine = dict((fb_get(f"/employee_advances/{advance_id}") or {}).get("adjustments") or {})
+            items, running = [], adjusted
+            for k, v in sorted(mine.items(), key=lambda kv: ((kv[1].get("date") or ""), (kv[1].get("created_at") or "")), reverse=True):
+                if running <= new_amount + 0.005:
+                    break
+                if isinstance(v, dict):
+                    items.append((k, v))
+                    running = round(running - _safe_float(v.get("amount", 0)), 2)
+            payload, status, _moved = _reapply_adjustment_pieces(employee_name, advance_id, advance_data.get("advance_no", ""), items, exclude_source=False)
+            if status != 200 or not payload.get("success"):
+                return jsonify(payload), status
+        _employee_advances(employee_name)   # re-syncs every advance's adjusted total / status
+        cache_bust("commission", "financial")
 
         return jsonify({"success": True})
     except Exception as e:
@@ -13745,7 +13911,7 @@ def _sync_adjustment_to_expense(adjustment_id, adjustment, advance_data, advance
 
         # Determine expense category
         category_map = {
-            "Commission Deduction": "Commission Deduction",
+            "Commission Deduction": "Commission Adjustment",
             "Loan Deduction": "Loan Deduction",
             "Tax Deduction": "Tax Deduction",
             "Other Deduction": "Other"
@@ -13793,7 +13959,8 @@ def _sync_adjustment_to_expense(adjustment_id, adjustment, advance_data, advance
 
         # Prepare expense record data
         advance_no = advance_data.get("advance_no", "").strip()
-        expense_name = f"{advance_no} - {employee_name}"
+        full_name = _employee_full_name(employee_name)
+        expense_name = f"Advance Adjustment for {full_name}"
 
         # Get the proper name of who adjusted it
         adjusted_by_username = adjustment.get("adjusted_by", "Admin")
@@ -13812,7 +13979,7 @@ def _sync_adjustment_to_expense(adjustment_id, adjustment, advance_data, advance
             adjusted_by_name = adjusted_by_username
 
         # Set description as adjustment type - employee name
-        description = f"{adjustment_type} - {employee_name}" if adjustment_type else expense_name
+        description = f"{_adjustment_type_label(adjustment_type)} - {full_name}" if adjustment_type else expense_name
 
         # Get exchange rate from adjustment
         adjustment_exchange_rate = _safe_float(adjustment.get("exchange_rate", 110)) or 110
@@ -13841,6 +14008,10 @@ def _sync_adjustment_to_expense(adjustment_id, adjustment, advance_data, advance
             "is_adjustment": True,
             "read_only_amount": True,
             "remarks": adjustment_remarks,
+            # Kept so a deleted adjustment can be restored exactly as it was
+            "reference": adjustment.get("reference") or "",
+            "group_id": adjustment.get("group_id") or None,
+            "adjustment_created_at": adjustment.get("created_at") or None,
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
 
@@ -13921,12 +14092,9 @@ def _update_linked_expense_date(linked_expense_id, new_date):
         log.error(f"Error updating linked expense date: {e}")
     return False
 
-@app.route("/add_advance_adjustment", methods=["POST"])
-@login_required
-def add_advance_adjustment():
+def _add_advance_adjustment_core(data):
     """Add an adjustment to an employee advance"""
     try:
-        data = request.get_json()
         advance_no = data.get("advance_no", "")
 
         # Find the advance by advance_no
@@ -13942,7 +14110,7 @@ def add_advance_adjustment():
                     break
 
         if not advance_id:
-            return jsonify({"success": False, "error": "Advance not found"}), 404
+            return ({"success": False, "error": "Advance not found"}), 404
 
         _reconcile_advance_adjusted(advance_data, advance_id)
 
@@ -13981,35 +14149,42 @@ def add_advance_adjustment():
             "exchange_rate": exchange_rate,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
+        # Ties the pieces of one employee-level adjustment that was spread across several advances
+        if data.get("group_id"):
+            adjustment["group_id"] = data["group_id"]
+        # When an adjustment is moved to another advance it keeps who entered it, and when
+        for _k in ("created_at", "adjusted_by", "adjusted_by_name", "exchange_rate"):
+            if data.get(_k):
+                adjustment[_k] = data[_k]
 
         # Update advance: add adjustment and update adjusted amount
         current_adjusted = float(advance_data.get("adjusted", 0))
         advance_amount = float(advance_data.get("amount", 0))
-        new_adjusted = current_adjusted + adjustment_amount
+        new_adjusted = round(current_adjusted + adjustment_amount, 2)
         new_balance = advance_amount - new_adjusted
 
         # Validate that total adjusted doesn't exceed advance amount
-        if new_adjusted > advance_amount:
-            return jsonify({
+        if new_adjusted > advance_amount + 0.005:
+            return ({
                 "success": False,
                 "error": f"Cannot add adjustment. Total adjusted (${new_adjusted:.2f}) would exceed advance amount (${advance_amount:.2f}). Maximum adjustment: ${advance_amount - current_adjusted:.2f}"
             }), 400
 
         # Check if advance should be closed
-        new_status = "Closed" if new_balance <= 0 else advance_data.get("status", "Open")
+        new_status = "Closed" if new_balance <= 0.005 else advance_data.get("status", "Open")
 
         # VALIDATE COMMISSION DEDUCTION FIRST (before saving advance)
         adjustment_type = data.get("type", "").strip()
         log.info(f"ADD_ADVANCE_ADJUSTMENT: adjustment_type='{adjustment_type}', amount=${adjustment_amount:.2f}")
 
         if adjustment_type == "Commission Deduction":
-            employee_name = advance_data.get("employee_name", "").strip()
+            employee_name = _resolve_commission_name(advance_data.get("employee_name", "").strip())
             log.info(f"Commission Deduction validation: employee_name='{employee_name}', advance_data keys={list(advance_data.keys())}")
 
             # CRITICAL: Employee name is required for commission deduction validation
             if not employee_name:
                 log.error(f"CRITICAL: Commission deduction attempted with NO employee_name! Advance data: {advance_data}")
-                return jsonify({
+                return ({
                     "success": False,
                     "error": "Cannot apply commission deduction: Employee name not found on advance. Please contact support."
                 }), 400
@@ -14019,7 +14194,7 @@ def add_advance_adjustment():
                 all_users = _load_all_users()
                 user_email = ""
                 for user in all_users:
-                    if (user.get("username", "").strip() or "").lower() == employee_name.lower():
+                    if _norm_person_name(employee_name) in {_norm_person_name(user.get(k)) for k in ("username", "name", "display_name")}:
                         user_email = user.get("email", "")
                         break
 
@@ -14041,9 +14216,9 @@ def add_advance_adjustment():
 
                 # Validate: deduction amount cannot exceed pending commission (BEFORE SAVING)
                 # STRICT CHECK: Block any deduction that exceeds available commission
-                if adjustment_amount > pending_commission:
+                if adjustment_amount > pending_commission + 0.005:
                     log.error(f"SECURITY: Commission deduction BLOCKED: ${adjustment_amount:.2f} exceeds available ${pending_commission:.2f} for {employee_name}")
-                    return jsonify({
+                    return ({
                         "success": False,
                         "error": f"Unable to apply commission deduction. Requested amount (${adjustment_amount:.2f}) exceeds the employee's available pending commission (${pending_commission:.2f})."
                     }), 400
@@ -14051,7 +14226,7 @@ def add_advance_adjustment():
                 # Check if employee has pending commission
                 if pending_commission <= 0:
                     log.warning(f"Commission deduction blocked: employee has no pending commission")
-                    return jsonify({
+                    return ({
                         "success": False,
                         "error": f"Employee '{employee_name}' has $0.00 pending commission. Cannot create deduction."
                     }), 400
@@ -14070,14 +14245,14 @@ def add_advance_adjustment():
 
         # Handle Commission Deduction: distribute intelligently across projects
         if adjustment_type == "Commission Deduction":
-            employee_name = advance_data.get("employee_name", "").strip()
+            employee_name = _resolve_commission_name(advance_data.get("employee_name", "").strip())
 
             if employee_name:
                 # Look up employee in users table to get email
                 all_users = _load_all_users()
                 user_email = ""
                 for user in all_users:
-                    if (user.get("username", "").strip() or "").lower() == employee_name.lower():
+                    if _norm_person_name(employee_name) in {_norm_person_name(user.get(k)) for k in ("username", "name", "display_name")}:
                         user_email = user.get("email", "")
                         break
 
@@ -14278,426 +14453,14 @@ def add_advance_adjustment():
         employee_name = advance_data.get("employee_name", "").strip()
         _sync_adjustment_to_expense(adjustment_id, adjustment, advance_data, advance_id, employee_name)
 
-        return jsonify({"success": True})
+        return {"success": True, "adjustment_id": adjustment_id}, 200
     except Exception as e:
         log.error(f"Error adding adjustment: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return ({"success": False, "error": str(e)}), 500
 
-@app.route("/update_advance_adjustment", methods=["POST"])
-@login_required
-def update_advance_adjustment():
-    """Update an existing adjustment"""
-    try:
-        data = request.get_json()
-        advance_no = data.get("advance_no", "")
-        adjustment_id = data.get("adjustment_id", "")
-
-        # Find the advance by advance_no
-        advances_raw = fb_get("/employee_advances") or {}
-        advance_id = None
-        advance_data = None
-
-        if isinstance(advances_raw, dict):
-            for aid, adata in advances_raw.items():
-                if isinstance(adata, dict) and adata.get("advance_no") == advance_no:
-                    advance_id = aid
-                    advance_data = adata
-                    break
-
-        if not advance_id or not advance_data:
-            return jsonify({"success": False, "error": "Advance not found"}), 404
-
-        _reconcile_advance_adjusted(advance_data, advance_id)
-
-        # Get the old adjustment to recalculate totals
-        adjustments = advance_data.get("adjustments", {})
-        old_adjustment = adjustments.get(adjustment_id, {})
-        old_amount = float(old_adjustment.get("amount", 0))
-
-        # Debug logging for linked_expense_id
-        log.info(f"Updating adjustment {adjustment_id}: old_adjustment keys = {list(old_adjustment.keys())}")
-        log.info(f"linked_expense_id in old_adjustment: {old_adjustment.get('linked_expense_id', 'NOT FOUND')}")
-
-        # Calculate new totals
-        new_amount = float(data.get("amount", 0))
-        current_adjusted = float(advance_data.get("adjusted", 0))
-        new_adjusted = current_adjusted - old_amount + new_amount
-        advance_amount = float(advance_data.get("amount", 0))
-        new_balance = advance_amount - new_adjusted
-
-        # Validate that total adjusted doesn't exceed advance amount
-        if new_adjusted > advance_amount:
-            return jsonify({
-                "success": False,
-                "error": f"Cannot update adjustment. Total adjusted (${new_adjusted:.2f}) would exceed advance amount (${advance_amount:.2f})"
-            }), 400
-
-        # Update the adjustment
-        # Get the proper name of the user making the adjustment
-        username = session.get("username", "Admin")
-        adjusted_by_name = session.get("user_name", username)  # Try to get display name from session first
-
-        # If no display name in session, look it up from users table
-        if not adjusted_by_name or adjusted_by_name == username:
-            all_users = _load_all_users()
-            for user in all_users:
-                if user.get("username", "").strip().lower() == username.lower():
-                    adjusted_by_name = user.get("name", user.get("display_name", username))
-                    break
-
-        # Preserve the original exchange rate from creation time (immutable)
-        exchange_rate = old_adjustment.get("exchange_rate", 110)
-        if not exchange_rate or exchange_rate <= 0:
-            # Fallback to current settings if original was missing/invalid
-            settings = fb_get("/settings") or {}
-            company_settings = settings.get("company", {})
-            exchange_rate = _safe_float(company_settings.get("bdt_exchange_rate", 110)) or 110
-
-        updated_adjustment = {
-            "date": data.get("date", ""),
-            "amount": new_amount,
-            "type": data.get("type", ""),
-            "reference": data.get("reference", ""),
-            "remarks": data.get("remarks", ""),
-            "adjusted_by": username,
-            "adjusted_by_name": adjusted_by_name,
-            "exchange_rate": exchange_rate,
-            "created_at": old_adjustment.get("created_at", datetime.now(timezone.utc).isoformat()),
-            "updated_at": datetime.now(timezone.utc).isoformat()
-        }
-
-        # Preserve linked_expense_id and commission_deduction_id for existing adjustments
-        linked_exp_id = old_adjustment.get("linked_expense_id")
-        comm_ded_id = old_adjustment.get("commission_deduction_id")
-
-        if linked_exp_id:
-            updated_adjustment["linked_expense_id"] = linked_exp_id
-            log.info(f"Preserved linked_expense_id: {linked_exp_id}")
-        else:
-            log.warning(f"NO linked_expense_id found in old_adjustment for {adjustment_id}")
-
-        if comm_ded_id:
-            updated_adjustment["commission_deduction_id"] = comm_ded_id
-            log.info(f"Preserved commission_deduction_id: {comm_ded_id}")
-
-        # Check if advance should be closed
-        new_status = "Closed" if new_balance <= 0 else advance_data.get("status", "Open")
-
-        # Update in Firebase
-        update_data = {
-            "adjusted": new_adjusted,
-            "status": new_status,
-            f"adjustments/{adjustment_id}": updated_adjustment
-        }
-        fb_update(f"/employee_advances/{advance_id}", update_data)
-
-        # Explicitly ensure linked_expense_id is persisted if it exists
-        if updated_adjustment.get("linked_expense_id"):
-            fb_update(f"/employee_advances/{advance_id}/adjustments/{adjustment_id}", {
-                "linked_expense_id": updated_adjustment.get("linked_expense_id")
-            })
-            log.info(f"Explicitly saved linked_expense_id: {updated_adjustment.get('linked_expense_id')}")
-
-        log.info(f"Adjustment updated for advance {advance_no}: {new_amount}")
-
-        # Handle Commission Deduction updates
-        adjustment_type = data.get("type", "").strip()
-        old_type = old_adjustment.get("type", "").strip()
-
-        # Check if there's an existing commission deduction entry for this adjustment
-        # First, try to get it from the old adjustment record (if it exists)
-        comm_deduction_id = old_adjustment.get("commission_deduction_id")
-
-        # If not found, search through commission_payments
-        if not comm_deduction_id:
-            comm_payments = fb_get("/commission_payments") or {}
-            if isinstance(comm_payments, dict):
-                for cp_id, cp_data in comm_payments.items():
-                    if isinstance(cp_data, dict) and cp_data.get("adjustment_id") == adjustment_id:
-                        comm_deduction_id = cp_id
-                        break
-
-        if adjustment_type == "Commission Deduction":
-            employee_name = advance_data.get("employee_name", "").strip()
-
-            if employee_name:
-                # Calculate employee's pending commission
-                pending_commission = _calculate_employee_pending_commission(employee_name)
-
-                # When editing, the old deduction is being removed, so add it back to available balance
-                available_after_removing_old = pending_commission + old_amount
-
-                # Validate: new deduction amount cannot exceed available balance
-                if new_amount > available_after_removing_old:
-                    return jsonify({
-                        "success": False,
-                        "error": f"Original deduction: ${old_amount:.2f} → Updating to: ${new_amount:.2f} (+${new_amount - old_amount:.2f}). Available pending commission: ${available_after_removing_old:.2f}. Maximum allowed: ${available_after_removing_old:.2f}"
-                    }), 400
-
-                # Only update deduction if employee has pending commission
-                if pending_commission > 0:
-                    # Look up employee in users table to get email
-                    all_users = _load_all_users()
-                    user_email = ""
-                    for user in all_users:
-                        if (user.get("username", "").strip() or "").lower() == employee_name.lower():
-                            user_email = user.get("email", "")
-                            break
-
-                    # Create or update commission deduction entry
-                    if not comm_deduction_id:
-                        import uuid as uuid_module
-                        comm_deduction_id = f"adv_{str(uuid_module.uuid4())}"
-
-                    current_period = datetime.now(COMPANY_TZ).strftime("%Y-%m")
-
-                    # 1. Load all projects and their commissions
-                    all_projects = fb_get("/projects") or {}
-                    all_proj_commissions = fb_get("/project_commissions") or {}
-
-                    # 2. Get old project deductions to know which projects need to be cleared
-                    old_project_deductions = {}
-                    old_comm_deduction = fb_get(f"/commission_payments/{comm_deduction_id}") or {}
-                    if isinstance(old_comm_deduction, dict):
-                        old_project_deductions = old_comm_deduction.get("project_deductions", {})
-
-                    # 3. FIRST: Clear old deductions from ALL projects for this adjustment
-                    log.info(f"Clearing old deductions from {len(old_project_deductions)} projects")
-                    for proj_id, old_amt in old_project_deductions.items():
-                        proj_comm = all_proj_commissions.get(proj_id, {})
-                        if not isinstance(proj_comm, dict):
-                            continue
-
-                        current_deductions = proj_comm.get("deductions", {})
-                        if not isinstance(current_deductions, dict):
-                            current_deductions = {}
-
-                        # Remove this adjustment's old deduction
-                        if comm_deduction_id in current_deductions:
-                            del current_deductions[comm_deduction_id]
-
-                        # Save immediately
-                        total_deducted = sum(current_deductions.values())
-                        commission_amount = _safe_float(proj_comm.get("commission_amount", 0))
-                        paid_amount = _safe_float(proj_comm.get("paid_amount", 0))
-                        remaining_due = max(commission_amount - paid_amount - total_deducted, 0)
-
-                        clear_update = {
-                            "deductions": current_deductions,
-                            "total_deducted": total_deducted,
-                            "remaining_due": remaining_due
-                        }
-                        fb_update(f"/project_commissions/{proj_id}", clear_update)
-                        log.info(f"Cleared deduction from {proj_id}: now ${total_deducted:.2f} total deducted")
-
-                    # 4. Reload project commissions AFTER clearing old deductions
-                    all_proj_commissions = fb_get("/project_commissions") or {}
-
-                    # 5. Filter pending commissions for this salesperson
-                    pending_projects = []
-                    for proj_id, proj_data in all_projects.items():
-                        if not isinstance(proj_data, dict):
-                            continue
-                        if proj_data.get("status", "").strip() == "Cancelled":
-                            continue
-                        if (proj_data.get("sales", "").strip() or "").lower() != employee_name.lower():
-                            continue
-
-                        proj_comm = all_proj_commissions.get(proj_id, {})
-                        if not isinstance(proj_comm, dict):
-                            continue
-
-                        # Include ANY commission with remaining balance (don't skip by status alone)
-                        commission_amount = _safe_float(proj_comm.get("commission_amount", 0))
-                        paid_amount = _safe_float(proj_comm.get("paid_amount", 0))
-                        current_deductions = _safe_float(proj_comm.get("total_deducted", 0))
-                        remaining_balance = commission_amount - paid_amount - current_deductions
-
-                        # Only include if there's actually something left to deduct
-                        if remaining_balance <= 0:
-                            continue
-
-                        pending_projects.append({
-                            "project_id": proj_id,
-                            "project_number": proj_data.get("project_number", ""),
-                            "commission_amount": commission_amount,
-                            "paid_amount": paid_amount,
-                            "current_deductions": current_deductions,
-                            "created_at": proj_data.get("created_at", "")
-                        })
-
-                    # 6. Sort by created_at (oldest first), then by project_number
-                    def get_project_sort_key(proj):
-                        try:
-                            created_at = proj.get("created_at", "")
-                            proj_num = proj.get("project_number", "")
-
-                            # If created_at is missing or empty, use project number date as fallback
-                            if not created_at and proj_num and "-" in proj_num:
-                                # Extract YYYYMM from MABS-YYYYMMNN and use as date approximation
-                                num_part = proj_num.split("-")[-1]
-                                if len(num_part) >= 6:
-                                    yyyymm = num_part[:6]
-                                    # Convert YYYYMM to YYYY-MM-01 for comparison
-                                    created_at = f"{yyyymm[:4]}-{yyyymm[4:6]}-01"
-
-                            # If still no date, put at end (newest)
-                            if not created_at:
-                                created_at = "9999-12-31"
-
-                            # Extract numeric part for secondary sort
-                            if "-" in proj_num:
-                                num = int(proj_num.split("-")[-1])
-                            else:
-                                num = int(proj_num) if proj_num.isdigit() else 0
-
-                            return (created_at, num)
-                        except (ValueError, AttributeError):
-                            return ("9999-12-31", 999999)
-
-                    # Sort in ASCENDING order: oldest projects first (by date), then by project number
-                    # This matches the Add Commission Payment allocation order
-                    pending_projects.sort(key=get_project_sort_key, reverse=False)
-
-                    # Debug: Log sort order
-                    log.info(f"Pending projects sorted (oldest first): {[(p.get('project_number'), p.get('created_at', 'NO_DATE')) for p in pending_projects]}")
-
-                    # 7. Distribute updated deduction across projects (with clean slate after clearing old)
-                    remaining_deduction = new_amount
-                    project_deductions = {}
-
-                    for proj_info in pending_projects:
-                        if remaining_deduction <= 0:
-                            break
-
-                        proj_id = proj_info["project_id"]
-                        # Calculate remaining due - now using clean data after old deductions cleared
-                        remaining_due = proj_info["commission_amount"] - proj_info["paid_amount"] - proj_info["current_deductions"]
-                        available_commission = max(0, remaining_due)
-
-                        # Deduct up to available commission amount
-                        deduct_amount = min(remaining_deduction, available_commission)
-                        if deduct_amount > 0:
-                            project_deductions[proj_id] = deduct_amount
-                            remaining_deduction -= deduct_amount
-                            log.info(f"Redistributing to {proj_info.get('project_number')}: ${deduct_amount:.2f} (available: ${available_commission:.2f})")
-
-                    # 7. Then: Apply NEW deductions to projects
-                    for proj_id, deduct_amt in project_deductions.items():
-                        proj_comm = all_proj_commissions.get(proj_id, {})
-                        if not isinstance(proj_comm, dict):
-                            proj_comm = {}
-
-                        current_deductions = proj_comm.get("deductions", {})
-                        if not isinstance(current_deductions, dict):
-                            current_deductions = {}
-
-                        current_deductions[comm_deduction_id] = deduct_amt
-
-                        total_deducted = sum(current_deductions.values())
-                        commission_amount = _safe_float(proj_comm.get("commission_amount", 0))
-                        paid_amount = _safe_float(proj_comm.get("paid_amount", 0))
-                        remaining_due = max(commission_amount - paid_amount - total_deducted, 0)
-
-                        # Determine coverage status
-                        if remaining_due <= 0:
-                            deduction_status = "fully_covered"
-                        elif total_deducted > 0:
-                            deduction_status = "partially_covered"
-                        else:
-                            deduction_status = "not_covered"
-
-                        # Build deductions list for display
-                        deductions_list = []
-                        for adv_id, amt in current_deductions.items():
-                            # For current adjustment being edited, use form date directly
-                            if adv_id == comm_deduction_id:
-                                deductions_list.append({
-                                    "advance_no": advance_no,
-                                    "advance_id": advance_id,
-                                    "deduction_amount": amt,
-                                    "date": data.get("date", "")[:10] if data.get("date") else ""
-                                })
-                            else:
-                                # Fetch existing deductions from Firebase
-                                cp_data = fb_get(f"/commission_payments/{adv_id}") or {}
-                                # Use adjustment_date if available, fallback to created_at
-                                adj_date = cp_data.get("adjustment_date", "") or cp_data.get("created_at", "")
-                                deductions_list.append({
-                                    "advance_no": cp_data.get("advance_no", ""),
-                                    "advance_id": cp_data.get("advance_id", ""),
-                                    "deduction_amount": amt,
-                                    "date": adj_date[:10] if adj_date else ""
-                                })
-
-                        update_data = {
-                            "deductions": current_deductions,
-                            "total_deducted": total_deducted,
-                            "remaining_due": remaining_due,
-                            "deduction_status": deduction_status,
-                            "deductions_list": deductions_list
-                        }
-                        # Set paid_at to latest adjustment date among all deductions when fully covered
-                        if deduction_status == "fully_covered" and deductions_list:
-                            dates = [d.get("date", "") for d in deductions_list if d.get("date")]
-                            if dates:
-                                latest_date = max(dates)  # Get latest/most recent date
-                                update_data["paid_at"] = latest_date
-
-                        fb_update(f"/project_commissions/{proj_id}", update_data)
-
-                    # 8. Update commission_payments with new distribution
-                    commission_deduction = {
-                        "period": current_period,
-                        "salesperson": employee_name,
-                        "salesperson_email": user_email,
-                        "amount": -new_amount,
-                        "type": "Advance Deduction",
-                        "advance_no": advance_no,
-                        "advance_id": advance_id,
-                        "adjustment_id": adjustment_id,
-                        "adjustment_date": data.get("date", ""),  # Store the form adjustment date
-                        "reference": data.get("reference", ""),
-                        "remarks": f"Commission deduction for advance {advance_no}: {data.get('remarks', '')}",
-                        "project_deductions": project_deductions,
-                        "created_at": datetime.now(timezone.utc).isoformat(),
-                        "created_by": session.get("user_name", session.get("username", "Admin"))
-                    }
-
-                    fb_update(f"/commission_payments/{comm_deduction_id}", commission_deduction)
-
-                    log.info(f"Commission deduction updated for {employee_name}: ${new_amount:.2f} distributed across {len(project_deductions)} projects")
-                else:
-                    return jsonify({
-                        "success": False,
-                        "error": f"Employee '{employee_name}' has $0.00 pending commission. Cannot create deduction."
-                    }), 400
-
-        elif old_type == "Commission Deduction" and adjustment_type != "Commission Deduction" and comm_deduction_id:
-            # Remove commission deduction if type changed from Commission Deduction to something else
-            employee_name = advance_data.get("employee_name", "").strip()
-            fb_delete(f"/commission_payments/{comm_deduction_id}")
-            log.info(f"Commission deduction removed for adjustment {adjustment_id}")
-
-            # Recalculate project deductions for this salesperson
-            if employee_name:
-                _recalculate_project_deductions_for_salesperson(employee_name)
-
-        # Sync updated adjustment to expense (use the first updated_adjustment that has all fields)
-        employee_name = advance_data.get("employee_name", "").strip()
-        _sync_adjustment_to_expense(adjustment_id, updated_adjustment, advance_data, advance_id, employee_name)
-
-        return jsonify({"success": True})
-    except Exception as e:
-        log.error(f"Error updating adjustment: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route("/delete_advance_adjustment", methods=["POST"])
-@login_required
-def delete_advance_adjustment():
+def _delete_advance_adjustment_core(data):
     """Delete an adjustment from an advance"""
     try:
-        data = request.get_json()
         advance_no = data.get("advance_no", "")
         adjustment_id = data.get("adjustment_id", "")
 
@@ -14714,7 +14477,7 @@ def delete_advance_adjustment():
                     break
 
         if not advance_id or not advance_data:
-            return jsonify({"success": False, "error": "Advance not found"}), 404
+            return ({"success": False, "error": "Advance not found"}), 404
 
         _reconcile_advance_adjusted(advance_data, advance_id)
 
@@ -14744,23 +14507,26 @@ def delete_advance_adjustment():
 
         # Handle Commission Deduction deletion
         deleted_type = adjustment_to_delete.get("type", "").strip()
-        employee_name = advance_data.get("employee_name", "").strip()
+        employee_name = _resolve_commission_name(advance_data.get("employee_name", "").strip())
 
         if deleted_type == "Commission Deduction":
             # Find and delete associated commission deduction entry
             comm_payments = fb_get("/commission_payments") or {}
+            reduced_salesperson = ""
             if isinstance(comm_payments, dict):
                 for cp_id, cp_data in comm_payments.items():
                     if isinstance(cp_data, dict) and cp_data.get("adjustment_id") == adjustment_id:
+                        reduced_salesperson = (cp_data.get("salesperson") or "").strip()
                         fb_delete(f"/commission_payments/{cp_id}")
                         log.info(f"Commission deduction removed for adjustment {adjustment_id}")
                         break
 
-            # Recalculate project deductions for this salesperson
-            if employee_name:
-                _recalculate_project_deductions_for_salesperson(employee_name)
-                # Clear cache to ensure commission details refresh
-                cache_bust("commission")
+            # Recalculate project deductions for the salesperson whose commission was actually
+            # reduced (recorded on the deduction), falling back to the employee's own name
+            for sp_name in {n for n in (reduced_salesperson, employee_name) if n}:
+                _recalculate_project_deductions_for_salesperson(sp_name)
+            # Clear cache to ensure commission details refresh
+            cache_bust("commission")
 
         # Delete linked expense
         linked_expense_id = adjustment_to_delete.get("linked_expense_id")
@@ -14785,10 +14551,603 @@ def delete_advance_adjustment():
             # Clear finance cache after deleting linked expense
             cache_bust("financial")
 
-        return jsonify({"success": True})
+        return {"success": True}, 200
     except Exception as e:
         log.error(f"Error deleting adjustment: {e}")
+        return ({"success": False, "error": str(e)}), 500
+
+# ── Employee-level Advance & Commission Adjustment ledger ───────────────────────
+ADVANCE_ADJUSTMENT_TYPES = ["Payroll Deduction", "Commission Deduction", "Manual Adjustment"]
+# What people see. The stored value stays "Commission Deduction": the commission and expense
+# logic (and every existing record) key off it.
+ADJUSTMENT_TYPE_LABELS = {"Commission Deduction": "Commission Adjustment"}
+
+def _adjustment_type_label(adj_type: str) -> str:
+    return ADJUSTMENT_TYPE_LABELS.get((adj_type or "").strip(), (adj_type or "").strip())
+
+def _build_advance_employee_summary() -> list:
+    """One row per employee that has advances: totals, balance and last activity."""
+    raw = fb_get("/employee_advances") or {}
+    by_employee = {}
+    if isinstance(raw, dict):
+        for aid, adata in raw.items():
+            if not isinstance(adata, dict):
+                continue
+            name = (adata.get("employee_name") or "").strip()
+            if not name:
+                continue
+            _reconcile_advance_adjusted(adata, aid)
+            row = by_employee.setdefault(name.lower(), {
+                "employee_name": name, "advance_count": 0, "open_count": 0,
+                "total_advance": 0.0, "total_adjusted": 0.0, "last_date": "",
+            })
+            amount = _safe_float(adata.get("amount", 0))
+            adjusted = _safe_float(adata.get("adjusted", 0))
+            row["advance_count"] += 1
+            row["total_advance"] += amount
+            row["total_adjusted"] += adjusted
+            if round(amount - adjusted, 2) > 0.005:
+                row["open_count"] += 1
+            dates = [adata.get("date") or ""] + [
+                (a.get("date") or "") for a in (adata.get("adjustments") or {}).values() if isinstance(a, dict)
+            ]
+            row["last_date"] = max([row["last_date"]] + dates)
+    rows = []
+    for row in by_employee.values():
+        row["total_advance"] = round(row["total_advance"], 2)
+        row["total_adjusted"] = round(row["total_adjusted"], 2)
+        row["balance"] = round(row["total_advance"] - row["total_adjusted"], 2)
+        rows.append(row)
+    rows.sort(key=lambda r: (-r["balance"], r["employee_name"].lower()))
+    return rows
+
+def _same_employee(a: str, b: str) -> bool:
+    return (a or "").strip().lower() == (b or "").strip().lower()
+
+def _employee_advances(employee_name: str, reconcile: bool = True):
+    """All advances for one employee as (advance_id, data) pairs, oldest first."""
+    raw = fb_get("/employee_advances") or {}
+    rows = []
+    if isinstance(raw, dict):
+        for aid, adata in raw.items():
+            if isinstance(adata, dict) and _same_employee(adata.get("employee_name"), employee_name):
+                if reconcile:
+                    _reconcile_advance_adjusted(adata, aid)
+                rows.append((aid, adata))
+    rows.sort(key=lambda r: ((r[1].get("date") or ""), (r[1].get("created_at") or "")))
+    return rows
+
+def _build_employee_advance_ledger(employee_name: str, advances=None, with_commission: bool = True) -> dict:
+    """Chronological advance / adjustment ledger with a running balance for one employee.
+
+    Adjustments entered once for an employee but applied across several advances
+    (same ``group_id``) are shown as a single row.
+
+    ``advances`` lets a caller that already found the employee's advances (as
+    (advance_id, data) pairs) reuse this builder; ``with_commission=False`` skips the
+    pending-commission lookup when it is not needed.
+    """
+    if advances is None:
+        advances = _employee_advances(employee_name)
+    else:
+        for _aid, _adata in advances:
+            _reconcile_advance_adjusted(_adata, _aid)
+    adv_dicts = []
+    for aid, adata in advances:
+        adv_copy = dict(adata)
+        adv_copy["id"] = aid
+        adv_dicts.append(adv_copy)
+    _enrich_advance_adjustments_with_commission_projects(adv_dicts)
+
+    def _who(username, display=""):
+        # Placeholders were saved by older code before the real logged-in user was recorded
+        for candidate in (display, username):
+            candidate = (candidate or "").strip()
+            if candidate and candidate.lower() not in ("unknown", "admin", "system"):
+                return _employee_full_name(candidate)   # show the person's full name
+        return ""
+
+    entries = []
+    adjustment_rows = {}
+    open_advances = []
+    for adv in adv_dicts:
+        amount = _safe_float(adv.get("amount", 0))
+        adjusted = _safe_float(adv.get("adjusted", 0))
+        adjustments = adv.get("adjustments") if isinstance(adv.get("adjustments"), dict) else {}
+        adjustments = {k: v for k, v in adjustments.items() if isinstance(v, dict)}
+        entries.append({
+            "kind": "advance",
+            "advance_id": adv["id"],
+            "advance_no": adv.get("advance_no", ""),
+            "date": adv.get("date", ""),
+            "created_at": adv.get("created_at", ""),
+            "description": adv.get("reason", "") or "Give advance",
+            "remarks": adv.get("remarks", ""),
+            "payment_method": adv.get("payment_method", ""),
+            "amount": amount,
+            "adjusted": adjusted,
+            "status": adv.get("status", "Open"),
+            "has_adjustments": bool(adjustments),
+            "submitted_by": _who(adv.get("created_by")),
+            "submitted_at": adv.get("created_at", ""),
+        })
+        if round(amount - adjusted, 2) > 0.005:
+            open_advances.append({
+                "advance_id": adv["id"],
+                "advance_no": adv.get("advance_no", ""),
+                "date": adv.get("date", ""),
+                "balance": round(amount - adjusted, 2),
+            })
+
+        for adj_id, adj in adjustments.items():
+            group_key = adj.get("group_id") or adj_id
+            piece = {
+                "advance_id": adv["id"],
+                "advance_no": adv.get("advance_no", ""),
+                "advance_date": adv.get("date", ""),
+                "adjustment_id": adj_id,
+                "amount": _safe_float(adj.get("amount", 0)),
+                "date": adj.get("date", ""),
+                "type": (adj.get("type") or "").strip(),
+                "reference": adj.get("reference", ""),
+                "remarks": adj.get("remarks", ""),
+            }
+            row = adjustment_rows.get(group_key)
+            if row is None:
+                row = {
+                    "kind": "adjustment",
+                    "key": group_key,
+                    "date": adj.get("date", ""),
+                    "created_at": adj.get("created_at", ""),
+                    "type": piece["type"],
+                    "type_label": _adjustment_type_label(piece["type"]),
+                    "description": adj.get("reference", ""),
+                    "remarks": adj.get("remarks", ""),
+                    "amount": 0.0,
+                    "pieces": [],
+                    "project_breakdown": [],
+                    "submitted_by": _who(adj.get("adjusted_by"), adj.get("adjusted_by_name", "")),
+                    "submitted_at": adj.get("created_at", ""),
+                }
+                adjustment_rows[group_key] = row
+                entries.append(row)
+            row["pieces"].append(piece)
+            if adj.get("created_at") and (not row["created_at"] or adj["created_at"] < row["created_at"]):
+                row["created_at"] = adj["created_at"]
+                row["submitted_at"] = adj["created_at"]
+            row["amount"] = round(row["amount"] + piece["amount"], 2)
+            for b in (adj.get("project_breakdown") or []):
+                if isinstance(b, dict) and b.get("project_number"):
+                    row["project_breakdown"].append({
+                        "project_number": b["project_number"],
+                        "amount": _safe_float(b.get("amount", 0)),
+                        "label": b.get("label") or b["project_number"],
+                        "label_plain": b.get("label_plain") or b.get("label") or b["project_number"],
+                    })
+
+    for row in adjustment_rows.values():
+        row["editable"] = True
+
+    # Oldest first by date; entries on the same date go by the time they were entered
+    entries.sort(key=lambda e: (e.get("date") or "", e.get("created_at") or "", 0 if e["kind"] == "advance" else 1))
+
+    balance = 0.0
+    total_adv = 0.0
+    total_adj = 0.0
+    for e in entries:
+        if e["kind"] == "advance":
+            balance += e["amount"]
+            total_adv += e["amount"]
+        else:
+            balance -= e["amount"]
+            total_adj += e["amount"]
+        e["balance"] = round(balance, 2)
+
+    # Lowest amount an advance may be edited down to while the employee's advances still cover everything adjusted
+    for e in entries:
+        if e["kind"] == "advance":
+            e["min_amount"] = round(max(0.01, total_adj - (total_adv - e["amount"])), 2)
+
+    return {
+        "employee_name": employee_name,
+        "entries": entries,
+        "open_advances": open_advances,
+        "total_advance": round(total_adv, 2),
+        "total_adjusted": round(total_adj, 2),
+        "balance": round(total_adv - total_adj, 2),
+        "advance_count": len(adv_dicts),
+        "open_count": len(open_advances),
+        "pending_commission": round(_calculate_employee_pending_commission(employee_name), 2) if with_commission else 0.0,
+        # The name this employee's commissions are stored under (the Commission Details page is keyed by it)
+        "commission_name": _resolve_commission_name(employee_name) if with_commission else employee_name,
+    }
+
+def _advance_delete_perms(advance_nos) -> list:
+    """Advance numbers the current user may delete outright (admin/accountant), or after an approved delete request."""
+    _role = normalize_role(session.get("user_role", ""))
+    if _role in ("admin", "accountant"):
+        return list(advance_nos)
+    perms = []
+    _reqs = fb_get("/permission_requests") or {}
+    for req in (_reqs.values() if isinstance(_reqs, dict) else []):
+        if (isinstance(req, dict) and req.get("status") == "approved"
+                and req.get("entity_type") == "advance" and req.get("entity_id")):
+            perms.append(req["entity_id"])
+    return perms
+
+@app.route("/payroll/advance-employee/<employee_name>")
+@role_required("payroll")
+def advance_employee_detail(employee_name):
+    """Advance & Commission Adjustment ledger for one employee."""
+    if not _employee_advances(employee_name, reconcile=False):
+        abort(404)
+    return render_template(
+        "advance_employee.html",
+        employee_name=employee_name,
+        adjustment_types=ADVANCE_ADJUSTMENT_TYPES,
+        type_labels=ADJUSTMENT_TYPE_LABELS,
+        currency_symbol=CURRENCY_SYMBOL,
+    )
+
+@app.route("/api/employee-advance-ledger/<employee_name>", methods=["GET"])
+@login_required
+def api_employee_advance_ledger(employee_name):
+    """Ledger data for one employee: entries, running balance, open advances, delete rights."""
+    ledger = _build_employee_advance_ledger(employee_name)
+    ledger["delete_perms"] = _advance_delete_perms([e["advance_no"] for e in ledger["entries"] if e["kind"] == "advance"])
+    return jsonify(ledger)
+
+@app.route("/add_employee_adjustment", methods=["POST"])
+@login_required
+def add_employee_adjustment():
+    """Record one adjustment for an employee and apply it to their open advances, oldest first.
+
+    Every piece goes through the same per-advance logic as before, so Finance expenses are
+    still created and Commission Deductions still reduce the projects' remaining commission.
+    """
+    try:
+        data = request.get_json() or {}
+        employee_name = (data.get("employee_name") or "").strip()
+        adj_type = (data.get("type") or "").strip()
+        adj_date = (data.get("date") or "").strip()
+        amount = round(_safe_float(data.get("amount", 0)), 2)
+
+        if not employee_name:
+            return jsonify({"success": False, "error": "Employee name is required"}), 400
+        if not adj_date:
+            return jsonify({"success": False, "error": "Adjustment date is required"}), 400
+        if adj_type not in ADVANCE_ADJUSTMENT_TYPES:
+            return jsonify({"success": False, "error": "Please select a valid adjustment type"}), 400
+        if amount <= 0:
+            return jsonify({"success": False, "error": "Adjustment amount must be greater than 0"}), 400
+
+        open_advances = []
+        for aid, adata in _employee_advances(employee_name):
+            bal = round(_safe_float(adata.get("amount", 0)) - _safe_float(adata.get("adjusted", 0)), 2)
+            if bal > 0.005:
+                open_advances.append((adata.get("advance_no", ""), bal))
+
+        total_open = round(sum(b for _, b in open_advances), 2)
+        if not open_advances:
+            return jsonify({"success": False, "error": f"{employee_name} has no outstanding advance to adjust."}), 400
+        if amount > total_open + 0.005:
+            return jsonify({
+                "success": False,
+                "error": f"Adjustment amount (${amount:.2f}) exceeds the outstanding advance balance (${total_open:.2f})."
+            }), 400
+
+        if adj_type == "Commission Deduction":
+            pending = _calculate_employee_pending_commission(employee_name)
+            if pending <= 0:
+                return jsonify({"success": False, "error": f"Employee '{employee_name}' has $0.00 pending commission. Cannot create deduction."}), 400
+            if amount > pending + 0.005:
+                return jsonify({
+                    "success": False,
+                    "error": f"Unable to apply commission deduction. Requested amount (${amount:.2f}) exceeds the employee's available pending commission (${pending:.2f})."
+                }), 400
+
+        import uuid as _uuid
+        group_id = str(_uuid.uuid4())
+        remaining = amount
+        applied = []
+        for advance_no, bal in open_advances:  # oldest advance first
+            if remaining <= 0.004:
+                break
+            chunk = round(min(remaining, bal), 2)
+            payload, status = _add_advance_adjustment_core({
+                "advance_no": advance_no,
+                "date": adj_date,
+                "amount": chunk,
+                "type": adj_type,
+                "reference": (data.get("reference") or "").strip(),
+                "remarks": (data.get("remarks") or "").strip(),
+                "group_id": group_id,
+            })
+            if status != 200 or not payload.get("success"):
+                # Undo the pieces already applied so a failed entry never leaves a partial adjustment
+                for done in applied:
+                    _delete_advance_adjustment_core({"advance_no": done["advance_no"], "adjustment_id": done["adjustment_id"]})
+                return jsonify(payload), status
+            applied.append({"advance_no": advance_no, "adjustment_id": payload.get("adjustment_id"), "amount": chunk})
+            remaining = round(remaining - chunk, 2)
+
+        cache_bust("commission", "financial")
+        return jsonify({"success": True, "applied": applied})
+    except Exception as e:
+        log.error(f"Error adding employee adjustment: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/update_employee_adjustment", methods=["POST"])
+@login_required
+def update_employee_adjustment():
+    """Edit one ledger adjustment. The new amount only has to fit the employee's overall balance."""
+    try:
+        data = request.get_json() or {}
+        pieces = data.get("pieces") or []
+        adj_type = (data.get("type") or "").strip()
+        adj_date = (data.get("date") or "").strip()
+        amount = round(_safe_float(data.get("amount", 0)), 2)
+        if not pieces:
+            return jsonify({"success": False, "error": "Adjustment not found"}), 404
+        if not adj_date:
+            return jsonify({"success": False, "error": "Adjustment date is required"}), 400
+        if adj_type not in ADVANCE_ADJUSTMENT_TYPES:
+            return jsonify({"success": False, "error": "Please select a valid adjustment type"}), 400
+        if amount <= 0:
+            return jsonify({"success": False, "error": "Adjustment amount must be greater than 0"}), 400
+
+        # Load the old pieces
+        raw = fb_get("/employee_advances") or {}
+        old_items, employee = [], ""
+        for pc in pieces:
+            for aid, adata in (raw.items() if isinstance(raw, dict) else []):
+                if isinstance(adata, dict) and adata.get("advance_no") == pc.get("advance_no"):
+                    adj = (adata.get("adjustments") or {}).get(pc.get("adjustment_id"))
+                    if isinstance(adj, dict):
+                        old_items.append((aid, adata.get("advance_no", ""), pc["adjustment_id"], adj))
+                        employee = (adata.get("employee_name") or "").strip()
+        if not old_items:
+            return jsonify({"success": False, "error": "Adjustment not found"}), 404
+
+        old_total = round(sum(_safe_float(i[3].get("amount", 0)) for i in old_items), 2)
+        old_type = (old_items[0][3].get("type") or "").strip()
+        ledger = _build_employee_advance_ledger(employee)
+        max_amount = round(ledger["balance"] + old_total, 2)
+        if amount > max_amount + 0.005:
+            return jsonify({"success": False, "error": f"Adjustment amount (${amount:.2f}) exceeds the employee's outstanding advance balance (${max_amount:.2f})."}), 400
+        if adj_type == "Commission Deduction":
+            pending = _calculate_employee_pending_commission(employee) + (old_total if old_type == "Commission Deduction" else 0)
+            if amount > pending + 0.005:
+                return jsonify({"success": False, "error": f"Unable to apply commission adjustment. Requested amount (${amount:.2f}) exceeds the employee's available pending commission (${pending:.2f})."}), 400
+
+        first = min((i[3] for i in old_items), key=lambda a: a.get("created_at") or "")
+        group_id = first.get("group_id") or old_items[0][2]
+        keep = {"created_at": first.get("created_at"), "adjusted_by": first.get("adjusted_by"),
+                "adjusted_by_name": first.get("adjusted_by_name"), "exchange_rate": first.get("exchange_rate")}
+
+        # Remove the old pieces, then apply the edited adjustment across the employee's advances
+        for aid, advance_no, adj_id, adj in old_items:
+            payload, status = _delete_advance_adjustment_core({"advance_no": advance_no, "adjustment_id": adj_id})
+            if status != 200 or not payload.get("success"):
+                return jsonify(payload), status
+
+        def apply(values, total):
+            remaining, applied = total, []
+            for fid, fdata in _employee_advances(employee):
+                if remaining <= 0.004:
+                    break
+                free = round(_safe_float(fdata.get("amount", 0)) - _safe_float(fdata.get("adjusted", 0)), 2)
+                if free <= 0.005:
+                    continue
+                chunk = round(min(remaining, free), 2)
+                payload, status = _add_advance_adjustment_core(dict(values, advance_no=fdata.get("advance_no", ""), amount=chunk, group_id=group_id, **keep))
+                if status != 200 or not payload.get("success"):
+                    return payload, status, applied
+                applied.append(payload.get("adjustment_id"))
+                remaining = round(remaining - chunk, 2)
+            return {"success": True}, 200, applied
+
+        new_values = {"date": adj_date, "type": adj_type, "reference": (data.get("reference") or "").strip(), "remarks": (data.get("remarks") or "").strip()}
+        payload, status, _applied = apply(new_values, amount)
+        if status != 200 or not payload.get("success"):
+            # put the original adjustment back so a failed edit never loses it
+            apply({"date": first.get("date", ""), "type": old_type, "reference": first.get("reference", ""), "remarks": first.get("remarks", "")}, old_total)
+            return jsonify(payload), status
+        cache_bust("commission", "financial")
+        return jsonify({"success": True})
+    except Exception as e:
+        log.error(f"Error updating employee adjustment: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/delete_employee_adjustment", methods=["POST"])
+@login_required
+def delete_employee_adjustment():
+    """Delete one ledger adjustment (all the advance pieces it was split into)."""
+    try:
+        data = request.get_json() or {}
+        pieces = data.get("pieces") or []
+        if not pieces:
+            return jsonify({"success": False, "error": "Nothing to delete"}), 400
+        for piece in pieces:
+            payload, status = _delete_advance_adjustment_core({
+                "advance_no": piece.get("advance_no", ""),
+                "adjustment_id": piece.get("adjustment_id", ""),
+            })
+            if status != 200 or not payload.get("success"):
+                return jsonify(payload), status
+        cache_bust("commission", "financial")
+        return jsonify({"success": True})
+    except Exception as e:
+        log.error(f"Error deleting employee adjustment: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+def _advance_pdf_date(value) -> str:
+    """YYYY-MM-DD or ISO timestamp -> MM-DD-YYYY (company time zone for timestamps)."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    try:
+        if "T" in value:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(COMPANY_TZ)
+            return dt.strftime("%m-%d-%Y")
+    except ValueError:
+        pass
+    parts = value[:10].split("-")
+    return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else value
+
+@app.route("/payroll/advance-adjustment/export/pdf")
+@role_required("payroll")
+def advance_adjustment_export_pdf():
+    """PDF of every employee's advances and adjustments: an overview plus one ledger per employee."""
+    try:
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, CondPageBreak
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+        from xml.sax.saxutils import escape
+    except ImportError:
+        flash("reportlab not installed.", "danger")
+        return redirect(url_for("payroll"))
+    import io as _io
+
+    def money(n):
+        return f"${_safe_float(n):,.2f}"
+
+    styles = getSampleStyleSheet()
+    co = company_info()
+    NAVY, SLATE = colors.HexColor("#1F2937"), colors.HexColor("#64748B")
+    PURPLE, GREEN, RED, BLUE = (colors.HexColor("#7C3AED"), colors.HexColor("#059669"),
+                                colors.HexColor("#DC2626"), colors.HexColor("#2563EB"))
+    cell = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, leading=10)
+    cell_c = ParagraphStyle("cellc", parent=cell, alignment=1)
+    sub = ParagraphStyle("sub", parent=cell, fontSize=7, textColor=SLATE)
+    bold_c = ParagraphStyle("boldc", parent=cell_c, fontName="Helvetica-Bold")
+    title_s = ParagraphStyle("title", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold",
+                             textColor=colors.HexColor("#0F766E"), alignment=1, leading=20, spaceAfter=4)
+    meta_s = ParagraphStyle("meta", parent=styles["Normal"], fontSize=8.5, textColor=SLATE, alignment=1)
+    h2 = ParagraphStyle("h2", parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold", textColor=colors.HexColor("#0F172A"), spaceBefore=4, spaceAfter=5)
+
+    def colored(text, color, bold=True):
+        return Paragraph(f'<font color="{color.hexval().replace("0x", "#")}">{"<b>" if bold else ""}{escape(text)}{"</b>" if bold else ""}</font>', cell_c)
+
+    def base_style(header_rows=1):
+        return [
+            ("BACKGROUND", (0, 0), (-1, header_rows - 1), NAVY),
+            ("TEXTCOLOR", (0, 0), (-1, header_rows - 1), colors.white),
+            ("FONTNAME", (0, 0), (-1, header_rows - 1), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, header_rows - 1), 8),
+            ("ALIGN", (0, 0), (-1, header_rows - 1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+            ("ROWBACKGROUNDS", (0, header_rows), (-1, -2), [colors.white, colors.HexColor("#F8FAFC")]),
+            ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#EFF6FF")),
+            ("LINEABOVE", (0, -1), (-1, -1), 1, colors.HexColor("#94A3B8")),
+        ]
+
+    summary = _build_advance_employee_summary()
+    if not summary:
+        flash("There are no advances to export yet.", "warning")
+        return redirect(url_for("payroll") + "#employee-advance")
+
+    buf = _io.BytesIO()
+    page = landscape(A4)
+    doc = SimpleDocTemplate(buf, pagesize=page, leftMargin=0.5*inch, rightMargin=0.5*inch,
+                            topMargin=0.5*inch, bottomMargin=0.55*inch,
+                            title="Employee Advances & Adjustments Report")
+    elems = []
+    elems.append(Paragraph(f"{escape(co.get('name', ''))} - Employee Advances &amp; Adjustments", title_s))
+    elems.append(Paragraph(f"Generated {datetime.now(COMPANY_TZ).strftime('%m-%d-%Y')}  |  {len(summary)} employee(s)", meta_s))
+    elems.append(Spacer(1, 0.18*inch))
+
+    # ── Overview: one row per employee ───────────────────────────────────────
+    elems.append(Paragraph("Overview", h2))
+    data = [["Employee", "Advances", "Total Advance", "Advance Adjusted", "Balance", "Last Activity", "Status"]]
+    for r in summary:
+        is_open = r["balance"] > 0.005
+        data.append([
+            Paragraph(escape(r["employee_name"]), cell_c),
+            Paragraph(str(r["advance_count"]), cell_c),
+            colored(money(r["total_advance"]), BLUE),
+            colored(money(r["total_adjusted"]), GREEN),
+            colored(money(r["balance"]), RED if is_open else GREEN),
+            Paragraph(_advance_pdf_date(r["last_date"]) or "-", cell_c),
+            colored("Open" if is_open else "Closed", BLUE if is_open else GREEN),
+        ])
+    tot_adv = sum(r["total_advance"] for r in summary)
+    tot_adj = sum(r["total_adjusted"] for r in summary)
+    data.append([
+        Paragraph("Total", bold_c), Paragraph(str(sum(r["advance_count"] for r in summary)), bold_c),
+        colored(money(tot_adv), BLUE), colored(money(tot_adj), GREEN),
+        colored(money(tot_adv - tot_adj), RED if tot_adv - tot_adj > 0.005 else GREEN),
+        Paragraph("", cell_c), Paragraph("", cell_c),
+    ])
+    tbl = Table(data, colWidths=[2.3*inch, 0.9*inch, 1.5*inch, 1.6*inch, 1.5*inch, 1.3*inch, 0.9*inch], repeatRows=1)
+    tbl.setStyle(TableStyle(base_style()))
+    elems.append(tbl)
+
+    # ── One ledger per employee ──────────────────────────────────────────────
+    ledger_hdr = ["Date", "Type", "Description", "Advance Amount", "Commission Adjustment", "Balance", "Submitted By"]
+    col_w = [0.85*inch, 1.3*inch, 3.2*inch, 1.15*inch, 1.55*inch, 1.0*inch, 1.15*inch]
+    for r in summary:
+        ledger = _build_employee_advance_ledger(r["employee_name"])
+        elems.append(CondPageBreak(2.2*inch))
+        elems.append(Spacer(1, 0.28*inch))
+        elems.append(Paragraph(
+            f'{escape(r["employee_name"])} <font size="8" color="#64748B">- {ledger["advance_count"]} advance(s), '
+            f'balance {money(ledger["balance"])}</font>', h2))
+        rows = [ledger_hdr]
+        for e in ledger["entries"]:
+            is_adv = e["kind"] == "advance"
+            if is_adv:
+                desc = [Paragraph(f"<b>{escape(e['description'])}</b>", cell)]
+            else:
+                desc = []
+                if e.get("description"):
+                    desc.append(Paragraph(f"<b>{escape(e['description'])}</b>", cell))
+                for b in e.get("project_breakdown") or []:
+                    desc.append(Paragraph(escape(b.get("label") or b["project_number"]), cell))
+                if not desc:
+                    desc.append(Paragraph("-", cell))
+            if e.get("remarks"):
+                desc.append(Paragraph(f"<i>{escape(e['remarks'])}</i>", sub))
+            who = e.get("submitted_by") or "-"
+            when = _advance_pdf_date(e.get("submitted_at"))
+            rows.append([
+                Paragraph(_advance_pdf_date(e["date"]), cell_c),
+                Paragraph(escape("Advance Issued" if is_adv else (e.get("type_label") or e.get("type") or "Adjustment")), cell_c),
+                desc,
+                colored(money(e["amount"]), PURPLE) if is_adv else Paragraph("", cell_c),
+                Paragraph("", cell_c) if is_adv else colored(money(e["amount"]), GREEN),
+                colored(money(e["balance"]), RED if e["balance"] > 0.005 else GREEN),
+                Paragraph(f"{escape(who)}" + (f'<br/><font size="7" color="#64748B">{when}</font>' if when else ""), cell_c),
+            ])
+        rows.append([
+            Paragraph("", cell_c), Paragraph("", cell_c), Paragraph("Total", bold_c),
+            colored(money(ledger["total_advance"]), PURPLE), colored(money(ledger["total_adjusted"]), GREEN),
+            colored(money(ledger["balance"]), RED if ledger["balance"] > 0.005 else GREEN), Paragraph("", cell_c),
+        ])
+        t = Table(rows, colWidths=col_w, repeatRows=1)
+        st = base_style()
+        st.append(("ALIGN", (2, 1), (2, -1), "LEFT"))
+        t.setStyle(TableStyle(st))
+        elems.append(t)
+
+    def footer(canvas, _doc):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 7.5)
+        canvas.setFillColor(SLATE)
+        canvas.drawString(0.5*inch, 0.3*inch, f"{co.get('name', '')} - Employee Advances & Adjustments")
+        canvas.drawRightString(page[0] - 0.5*inch, 0.3*inch, f"Page {canvas.getPageNumber()}")
+        canvas.restoreState()
+
+    doc.build(elems, onFirstPage=footer, onLaterPages=footer)
+    buf.seek(0)
+    return send_file(buf, mimetype="application/pdf", as_attachment=True,
+                     download_name=f"advance-commission-adjustment_{datetime.now(COMPANY_TZ).strftime('%Y-%m-%d')}.pdf")
 
 @app.route("/sync_adjustment_date", methods=["POST"])
 @login_required
@@ -14838,32 +15197,136 @@ def sync_adjustment_date():
         log.error(f"Error syncing adjustment date: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
+def _reapply_adjustment_pieces(employee, source_advance_id, source_advance_no, items, exclude_source):
+    """Delete each adjustment piece (``items`` = [(adjustment_id, data)] held on the source advance)
+    and re-apply its amount across the employee's advances, oldest first. The date, type,
+    description, remarks, submitter and grouping of every piece are kept.
+
+    Adjustments belong to the employee's overall balance, not to one advance, so which advance
+    physically carries a piece is only bookkeeping. Returns (payload, status, pieces_moved).
+    """
+    moved = 0
+    for adj_id, adj in items:
+        amount = round(_safe_float(adj.get("amount", 0)), 2)
+        payload, status = _delete_advance_adjustment_core({"advance_no": source_advance_no, "adjustment_id": adj_id})
+        if status != 200 or not payload.get("success"):
+            return payload, status, moved
+        remaining = amount
+        for fid, fdata in _employee_advances(employee):
+            if remaining <= 0.004:
+                break
+            if exclude_source and fid == source_advance_id:
+                continue
+            free = round(_safe_float(fdata.get("amount", 0)) - _safe_float(fdata.get("adjusted", 0)), 2)
+            if free <= 0.005:
+                continue
+            chunk = round(min(remaining, free), 2)
+            payload, status = _add_advance_adjustment_core({
+                "advance_no": fdata.get("advance_no", ""), "date": adj.get("date", ""), "amount": chunk,
+                "type": adj.get("type", ""), "reference": adj.get("reference", ""), "remarks": adj.get("remarks", ""),
+                "group_id": adj.get("group_id") or adj_id,
+                "created_at": adj.get("created_at"), "adjusted_by": adj.get("adjusted_by"),
+                "adjusted_by_name": adj.get("adjusted_by_name"), "exchange_rate": adj.get("exchange_rate"),
+            })
+            if status != 200 or not payload.get("success"):
+                return payload, status, moved
+            remaining = round(remaining - chunk, 2)
+        if remaining > 0.005:
+            return {"success": False, "error": f"Could not place ${remaining:.2f} of an adjustment on the remaining advances."}, 400, moved
+        moved += 1
+    return {"success": True}, 200, moved
+
+def _delete_advance_and_settle_adjustments(advance_no: str, confirm: bool):
+    """Delete one advance and deal with the adjustments applied to it.
+
+    The employee's adjustments must always fit inside the advances that remain, so:
+      * adjustments that still fit are moved onto the employee's other advances (oldest first),
+      * if they no longer fit, whole adjustments are removed (the ones touching this advance
+        first, newest first) and the caller has to confirm that with ``confirm=True``.
+    Every move / removal goes through the normal adjustment logic, so Finance expenses and
+    commission balances stay correct. Returns (payload, http_status).
+    """
+    advances_raw = fb_get("/employee_advances") or {}
+    advance_id, advance_data = None, None
+    if isinstance(advances_raw, dict):
+        for aid, adata in advances_raw.items():
+            if isinstance(adata, dict) and adata.get("advance_no") == advance_no:
+                advance_id, advance_data = aid, adata
+                break
+    if not advance_id:
+        return {"success": False, "error": "Advance not found"}, 404
+
+    employee = (advance_data.get("employee_name") or "").strip()
+    ledger = _build_employee_advance_ledger(employee)
+    rows = [e for e in ledger["entries"] if e["kind"] == "adjustment"]
+    on_this = lambda row: any(pc["advance_id"] == advance_id for pc in row["pieces"])
+
+    others_total = sum(e["amount"] for e in ledger["entries"] if e["kind"] == "advance" and e["advance_id"] != advance_id)
+    adjusted_total = sum(r["amount"] for r in rows)
+    excess = round(adjusted_total - others_total, 2)
+
+    # Whole adjustments to remove when they no longer fit: related ones first, newest first
+    to_delete = []
+    if excess > 0.005:
+        ordered = sorted([r for r in rows if on_this(r)], key=lambda r: (r["date"], r.get("created_at") or ""), reverse=True) + \
+                  sorted([r for r in rows if not on_this(r)], key=lambda r: (r["date"], r.get("created_at") or ""), reverse=True)
+        left = excess
+        for r in ordered:
+            if left <= 0.005:
+                break
+            to_delete.append(r)
+            left = round(left - r["amount"], 2)
+
+    if to_delete and not confirm:
+        return {
+            "success": False,
+            "needs_confirmation": True,
+            "error": "This advance is covered by adjustments that no longer fit once it is removed. "
+                     "Confirm to delete those adjustments as well.",
+            "adjustments": [{
+                "date": r["date"], "amount": r["amount"], "type": r.get("type_label") or r.get("type"),
+                "description": r.get("description", ""),
+            } for r in to_delete],
+            "advance_amount": _safe_float(advance_data.get("amount", 0)),
+        }, 409
+
+    # 1. remove the adjustments that cannot be kept
+    removed_ids = set()
+    for r in to_delete:
+        for pc in r["pieces"]:
+            payload, status = _delete_advance_adjustment_core({"advance_no": pc["advance_no"], "adjustment_id": pc["adjustment_id"]})
+            if status != 200 or not payload.get("success"):
+                return payload, status
+            removed_ids.add(pc["adjustment_id"])
+
+    # 2. what is left on this advance simply carries on against the employee's other advances
+    this_adjustments = {}
+    for fid, fdata in _employee_advances(employee):
+        if fid == advance_id:
+            this_adjustments = dict(fdata.get("adjustments") or {})
+    items = sorted(((k, v) for k, v in this_adjustments.items() if k not in removed_ids and isinstance(v, dict)),
+                   key=lambda kv: ((kv[1].get("date") or ""), (kv[1].get("created_at") or "")))
+    payload, status, moved = _reapply_adjustment_pieces(employee, advance_id, advance_no, items, exclude_source=True)
+    if status != 200 or not payload.get("success"):
+        return payload, status
+
+    # 3. finally remove the advance itself
+    _delete_advance_finance_entry(advance_id, advance_no)
+    fb_delete(f"/employee_advances/{advance_id}")
+    cache_bust("commission", "financial")
+    log.info(f"Employee advance deleted: {advance_no} (moved {moved} adjustment(s), removed {len(to_delete)})")
+    return {"success": True, "moved": moved, "deleted_adjustments": len(to_delete)}, 200
+
 @app.route("/delete_employee_advance", methods=["POST"])
 @login_required
 def delete_employee_advance():
-    """Delete an employee advance"""
+    """Delete an employee advance (settling any adjustments applied to it first)."""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         advance_no = data.get("advance_no", "")
-
-        # Find the advance by advance_no
-        advances_raw = fb_get("/employee_advances") or {}
-        advance_id = None
-
-        if isinstance(advances_raw, dict):
-            for aid, adata in advances_raw.items():
-                if isinstance(adata, dict) and adata.get("advance_no") == advance_no:
-                    advance_id = aid
-                    break
-
-        if not advance_id:
-            return jsonify({"success": False, "error": "Advance not found"}), 404
-
-        # Delete from finance expenses first
-        _delete_advance_finance_entry(advance_id, advance_no)
-
-        fb_delete(f"/employee_advances/{advance_id}")
-        log.info(f"Employee advance deleted: {advance_no}")
+        payload, status = _delete_advance_and_settle_adjustments(advance_no, bool(data.get("confirm_adjustments")))
+        if status != 200:
+            return jsonify(payload), status
 
         # Mark permission request as completed
         _uid = session.get("user_uid", "")
@@ -14879,7 +15342,7 @@ def delete_employee_advance():
                     log.info(f"Marked permission request {req_id} as completed")
                     break
 
-        return jsonify({"success": True})
+        return jsonify(payload)
     except Exception as e:
         log.error(f"Error deleting advance: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -14933,6 +15396,8 @@ def financial():
     if not _hk_hit:
         _cache_set("financial_housekeeping_ran", True, 300)
         _cleanup_all_advance_expenses()
+        _migrate_adjustment_expense_labels()
+        _remove_commission_stubs()
         _cleanup_unpaid_commissions()
         _normalize_all_expense_names()
 
@@ -16609,8 +17074,8 @@ def financial():
                     _detail["vendor"] = "Advance Adjustments"
                     _detail["advance_id"] = _exp.get("advance_id") or ""
                     _detail["advance_no"] = _exp.get("advance_no") or ""
-                    _detail["adjustment_type"] = _exp.get("type") or _exp.get("category") or ""
-                    _detail["employee_name"] = _exp.get("employee_name") or ""
+                    _detail["adjustment_type"] = _adjustment_type_label(_exp.get("type") or _exp.get("category") or "")
+                    _detail["employee_name"] = _employee_full_name(_exp.get("employee_name") or "")
                 monthly_expense_details[str(_d.month)].append(_detail)
         except Exception:
             pass
@@ -16781,6 +17246,10 @@ def financial():
 
         # Check if project still exists before displaying commission
         if k not in all_projects:
+            continue
+
+        # Bare deduction-bookkeeping records are not commissions
+        if "commission_amount" not in v:
             continue
 
         pc = dict(v, firebase_id=k)
@@ -17742,7 +18211,7 @@ def expense_delete(exp_id):
 
             # Handle Commission Deduction deletion
             deleted_type = adjustment_to_delete.get("type", "").strip()
-            employee_name = advance_data.get("employee_name", "").strip()
+            employee_name = _resolve_commission_name(advance_data.get("employee_name", "").strip())
 
             if deleted_type == "Commission Deduction":
                 # Find and delete associated commission deduction entry
@@ -17792,6 +18261,22 @@ def expense_restore(exp_id):
         return redirect(url_for("financial", tab="expenses"))
     restored = {k: v for k, v in archive.items()
                 if k not in ("deleted_at", "deleted_by", "deleted_by_uid", "firebase_id")}
+
+    # An adjustment can only come back if the employee still owes at least that much
+    # (and, for a commission adjustment, still has that much commission to adjust)
+    if archive.get("is_adjustment") and archive.get("linked_adjustment_id") and (archive.get("employee_name") or "").strip():
+        _emp = archive["employee_name"].strip()
+        _ledger = _build_employee_advance_ledger(_emp)
+        _present = any(pc["adjustment_id"] == archive["linked_adjustment_id"]
+                       for row in _ledger["entries"] if row["kind"] == "adjustment" for pc in row["pieces"])
+        _amt = _safe_float(archive.get("amount", 0))
+        _atype = (archive.get("type") or "").strip() or {"Commission Adjustment": "Commission Deduction"}.get(archive.get("category", ""), archive.get("category", ""))
+        if not _present and _amt > _ledger["balance"] + 0.005:
+            flash(f"Cannot restore: {_emp}'s outstanding advance balance (${_ledger['balance']:.2f}) is less than this adjustment (${_amt:.2f}).", "warning")
+            return redirect(url_for("financial", tab="expenses"))
+        if not _present and _atype == "Commission Deduction" and _amt > _ledger["pending_commission"] + 0.005:
+            flash(f"Cannot restore: {_emp}'s pending commission (${_ledger['pending_commission']:.2f}) is less than this adjustment (${_amt:.2f}).", "warning")
+            return redirect(url_for("financial", tab="expenses"))
 
     # Standardize description for salary expenses
     if restored.get("expense_type") == "Employee Salary" or restored.get("category") == "Salary":
@@ -17917,6 +18402,13 @@ def expense_restore(exp_id):
         linked_adjustment_id = archive.get("linked_adjustment_id")
         advance_id = archive.get("advance_id") or archive.get("from_advance_id")
 
+        if linked_adjustment_id and not (fb_get(f"/employee_advances/{advance_id}") if advance_id else None) and (archive.get("employee_name") or "").strip():
+            # The advance it belonged to has since been deleted: carry it on the employee's other advances
+            for _fid, _fd in _employee_advances(archive["employee_name"].strip()):
+                if _safe_float(_fd.get("amount", 0)) - _safe_float(_fd.get("adjusted", 0)) + 0.005 >= _safe_float(archive.get("amount", 0)):
+                    advance_id = _fid
+                    break
+
         if linked_adjustment_id and advance_id:
             # Get the advance to restore adjustment in
             advance_data = fb_get(f"/employee_advances/{advance_id}") or {}
@@ -17927,19 +18419,25 @@ def expense_restore(exp_id):
                 # Check if adjustment needs to be restored (not already present)
                 if linked_adjustment_id not in adjustments:
                     # Create restored adjustment from expense data
-                    adjustment_type = archive.get("category", "")
+                    # The stored type ("Commission Deduction"); the category is only its display name
+                    adjustment_type = (archive.get("type") or "").strip() or                         {"Commission Adjustment": "Commission Deduction"}.get(archive.get("category", ""), archive.get("category", ""))
                     restored_adjustment = {
+                        "id": linked_adjustment_id,
+                        "advance_id": advance_id,
                         "date": archive.get("date", ""),
                         "amount": _safe_float(archive.get("amount", 0)),
                         "type": adjustment_type,
+                        "reference": archive.get("reference", ""),
                         "adjusted_by": archive.get("submitted_by", "Admin"),
                         "adjusted_by_name": archive.get("submitted_by_name", ""),
                         "remarks": archive.get("remarks", ""),
                         "exchange_rate": archive.get("exchange_rate", 110),  # Restore exchange rate from expense
                         "linked_expense_id": exp_id,  # Restore the link to the expense
-                        "created_at": archive.get("created_at", datetime.now(timezone.utc).isoformat()),
+                        "created_at": archive.get("adjustment_created_at") or archive.get("created_at", datetime.now(timezone.utc).isoformat()),
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     }
+                    if archive.get("group_id"):
+                        restored_adjustment["group_id"] = archive["group_id"]
 
                     # Restore adjustment in advance
                     adjustment_amount = _safe_float(restored_adjustment.get("amount", 0))
@@ -17961,7 +18459,7 @@ def expense_restore(exp_id):
 
                     # If this is a Commission Deduction adjustment, restore the commission deduction entry
                     if adjustment_type == "Commission Deduction":
-                        employee_name = advance_data.get("employee_name", "").strip()
+                        employee_name = _resolve_commission_name(advance_data.get("employee_name", "").strip())
 
                         if employee_name:
                             # Restore the commission_payments entry from the archived expense data
@@ -17979,9 +18477,12 @@ def expense_restore(exp_id):
                             if project_deductions:
                                 # Recreate the commission deduction entry
                                 import uuid as uuid_module
-                                comm_deduction_id = str(uuid_module.uuid4())
+                                comm_deduction_id = f"adv_{uuid_module.uuid4()}"
 
                                 commission_deduction = {
+                                    "period": datetime.now(COMPANY_TZ).strftime("%Y-%m"),
+                                    "reference": archive.get("reference", ""),
+                                    "remarks": f"Commission deduction for advance {advance_data.get('advance_no', '')}: {archive.get('remarks', '')}",
                                     "salesperson": employee_name,
                                     "employee_name": employee_name,
                                     "amount": -_safe_float(archive.get("amount", 0)),
@@ -21527,6 +22028,9 @@ def employees():
         _av["adjustment_lines"] = _advance_adjustment_lines(_av)
     my_advances.sort(key=lambda a: a.get("date", ""), reverse=True)
     context["my_advances"] = my_advances
+    # Same ledger the Payroll "Advance & Adjustment Details" page shows, read-only
+    context["my_ledger"] = _build_employee_advance_ledger(
+        session.get("user_name", ""), advances=[(a["firebase_id"], a) for a in my_advances], with_commission=False)
 
     return render_template("employees.html", **context)
 

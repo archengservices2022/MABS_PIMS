@@ -1025,14 +1025,14 @@
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Advances</div>
         <div id="eaKpiTotal" style="font-size:1.6rem;font-weight:800;color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(at.total) }}</div>
-        <div id="eaKpiTotalSub" style="font-size:11px;color:#94a3b8;margin-top:6px;">Across {{ my_advances|length }} advance{{ 's' if my_advances|length != 1 }}</div>
+        <div id="eaKpiTotalSub" style="font-size:11px;color:#94a3b8;margin-top:6px;">{{ my_advances|length }} Advance{{ 's' if my_advances|length != 1 }} issued</div>
       </div>
     </div>
     <div class="col-12 col-md-4">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Advance Adjusted</div>
         <div id="eaKpiAdjusted" style="font-size:1.6rem;font-weight:800;color:#D97706;">{{ currency_symbol }}{{ "{:,.2f}".format(at.adjusted) }}</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Adjusted so far</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Amount recovered</div>
       </div>
     </div>
     <div class="col-12 col-md-4">
@@ -1044,39 +1044,69 @@
     </div>
   </div>
 
+  <style>
+  .myl-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+  .myl-table thead { background:#1f2937; }
+  .myl-table th { padding:12px 10px; text-align:center; font-weight:700; color:#fff; font-size:11px; text-transform:uppercase; letter-spacing:.4px; line-height:1.3; }
+  .myl-table th.myl-left { text-align:left; }
+  .myl-table td { padding:12px 10px; border-bottom:1px solid #e2e8f0; color:#0f172a; vertical-align:middle; text-align:left; font-size:13px; }
+  .myl-table td.myl-c { text-align:center; }
+  .myl-table td.myl-num { text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums; font-weight:600; }
+  .myl-table tbody tr:hover { background:#f8fafc; }
+  .myl-table tr.myl-empty td { text-align:center; color:#94a3b8; padding:36px; }
+  .myl-table td.myl-adv { color:#8b5cf6; } .myl-table td.myl-adj { color:#10b981; }
+  .myl-table td.myl-bal { color:#ef4444; } .myl-table td.myl-bal.myl-zero { color:#10b981; }
+  .myl-main { font-weight:600; overflow-wrap:anywhere; }
+  .myl-sub { font-size:12px; color:#64748b; margin-top:3px; line-height:1.5; overflow-wrap:anywhere; }
+  .myl-label { font-size:13px; color:#334155; overflow-wrap:anywhere; }
+  .myl-type { display:inline-flex; align-items:center; gap:9px; font-size:13px; font-weight:500; color:#1e293b; }
+  .myl-ico { width:26px; height:26px; flex:0 0 26px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:12px; }
+  .myl-tb-advance { background:#ede9fe; color:#7c3aed; } .myl-tb-Commission { background:#ccfbf1; color:#0f766e; }
+  .myl-tb-Payroll { background:#fef3c7; color:#b45309; } .myl-tb-Manual { background:#e2e8f0; color:#475569; }
+  </style>
   <div class="card">
     <div class="card-body">
       <h6 class="fw-semibold mb-3"><i class="bi bi-wallet2 me-2" style="color:#b45309;"></i>My Advances</h6>
       <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
-        <input id="eaSearch" type="search" class="form-control form-control-sm" style="width:260px;" placeholder="Search advances…" oninput="eaApplyFilters()">
-        <select id="eaStatus" class="form-select form-select-sm" style="width:135px;" onchange="eaApplyFilters()"><option value="">All statuses</option><option value="open">Open</option><option value="closed">Closed</option></select>
+        <input id="eaSearch" type="search" class="form-control form-control-sm" style="width:260px;" placeholder="Search description…" oninput="eaApplyFilters()">
+        <select id="eaType" class="form-select form-select-sm" style="width:150px;" onchange="eaApplyFilters()"><option value="">All Entries</option><option value="advance">Advances</option><option value="adjustment">Adjustments</option></select>
       </div>
-      <div class="table-responsive">
-        <table class="table table-sm table-hover mb-0 align-middle">
-          <thead style="background:#f8fafc; font-size:11px;">
-            <tr><th class="text-center" style="width:7%;">Advance No</th><th class="text-center" style="width:9%;">Advance Date</th><th class="text-center" style="width:11%;">Reason</th><th class="text-center" style="width:11%;">Advance Amount</th><th class="text-center" style="width:12%;">Advance Adjusted</th><th class="text-center" style="width:12%;">Remaining Balance</th><th class="text-center" style="width:8%;">Status</th><th class="text-center" style="width:30%;">Note</th></tr>
+      <div style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+        <table class="myl-table">
+          <thead>
+            <tr>
+              <th style="width:104px;">Date</th>
+              <th class="myl-left" style="width:176px;">Type</th>
+              <th class="myl-left">Description</th>
+              <th style="width:180px;">Advance Amount</th>
+              <th style="width:200px;">Commission Adjustment</th>
+              <th style="width:122px;">Balance</th>
+            </tr>
           </thead>
           <tbody>
-          {% for a in my_advances %}
-          <tr class="ea-advance-row" data-date="{{ a.get('date','') }}" data-status="{{ (a.get('status','Open') or 'Open')|lower }}" data-amount="{{ a.amount|float }}" data-adjusted="{{ a.adjusted|float }}" data-balance="{{ a.balance|float }}">
-            <td class="text-center fw-600" style="white-space:nowrap;">{{ a.get('advance_no','—') or '—' }}</td>
-            <td class="text-center" style="white-space:nowrap;font-size:13px;">{{ (a.get('date') or '—') | format_date }}</td>
-            <td class="text-center text-muted small">{{ a.get('reason','—') or '—' }}</td>
-            <td class="text-center" style="color:#2563eb;font-weight:600;">{{ currency_symbol }}{{ "{:,.2f}".format(a.amount) }}</td>
-            <td class="text-center" style="color:#16a34a;font-weight:600;">{{ currency_symbol }}{{ "{:,.2f}".format(a.adjusted) }}</td>
-            <td class="text-center" style="color:#dc2626;font-weight:600;">{{ currency_symbol }}{{ "{:,.2f}".format(a.balance) }}</td>
-            <td class="text-center"><span class="badge status-{{ (a.get('status','open'))|lower }}">{{ a.get('status','Open') }}</span></td>
-            <td class="small text-center">
-              {% if a.adjustment_lines %}
-                {% for line in a.adjustment_lines %}
-                <div style="font-size:12.5px;color:#374151;line-height:1.5;">{{ line }}</div>
-                {% endfor %}
+          {% for e in my_ledger.entries %}
+          {% set is_adv = e.kind == 'advance' %}
+          {% set tkey = 'advance' if is_adv else (e.type.split(' ')[0] if e.type else 'Manual') %}
+          <tr class="ea-advance-row" data-kind="{{ e.kind }}" data-amount="{{ e.amount if is_adv else 0 }}" data-adjusted="{{ 0 if is_adv else e.amount }}">
+            <td class="myl-c" style="white-space:nowrap;">{{ (e.date or '—') | format_date }}</td>
+            <td><span class="myl-type"><span class="myl-ico myl-tb-{{ tkey }}"><i class="bi {{ 'bi-arrow-up-right' if is_adv else 'bi-arrow-down-left' }}"></i></span>{{ 'Advance Issued' if is_adv else (e.type_label or e.type or 'Adjustment') }}</span></td>
+            <td>
+              {% if is_adv %}
+                <div class="myl-main">{{ e.description }}</div>
+                {% if e.remarks %}<div class="myl-sub"><i>{{ e.remarks }}</i></div>{% endif %}
               {% else %}
-              <span class="text-muted">—</span>
+                {% if e.description %}<div class="myl-main">{{ e.description }}</div>{% endif %}
+                {% if e.project_breakdown %}<div class="myl-label">{% for b in e.project_breakdown %}{{ b.label_plain }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+                {% if e.remarks %}<div class="myl-sub"><i>{{ e.remarks }}</i></div>{% endif %}
+                {% if not e.description and not e.project_breakdown and not e.remarks %}<span style="color:#94a3b8;">—</span>{% endif %}
               {% endif %}
             </td>
+            <td class="myl-num myl-adv">{% if is_adv %}{{ currency_symbol }}{{ "{:,.2f}".format(e.amount) }}{% endif %}</td>
+            <td class="myl-num myl-adj">{% if not is_adv %}{{ currency_symbol }}{{ "{:,.2f}".format(e.amount) }}{% endif %}</td>
+            <td class="myl-num myl-bal {{ '' if e.balance > 0.005 else 'myl-zero' }}">{{ currency_symbol }}{{ "{:,.2f}".format(e.balance) }}</td>
           </tr>
           {% endfor %}
+          <tr class="myl-empty" id="eaNoRows" style="display:none;"><td colspan="6">No entries match your filters.</td></tr>
           </tbody>
         </table>
       </div>
@@ -1085,29 +1115,27 @@
   <script>
   (function () {
     var CS = {{ currency_symbol | tojson }};
-    function money(value) { return CS + value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
-    function filteredRows() {
-      var query = (document.getElementById('eaSearch').value || '').trim().toLowerCase();
-      var status = document.getElementById('eaStatus').value;
-      return Array.prototype.filter.call(document.querySelectorAll('.ea-advance-row'), function (row) {
-        return (!query || row.textContent.toLowerCase().indexOf(query) !== -1)
-          && (!status || row.dataset.status === status);
-      });
-    }
+    function money(value) { return (value < 0 ? '-' : '') + CS + Math.abs(value).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
     window.eaApplyFilters = function () {
-      var visible = filteredRows(), total = 0, adjusted = 0, balance = 0;
-      document.querySelectorAll('.ea-advance-row').forEach(function (row) { row.style.display = 'none'; });
-      visible.forEach(function (row) {
-        row.style.display = '';
+      var query = (document.getElementById('eaSearch').value || '').trim().toLowerCase();
+      var kind = document.getElementById('eaType').value;
+      var total = 0, adjusted = 0, advCount = 0, shown = 0;
+      document.querySelectorAll('.ea-advance-row').forEach(function (row) {
+        var ok = (!query || row.textContent.toLowerCase().indexOf(query) !== -1) && (!kind || row.dataset.kind === kind);
+        row.style.display = ok ? '' : 'none';
+        if (!ok) return;
+        shown++;
         total += parseFloat(row.dataset.amount || 0) || 0;
         adjusted += parseFloat(row.dataset.adjusted || 0) || 0;
-        balance += parseFloat(row.dataset.balance || 0) || 0;
+        if (row.dataset.kind === 'advance') advCount++;
       });
+      var balance = total - adjusted;
+      document.getElementById('eaNoRows').style.display = shown ? 'none' : '';
       document.getElementById('eaKpiTotal').textContent = money(total);
       document.getElementById('eaKpiAdjusted').textContent = money(adjusted);
       var balanceEl = document.getElementById('eaKpiBalance');
-      balanceEl.textContent = money(balance); balanceEl.style.color = balance > 0 ? '#DC2626' : '#16a34a';
-      document.getElementById('eaKpiTotalSub').textContent = 'Across ' + visible.length + (visible.length === 1 ? ' advance' : ' advances');
+      balanceEl.textContent = money(balance); balanceEl.style.color = balance > 0.005 ? '#DC2626' : '#16a34a';
+      document.getElementById('eaKpiTotalSub').textContent = advCount + (advCount === 1 ? ' Advance issued' : ' Advances issued');
     };
   })();
   </script>

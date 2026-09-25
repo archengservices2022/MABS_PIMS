@@ -1,0 +1,248 @@
+{# Add / Edit Advance Entry dialog. Shared by the Payroll tab and the employee ledger page.
+   Usage:  AdvanceDialog.open()                      -> new advance
+           AdvanceDialog.open({employee: 'name'})    -> new advance, employee pre-selected and locked
+           AdvanceDialog.open({advance: {...}})      -> edit (employee locked)
+   After a successful save the page reloads and a confirmation dialog is shown. #}
+<style>
+.adv-modal { border-radius:8px; border:none; box-shadow:0 20px 25px rgba(0,0,0,.15); padding:10px 14px; }
+.adv-modal .modal-header { border-bottom:none; padding:16px 16px 6px; }
+.adv-modal .modal-title { font-size:20px; font-weight:700; color:#0f172a; }
+.adv-modal .modal-body { padding:12px 16px 4px; }
+.adv-modal .modal-footer { border-top:none; padding:14px 16px 16px; gap:10px; }
+/* Purple = advances, green = adjustments (same colours as the ledger amounts) */
+.btn-advance, .btn-adjust { display:inline-flex; align-items:center; gap:6px; color:#fff; border:none; border-radius:6px; font-weight:600; cursor:pointer; transition:background .2s; }
+.btn-advance { background:#7c3aed; } .btn-advance:hover { background:#6d28d9; color:#fff; }
+.btn-adjust { background:#059669; } .btn-adjust:hover { background:#047857; color:#fff; }
+.btn-advance:disabled, .btn-adjust:disabled { opacity:.6; cursor:not-allowed; }
+.adv-btn-cancel { background:#e2e8f0; color:#0f172a; cursor:pointer; }
+/* Every dialog footer button (Cancel, Save / Update, Delete) shares one size */
+.adv-modal .modal-footer .btn, .adv-modal .modal-footer .adv-btn-cancel {
+  display:inline-flex; align-items:center; justify-content:center; height:40px; padding:0 20px; margin:0;
+  font-size:14px; font-weight:600; line-height:1; border:1px solid transparent; border-radius:6px; }
+.adv-btn-cancel:hover { background:#cbd5e1; }
+.adv-fg { display:flex; flex-direction:column; }
+.adv-fg label { font-size:14px; font-weight:600; color:#0f172a; margin-bottom:6px; }
+.adv-fg input, .adv-fg select, .adv-fg textarea {
+  padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; color:#0f172a; font-family:inherit; background:#fff; width:100%;
+}
+.adv-fg input:focus, .adv-fg select:focus, .adv-fg textarea:focus { outline:none; border-color:#0d9488; box-shadow:0 0 0 3px rgba(13,148,136,.1); }
+.adv-fg input[readonly], .adv-fg select:disabled { background:#f1f5f9; color:#475569; }
+.adv-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+.adv-form-grid .full { grid-column:1 / -1; }
+.adv-req { color:#dc2626; }
+@media (max-width:576px) { .adv-form-grid { grid-template-columns:1fr; } }
+</style>
+
+<div class="modal fade" id="advEntryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content adv-modal">
+      <form id="advEntryForm" novalidate>
+        <div class="modal-header">
+          <h5 class="modal-title" id="advEntryTitle">Add Advance Entry</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="advEntryId" value="">
+          <input type="hidden" id="advEntryNo" value="">
+          <div class="adv-form-grid">
+            <div class="adv-fg">
+              <label for="advEntryDate">Date <span class="adv-req">*</span></label>
+              <input type="date" id="advEntryDate" required>
+            </div>
+            <div class="adv-fg">
+              <label for="advEntryEmployee">Employee Name <span class="adv-req">*</span></label>
+              <select id="advEntryEmployee" required>
+                <option value="">Select employee...</option>
+              </select>
+            </div>
+            <div class="adv-fg full">
+              <label for="advEntryDescription">Description</label>
+              <input type="text" id="advEntryDescription" maxlength="200" placeholder="e.g., Medical emergency, Festival advance">
+            </div>
+            <div class="adv-fg">
+              <label for="advEntryAmount">Advance Amount ({{ currency_symbol }}) <span class="adv-req">*</span></label>
+              <input type="number" id="advEntryAmount" step="0.01" min="0.01" required placeholder="0.00">
+            </div>
+            <div class="adv-fg">
+              <label for="advEntryMethod">Payment Method</label>
+              <select id="advEntryMethod">
+                <option value="Cash">Cash</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Cheque">Cheque</option>
+              </select>
+            </div>
+            <div class="adv-fg full">
+              <label for="advEntryRemarks">Remarks</label>
+              <textarea id="advEntryRemarks" rows="2" maxlength="500" placeholder="Any additional notes..."></textarea>
+            </div>
+          </div>
+          <div id="advEntryError" class="alert alert-danger py-2 mt-3 mb-0 d-none" style="font-size:13px;"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="adv-btn-cancel" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-advance" id="advEntrySaveBtn"><span id="advEntrySaveText">Save Advance</span></button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmation shown after the page reloads following a save -->
+<div class="modal fade" id="advFlashModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content" style="border-top:4px solid #10b981;">
+      <div class="modal-header py-3" style="background:#f0fdf4;border-bottom:1px solid #d1fae5;">
+        <h6 class="modal-title" style="color:#059669;"><i class="bi bi-check-circle me-2"></i><span id="advFlashTitle">Saved</span></h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-4" style="color:#475569;"><p id="advFlashMsg" style="margin:0;"></p></div>
+      <div class="modal-footer py-3">
+        <button class="btn btn-sm btn-success" data-bs-dismiss="modal"><i class="bi bi-check me-1"></i>OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.AdvanceDialog = (function () {
+  const $ = id => document.getElementById(id);
+  const FLASH_KEY = 'advFlash';
+  let employeesLoaded = false;
+
+  function todayISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function showError(msg) {
+    const box = $('advEntryError');
+    box.textContent = msg || '';
+    box.classList.toggle('d-none', !msg);
+  }
+
+  function loadEmployees() {
+    if (employeesLoaded) return Promise.resolve();
+    return fetch('{{ url_for("get_employees") }}?t=' + Date.now())
+      .then(r => r.json())
+      .then(data => {
+        const select = $('advEntryEmployee');
+        select.innerHTML = '<option value="">Select employee...</option>';
+        (data.employees || []).forEach(name => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          select.appendChild(opt);
+        });
+        employeesLoaded = true;
+      })
+      .catch(e => console.error('Error loading employees:', e));
+  }
+
+  function setEmployee(name) {
+    const select = $('advEntryEmployee');
+    if (name && !Array.from(select.options).some(o => o.value === name)) {
+      // Employee no longer active in Settings, but keep their existing advances editable
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    }
+    select.value = name || '';
+  }
+
+  function open(opts) {
+    opts = opts || {};
+    const adv = opts.advance || null;
+    showError('');
+    $('advEntryForm').reset();
+    $('advEntryId').value = adv ? (adv.advance_id || adv.id || '') : '';
+    $('advEntryNo').value = adv ? (adv.advance_no || '') : '';
+    $('advEntryTitle').textContent = adv ? 'Edit Advance Entry' : 'Add Advance Entry';
+    $('advEntrySaveText').textContent = adv ? 'Update Advance' : 'Save Advance';
+    $('advEntryDate').value = adv ? (adv.date || todayISO()) : todayISO();
+    $('advEntryDescription').value = adv ? ((adv.description && adv.description !== 'Give advance') ? adv.description : '') : '';
+    $('advEntryAmount').value = adv ? adv.amount : '';
+    $('advEntryMethod').value = adv ? (adv.payment_method || 'Cash') : 'Cash';
+    $('advEntryRemarks').value = adv ? (adv.remarks || '') : '';
+
+    // employee: preselect and lock; preselect: preselect only; editing always locks
+    const lockEmployee = !!(adv || opts.employee);
+    loadEmployees().then(() => {
+      setEmployee(adv ? adv.employee_name : (opts.employee || opts.preselect || ''));
+      $('advEntryEmployee').disabled = lockEmployee;
+    });
+    // Editing: the employee's advances together must still cover everything adjusted
+    $('advEntryAmount').min = adv && adv.minAmount ? String(adv.minAmount) : '0.01';
+
+    bootstrap.Modal.getOrCreateInstance($('advEntryModal')).show();
+  }
+
+  function save(event) {
+    event.preventDefault();
+    showError('');
+    const id = $('advEntryId').value;
+    const payload = {
+      date: $('advEntryDate').value,
+      employee_name: $('advEntryEmployee').value,
+      reason: $('advEntryDescription').value.trim(),
+      amount: parseFloat($('advEntryAmount').value),
+      payment_method: $('advEntryMethod').value,
+      remarks: $('advEntryRemarks').value.trim()
+    };
+    if (id) { payload.advance_id = id; payload.advance_no = $('advEntryNo').value; }
+
+    if (!payload.date) return showError('Please select a date.');
+    if (!payload.employee_name) return showError('Please select an employee.');
+    if (!(payload.amount > 0)) return showError('Please enter an advance amount greater than 0.');
+
+    const btn = $('advEntrySaveBtn');
+    btn.disabled = true;
+    fetch(id ? '{{ url_for("update_employee_advance") }}' : '{{ url_for("add_employee_advance") }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(r => r.json().then(data => ({ ok: r.ok, data })))
+      .then(({ ok, data }) => {
+        if (ok && data.success) {
+          flash(id ? 'Advance Updated' : 'Advance Added',
+                `Advance of ${payload.amount.toFixed(2)} for ${payload.employee_name} has been ${id ? 'updated' : 'added'}.`);
+          location.reload();
+        } else {
+          showError(data.error || 'Could not save the advance.');
+          btn.disabled = false;
+        }
+      })
+      .catch(e => {
+        console.error(e);
+        showError('Error saving advance. Please try again.');
+        btn.disabled = false;
+      });
+  }
+
+  // Flash messages survive the page reload via sessionStorage
+  function flash(title, msg) {
+    try { sessionStorage.setItem(FLASH_KEY, JSON.stringify({ title, msg })); } catch (e) {}
+  }
+  function notify(title, msg) {
+    $('advFlashTitle').textContent = title;
+    $('advFlashMsg').textContent = msg;
+    bootstrap.Modal.getOrCreateInstance($('advFlashModal')).show();
+  }
+  function showFlash() {
+    let data = null;
+    try {
+      data = JSON.parse(sessionStorage.getItem(FLASH_KEY) || 'null');
+      sessionStorage.removeItem(FLASH_KEY);
+    } catch (e) {}
+    if (data) notify(data.title, data.msg);
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    $('advEntryForm').addEventListener('submit', save);
+    showFlash();
+  });
+
+  return { open, flash, notify };
+})();
+</script>

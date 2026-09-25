@@ -4691,10 +4691,9 @@ function viewReceipt(expId) {
           <table class="table mb-0" style="font-size:12px;">
             <thead style="background:#5B21B6; color:#fff;">
               <tr>
-                <th style="padding:8px 12px; color:#fff;">Date</th>
+                <th style="padding:8px 12px; color:#fff;">Adjustment Date</th>
                 <th style="padding:8px 12px; color:#fff;">Employee</th>
-                <th style="padding:8px 12px; color:#fff;">Advance #</th>
-                <th style="padding:8px 12px; color:#fff;">Type</th>
+                <th style="padding:8px 12px; color:#fff;">Adjustment Type</th>
                 <th style="padding:8px 12px; color:#fff; text-align:right;">Advance Adjusted Amount</th>
               </tr>
             </thead>
@@ -4927,19 +4926,17 @@ function viewReceipt(expId) {
           adjustments.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
           var aRows = adjustments.map(function(a, idx) {
             var bg = idx%2===0?'#fff':'#f5f3ff';
-            var advanceNo = a.advance_no || '—';
             var adjustmentType = a.adjustment_type || '—';
             var employeeName = a.employee_name || '—';
             return '<tr style="background:'+bg+';border-bottom:1px solid #ddd6fe;">'
               +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(a.date)+'</td>'
               +'<td style="padding:8px 12px;color:#1e293b;font-weight:500;">'+employeeName+'</td>'
-              +'<td style="padding:8px 12px;font-weight:500;">'+advanceNo+'</td>'
               +'<td style="padding:8px 12px;color:#6b7280;">'+adjustmentType+'</td>'
               +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#7C3AED;">'+fmt(a.amount)+'</td></tr>';
           });
           document.getElementById('monthAdjustmentsTbody').innerHTML = aRows.join('');
           totalAdj = adjustments.reduce(function(s,a){return s+parseFloat(a.amount||0);},0);
-          document.getElementById('monthAdjustmentsTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total Adjustments</td>'
+          document.getElementById('monthAdjustmentsTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Adjustments</td>'
             +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#7C3AED;font-size:13px;">'+fmt(totalAdj)+'</td></tr>';
         } else {
           adjSec.style.display = 'none';
@@ -5644,7 +5641,7 @@ function viewReceipt(expId) {
           <tr>
             <th id="arColNumber">Invoice / Project #</th>
             <th id="arColClient">Client</th>
-            <th class="text-end">Amount</th>
+            <th class="text-end">Receivable Amount</th>
             <th>Status</th>
             <th id="arColStart">Start Date</th>
             <th id="arColDueTh">Due Date</th>
@@ -5888,13 +5885,58 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
   const AR_CATEGORIES = [
     { name: 'Advance Payment Received', icon: '▪', color: '#2563EB' },
     { name: 'Invoiced - Not Paid', icon: '▪', color: '#16A34A' },
-    { name: 'Partial Payment - Outstanding', icon: '▪', color: '#F59E0B' },
+    { name: 'Partial Payment Due', icon: '▪', color: '#F59E0B' },
     { name: 'Invoice Disputed', icon: '▪', color: '#DC2626' },
     { name: 'Scope Disagreement', icon: '▪', color: '#0EA5E9' },
     { name: 'Incorrect Invoice', icon: '▪', color: '#8B5CF6' },
     { name: 'Project Completion Issue', icon: '▪', color: '#10B981' },
     { name: 'Others / On Hold', icon: '▪', color: '#6366F1' }
   ];
+
+  // Hover hint for each category: one short line saying what it is and where it comes from
+  const AR_TIPS = {
+    'Advance Payment Received': 'Advance receivable from employees',
+    'Invoiced - Not Paid':      'Invoices sent, not yet paid — from Invoices',
+    'Partial Payment Due':      'Balance still due on partially paid invoices — from Invoices',
+    'Invoice Disputed':         'Unpaid amount of disputed invoices — from Invoices',
+    'Scope Disagreement':       'Unpaid balance of projects with a scope disagreement — from Projects',
+    'Incorrect Invoice':        'Unpaid amount of invoices marked incorrect — from Invoices',
+    'Project Completion Issue': 'Unpaid balance of projects with a completion issue — from Projects',
+    'Others / On Hold':         'Draft invoices and on-hold projects — from Invoices and Projects'
+  };
+
+  let arTipEl = null, arTipRow = null;
+  function arPlaceTip(ev) {
+    if (!arTipEl || !arTipRow) return;
+    const r = arTipRow.getBoundingClientRect();
+    const w = arTipEl.offsetWidth, h = arTipEl.offsetHeight;
+    const cx = ev && typeof ev.clientX === 'number' ? ev.clientX : r.left + r.width / 2;
+    const left = Math.max(8, Math.min(cx - w / 2, window.innerWidth - w - 8));
+    const above = r.top - h - 10 >= 8;
+    arTipEl.style.left = left + 'px';
+    arTipEl.style.top = (above ? r.top - h - 10 : r.bottom + 10) + 'px';
+    const arrow = arTipEl.lastChild;
+    arrow.style.left = Math.max(12, Math.min(cx - left, w - 12)) + 'px';
+    arrow.style[above ? 'bottom' : 'top'] = '-4px';
+    arrow.style[above ? 'top' : 'bottom'] = 'auto';
+  }
+  window.arShowTip = function (row, name, ev) {
+    const text = AR_TIPS[name];
+    if (!text) return;
+    if (!arTipEl) {
+      arTipEl = document.createElement('div');
+      arTipEl.style.cssText = 'position:fixed;z-index:2000;max-width:300px;background:#1e293b;color:#f8fafc;border-radius:8px;padding:8px 14px;box-shadow:0 6px 18px rgba(15,23,42,.22);pointer-events:none;font-size:12.5px;line-height:1.45;text-align:center;';
+    }
+    if (!arTipEl.parentNode) document.body.appendChild(arTipEl);
+    arTipEl.innerHTML = '<span></span><span style="position:absolute;width:8px;height:8px;background:#1e293b;transform:translateX(-50%) rotate(45deg);"></span>';
+    arTipEl.firstChild.textContent = text;
+    arTipEl.style.display = 'block';
+    arTipRow = row;
+    arPlaceTip(ev);
+  };
+  window.arMoveTip = function (ev) { arPlaceTip(ev); };
+  window.arHideTip = function () { if (arTipEl) arTipEl.style.display = 'none'; arTipRow = null; };
+  window.addEventListener('scroll', function () { window.arHideTip(); }, true);
 
   // Populated by initArSummary and read by the click-to-drill-down handlers
   // below, which live on window since they're wired up via inline onclick.
@@ -5914,7 +5956,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 
     if (status === 'Invoice Disputed') return 'Invoice Disputed';
     if (status === 'Incorrect Invoice') return 'Incorrect Invoice';
-    if (status === 'Partial') return 'Partial Payment - Outstanding';
+    if (status === 'Partial') return 'Partial Payment Due';
     if (status === 'Paid' || status === 'Cancelled') return null;
     if (status === 'Sent' || status === 'Viewed' || status === 'Overdue') return 'Invoiced - Not Paid';
     // Draft invoices go to Others/On Hold, not Invoiced - Not Paid
@@ -5968,8 +6010,8 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         arData['Advance Payment Received'].amount += balance;
         arData['Advance Payment Received'].count += 1;
         arData['Advance Payment Received'].invoices.push({
-          number: adv.advance_no || adv.id,
-          href: adv.id ? ('/payroll/advance/' + adv.id) : '',
+          number: adv.employee_name ? ('Advance – ' + adv.employee_name) : 'Advance',
+          href: adv.employee_name ? ('/payroll/advance-employee/' + encodeURIComponent(adv.employee_name)) : '',
           client: adv.employee_name || '—',
           amount: balance,
           daysPending: daysPending,
@@ -6088,7 +6130,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       const iconMap = {
         'Advance Payment Received': 'bi-cash-coin',
         'Invoiced - Not Paid': 'bi-file-earmark',
-        'Partial Payment - Outstanding': 'bi-percent',
+        'Partial Payment Due': 'bi-percent',
         'Invoice Disputed': 'bi-exclamation-triangle',
         'Scope Disagreement': 'bi-chat-dots',
         'Incorrect Invoice': 'bi-x-circle',
@@ -6102,7 +6144,8 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
                    style="display:flex;align-items:center;justify-content:space-between;padding:12px 8px;margin:0 -8px;border-radius:8px;${idx > 0 ? 'border-top:1px solid #f3f4f6;' : ''}${clickable ? 'cursor:pointer;' : 'opacity:0.6;'}"
                    ${clickable ? `onclick="showArCategoryDetails('${cat.name.replace(/'/g, "\\'")}')"` : ''}
                    onmouseover="if(${clickable}) this.style.background='#f8fafc';"
-                   onmouseout="this.style.background='';">
+                   onmouseout="this.style.background='';"
+                   onmouseenter="arShowTip(this, '${cat.name.replace(/'/g, "\\'")}', event)" onmousemove="arMoveTip(event)" onmouseleave="arHideTip()">
         <div style="display:flex;align-items:center;gap:12px;flex:1;">
           <div style="width:32px;height:32px;border-radius:6px;background:${cat.color}20;display:flex;align-items:center;justify-content:center;">
             <i class="bi ${icon}" style="font-size:16px;color:${cat.color};"></i>

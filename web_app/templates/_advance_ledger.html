@@ -1,0 +1,585 @@
+{# Employee Advances & Adjustments ledger for ONE employee (the employee page).
+   Context: fixed_employee, adjustment_types, type_labels, currency_symbol.
+   Needs _advance_entry_modal.html (AdvanceDialog) on the same page. #}
+<style>
+#advLedger .al-head { display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:25px; padding-bottom:15px; border-bottom:2px solid #e2e8f0; }
+#advLedger .al-back { display:inline-flex; align-items:center; gap:6px; color:#0d9488; text-decoration:none; font-weight:600; font-size:13px; }
+#advLedger .al-back:hover { color:#0a7860; }
+#advLedger .al-head-actions { display:flex; gap:8px; flex-wrap:wrap; }
+#advLedger .al-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:16px; margin-bottom:20px; }
+/* Summary cards: everything centered, across and down */
+#advLedger .al-stats .kpi-card { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; min-height:132px; }
+#advLedger .al-stats .kpi-top { justify-content:center; gap:8px; width:100%; }
+#advLedger .al-stats .kpi-icon-sm { order:-1; }
+#advLedger .al-stats .kpi-value, #advLedger .al-stats .kpi-sub { text-align:center; width:100%; }
+#advLedger .al-filters { display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+#advLedger .al-search-wrap { position:relative; flex:0 1 260px; }
+#advLedger .al-search-wrap i { position:absolute; left:13px; top:50%; transform:translateY(-50%); font-size:13px; color:#94a3b8; pointer-events:none; transition:color .2s; }
+#advLedger .al-search-wrap:focus-within i { color:#0d9488; }
+#advLedger .al-input { height:34px; padding:6px 14px; border:1px solid #e2e8f0; border-radius:999px; background:#f8fafc; font-size:12.5px; color:#0f172a; transition:all .2s; }
+#advLedger .al-input:hover { border-color:#cbd5e1; background-color:#fff; }
+#advLedger .al-input:focus { outline:none; background-color:#fff; border-color:#0d9488; box-shadow:0 0 0 3px rgba(13,148,136,.12); }
+#advLedger .al-search { width:100%; padding-left:34px; }
+#advLedger .al-search::placeholder { color:#94a3b8; }
+#advLedger select.al-input { -webkit-appearance:none; appearance:none; cursor:pointer; font-weight:500; padding-right:32px;
+  background:#f8fafc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16' fill='%2394a3b8'%3E%3Cpath d='M1.5 5.5l6.5 6.5 6.5-6.5-1-1L8 10 2.5 4.5z'/%3E%3C/svg%3E") no-repeat right 14px center; }
+#advLedger .al-clear { width:26px; height:26px; padding:0; border:none; border-radius:50%; background:#fee2e2; color:#dc2626; font-size:11px; line-height:1; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:all .2s; }
+#advLedger .al-clear[hidden] { display:none; }
+#advLedger .al-clear:hover { background:#dc2626; color:#fff; transform:scale(1.08); }
+#advLedger .al-right { margin-left:auto; }
+#advLedger button.al-export { cursor:pointer; }
+#advLedger .al-export { display:inline-flex; align-items:center; gap:7px; height:34px; padding:0 18px; border:1px solid #99f6e4; border-radius:999px; background:#f0fdfa; color:#0f766e; font-size:12.5px; font-weight:600; text-decoration:none; transition:all .2s; }
+#advLedger .al-export:hover { background:#0d9488; border-color:#0d9488; color:#fff; box-shadow:0 4px 10px rgba(13,148,136,.25); transform:translateY(-1px); }
+
+#advLedger .al-table-wrap { background:#fff; border-radius:8px; border:1px solid #e2e8f0; overflow:hidden; }
+#advLedger .al-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+#advLedger .al-table thead { background:#1f2937; }
+#advLedger .al-table th { padding:12px 10px; text-align:center; font-weight:700; color:#fff; font-size:11px; text-transform:uppercase; letter-spacing:.4px; line-height:1.3; }
+#advLedger .al-table th.al-left { text-align:left; }
+#advLedger .al-table td { padding:12px 10px; border-bottom:1px solid #e2e8f0; color:#0f172a; vertical-align:middle; text-align:left; font-size:13px; }
+#advLedger .al-table td.al-c { text-align:center; }
+#advLedger .al-table td.al-num { text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums; font-weight:600; }
+#advLedger .al-table tbody tr:hover { background:#f8fafc; }
+#advLedger .al-table tr.al-total td { background:#f8fafc; border-top:2px solid #cbd5e1; border-bottom:none; font-weight:700; }
+#advLedger .al-table tr.al-empty td { text-align:center; color:#94a3b8; padding:40px; }
+#advLedger .al-table td.al-adv { color:#8b5cf6; }
+#advLedger .al-table td.al-adj { color:#10b981; }
+#advLedger .al-table td.al-bal { color:#ef4444; }
+#advLedger .al-table td.al-bal.al-zero { color:#10b981; }
+#advLedger .al-desc-main { font-weight:600; overflow-wrap:anywhere; }
+#advLedger .al-desc-sub { font-size:12px; color:#64748b; margin-top:3px; line-height:1.5; overflow-wrap:anywhere; }
+#advLedger .al-desc-label { font-weight:400; font-size:13px; color:#334155; overflow-wrap:anywhere; }
+#advLedger .al-desc-label.al-with { margin-top:3px; }
+#advLedger .al-desc-label a { color:inherit; text-decoration:none; }
+#advLedger .al-desc-label a:hover { color:#0d9488; text-decoration:underline; }
+#advLedger .al-type { display:inline-flex; align-items:center; gap:9px; font-size:13px; font-weight:500; color:#1e293b; }
+#advLedger .al-type-ico { width:26px; height:26px; flex:0 0 26px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:12px; }
+#advLedger .al-tb-advance { background:#ede9fe; color:#7c3aed; }
+#advLedger .al-tb-Commission { background:#ccfbf1; color:#0f766e; }
+#advLedger .al-tb-Payroll { background:#fef3c7; color:#b45309; }
+#advLedger .al-tb-Manual { background:#e2e8f0; color:#475569; }
+#advLedger .al-actions { display:flex; gap:4px; justify-content:center; }
+#advLedger .al-btn { padding:6px 10px; font-size:12px; border-radius:4px; cursor:pointer; display:flex; align-items:center; gap:4px; transition:all .2s; background:#fff; border:1px solid #cbd5e1; color:#0f172a; }
+#advLedger .al-btn:hover:not(:disabled) { background:#f1f5f9; border-color:#0f172a; }
+#advLedger .al-btn.al-danger { color:#dc2626; border-color:#dc2626; }
+#advLedger .al-btn.al-danger:hover { background:#fef2f2; border-color:#dc2626; }
+#advLedger .al-btn.al-warn { color:#d97706; border-color:#d97706; }
+#advLedger .al-btn.al-warn:hover { background:#fffbeb; border-color:#d97706; }
+#advLedger .al-btn:disabled { opacity:.4; cursor:not-allowed; }
+#advLedger .al-foot { padding:12px 20px; background:#f8fafc; border-top:1px solid #e2e8f0; font-size:13px; color:#64748b; }
+#advLedger .al-pager { display:flex; align-items:center; justify-content:center; gap:10px; padding:16px; background:#f8fafc; border-top:1px solid #e2e8f0; }
+#advLedger .al-pager button { padding:6px 10px; border:1px solid #cbd5e1; border-radius:4px; background:#fff; cursor:pointer; font-size:14px; }
+#advLedger .al-pager button:disabled { opacity:.4; cursor:not-allowed; }
+#advLedger .al-pager input { width:50px; padding:6px; border:1px solid #cbd5e1; border-radius:4px; text-align:center; }
+.al-preview { background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:12px; font-size:13px; color:#991b1b; margin-top:16px; }
+</style>
+
+<div id="advLedger">
+  <div class="al-head">
+    <a href="{{ url_for('payroll') }}#employee-advance" class="al-back">← Back to Advances &amp; Adjustments</a>
+    <div class="al-head-actions">
+      <button type="button" class="btn btn-sm btn-advance" onclick="AdvLedger.addAdvance()" style="padding:9px 16px;font-size:13px;">
+        <i class="bi bi-plus-lg"></i> Add Advance Entry
+      </button>
+      <button type="button" class="btn btn-sm btn-adjust" onclick="AdvLedger.addAdjustment()" style="padding:9px 16px;font-size:13px;">
+        <i class="bi bi-plus-lg"></i> Add Adjustment Entry
+      </button>
+    </div>
+  </div>
+
+  <div class="al-stats">
+    <div class="kpi-card kpi-purple">
+      <div class="kpi-top"><span class="kpi-label">Total Advanced</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
+      <div class="kpi-value" id="alCardAdvance">—</div>
+      <div class="kpi-sub" id="alCardAdvanceSub">&nbsp;</div>
+    </div>
+    <div class="kpi-card kpi-green">
+      <div class="kpi-top"><span class="kpi-label">Total Adjusted</span><i class="bi bi-arrow-left-right kpi-icon-sm"></i></div>
+      <div class="kpi-value" id="alCardAdjusted">—</div>
+      <div class="kpi-sub" id="alCardAdjustedSub">&nbsp;</div>
+    </div>
+    <div class="kpi-card kpi-amber">
+      <div class="kpi-top"><span class="kpi-label">Outstanding Balance</span><i class="bi bi-exclamation-circle kpi-icon-sm"></i></div>
+      <div class="kpi-value" id="alCardBalance">—</div>
+      <div class="kpi-sub" id="alCardBalanceSub">&nbsp;</div>
+    </div>
+    <div class="kpi-card kpi-blue">
+      <div class="kpi-top"><span class="kpi-label">Pending Commission</span><i class="bi bi-percent kpi-icon-sm"></i></div>
+      <div class="kpi-value" id="alCardCommission">—</div>
+      <div class="kpi-sub">Unpaid commission that can be adjusted</div>
+    </div>
+  </div>
+
+  <div class="al-filters">
+    <div class="al-search-wrap">
+      <i class="bi bi-search"></i>
+      <input type="text" id="alSearch" class="al-input al-search" placeholder="Search description..." oninput="AdvLedger.filterChanged()">
+    </div>
+    <select id="alType" class="al-input" onchange="AdvLedger.filterChanged()">
+      <option value="">All Entries</option>
+      <option value="advance">Advances</option>
+      <option value="adjustment">Adjustments</option>
+    </select>
+    <button type="button" id="alClear" class="al-clear" onclick="AdvLedger.clearFilters()" title="Clear filters" aria-label="Clear filters" hidden><i class="bi bi-x-lg"></i></button>
+    <div class="al-right">
+      <button type="button" class="al-export" onclick="AdvLedger.exportCsv()" title="Download this ledger as a CSV file"><i class="bi bi-download"></i>Export</button>
+    </div>
+  </div>
+
+  <div class="al-table-wrap">
+    <table class="al-table" id="alTable">
+      <thead>
+        <tr>
+          <th style="width:104px;">Date</th>
+          <th class="al-left" style="width:176px;">Type</th>
+          <th class="al-left">Description</th>
+          <th style="width:126px;">Advance Amount</th>
+          <th style="width:136px;">Commission Adjustment</th>
+          <th style="width:122px;">Balance</th>
+          <th style="width:172px;">Submitted By</th>
+          <th style="width:84px;">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="alBody"></tbody>
+    </table>
+    <div class="al-foot">Showing <span id="alStart">0</span>–<span id="alEnd">0</span> of <span id="alTotal">0</span> entries</div>
+    <div class="al-pager">
+      <button type="button" id="alPrev" onclick="AdvLedger.goToPage(-1)">‹</button>
+      <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+        <input type="number" id="alPageInput" value="1" min="1" onchange="AdvLedger.goToPage(0, parseInt(this.value, 10))">
+        <span style="color:#94a3b8;">of</span>
+        <span id="alPages" style="font-weight:600;color:#0f172a;">1</span>
+      </div>
+      <button type="button" id="alNext" onclick="AdvLedger.goToPage(1)">›</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add / Edit Adjustment dialog -->
+<div class="modal fade" id="alAdjModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content adv-modal">
+      <form id="alAdjForm" novalidate>
+        <div class="modal-header">
+          <h5 class="modal-title" id="alAdjTitle">Add Adjustment Entry</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="adv-form-grid">
+            <div class="adv-fg">
+              <label for="alAdjDate">Adjustment Date <span class="adv-req">*</span></label>
+              <input type="date" id="alAdjDate" required>
+            </div>
+            <div class="adv-fg">
+              <label for="alAdjType">Adjustment Type <span class="adv-req">*</span></label>
+              <select id="alAdjType" required onchange="AdvLedger.updateHints()">
+                <option value="">Select adjustment type</option>
+                {% for t in adjustment_types %}
+                <option value="{{ t }}">{{ type_labels.get(t, t) }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="adv-fg">
+              <label for="alAdjAmount">Adjustment Amount ({{ currency_symbol }}) <span class="adv-req">*</span></label>
+              <input type="number" id="alAdjAmount" step="0.01" min="0.01" required placeholder="0.00" oninput="AdvLedger.updateHints()">
+            </div>
+            <div class="adv-fg">
+              <label for="alAdjDesc">Description</label>
+              <input type="text" id="alAdjDesc" maxlength="200" placeholder="e.g., Project name, July payroll">
+            </div>
+            <div class="adv-fg full">
+              <label for="alAdjRemarks">Remarks</label>
+              <textarea id="alAdjRemarks" rows="2" maxlength="500" placeholder="Any additional notes..."></textarea>
+            </div>
+          </div>
+          <div id="alAdjHint" class="al-preview d-none"></div>
+          <div id="alAdjError" class="alert alert-danger py-2 mt-3 mb-0 d-none" style="font-size:13px;"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="adv-btn-cancel" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-adjust" id="alAdjSave"><span id="alAdjSaveText">Save Adjustment</span></button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirmation -->
+<div class="modal fade" id="alDelModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content adv-modal">
+      <div class="modal-header">
+        <h5 class="modal-title" id="alDelTitle">Delete</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="alDelMsg" style="margin:0 0 8px;color:#0f172a;font-weight:600;font-size:15px;"></p>
+        <p id="alDelDetail" style="margin:0;color:#475569;line-height:1.55;"></p>
+        <div id="alDelError" class="alert alert-danger py-2 mt-3 mb-0 d-none" style="font-size:13px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="adv-btn-cancel" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="alDelBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.AdvLedger = (function () {
+  const CUR = {{ currency_symbol|tojson }};
+  const PAGE_SIZE = 10;
+  const $ = id => document.getElementById(id);
+  const FIXED = {{ fixed_employee|tojson }};
+  let LEDGER = { entries: [], employees: {} };
+  let COMMISSION_NAME = FIXED;   // the salesperson name commissions are stored under
+  let DELETE_PERMS = new Set();
+  let page = 1;
+  let pendingDelete = null;
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+  function money(n) {
+    const v = parseFloat(n) || 0;
+    return (v < 0 ? '-' : '') + CUR + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function fmtDate(d) {
+    const p = (d || '').split('-');
+    return p.length === 3 ? `${p[1]}-${p[2]}-${p[0]}` : (d || '—');
+  }
+  function fmtSubmitted(iso) {
+    if (!iso) return '<span style="color:#94a3b8;">—</span>';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return esc(iso);
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())}-${d.getFullYear()}`;
+  }
+  function todayISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  function badgeClass(e) {
+    return e.kind === 'advance' ? 'al-tb-advance' : 'al-tb-' + ((e.type || '').split(' ')[0] || 'Manual');
+  }
+  // Advances go out (up-right arrow); every kind of adjustment comes back (down-left arrow)
+  function typeIcon(e) { return e.kind === 'advance' ? 'bi-arrow-up-right' : 'bi-arrow-down-left'; }
+  function postJson(url, payload) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(r => r.json().then(data => ({ ok: r.ok, data })));
+  }
+  const employeeFilter = () => FIXED;
+  const filterKeys = ['alType', 'alSearch'];
+
+  // ── loading ──────────────────────────────────────────────────────────────
+  function load() {
+    fetch('{{ url_for("api_employee_advance_ledger", employee_name="EMPLOYEE_NAME") }}'.replace('EMPLOYEE_NAME', encodeURIComponent(FIXED)) + '?t=' + Date.now())
+      .then(r => r.json())
+      .then(data => {
+        data.entries.forEach(e => { e.employee = FIXED; });
+        COMMISSION_NAME = data.commission_name || FIXED;
+        LEDGER = { entries: data.entries, employees: { [FIXED]: { balance: data.balance, pending_commission: data.pending_commission, open_count: data.open_count } } };
+        DELETE_PERMS = new Set(data.delete_perms || []);
+        render();
+        const editId = new URLSearchParams(location.search).get('edit');   // from the single-advance page
+        if (editId) {
+          const idx = LEDGER.entries.findIndex(e => e.kind === 'advance' && e.advance_id === editId);
+          if (idx >= 0) editAdvance(idx);
+          history.replaceState(null, '', location.pathname);
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        $('alBody').innerHTML = '<tr class="al-empty"><td colspan="8">Could not load this employee. Please refresh the page.</td></tr>';
+      });
+  }
+
+  // ── rendering ────────────────────────────────────────────────────────────
+  function visibleEntries() {
+    const emp = employeeFilter(), type = $('alType').value;
+    const q = $('alSearch').value.trim().toLowerCase();
+    return LEDGER.entries.map((e, i) => ({ e, i })).filter(({ e }) => {
+      if (emp && e.employee !== emp) return false;
+      if (type && e.kind !== type) return false;
+      if (q && ![e.description, e.remarks, e.type, e.type_label, e.employee].join(' ').toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }
+
+  function renderCards(rows) {
+    // Cards follow whatever the table is showing; pending commission belongs to the employees in scope
+    const emp = employeeFilter();
+    const shown = rows.map(r => r.e);
+    const scope = LEDGER.entries.filter(e => !emp || e.employee === emp);
+    const filtered = shown.length !== scope.length;
+    const advs = shown.filter(e => e.kind === 'advance');
+    const adjs = shown.filter(e => e.kind === 'adjustment');
+    const totAdv = advs.reduce((s, e) => s + e.amount, 0);
+    const totAdj = adjs.reduce((s, e) => s + e.amount, 0);
+    const openAdv = advs.filter(e => e.amount - e.adjusted > 0.005).length;
+    const advAll = scope.filter(e => e.kind === 'advance').length;
+    const adjAll = scope.length - advAll;
+    const pending = Object.entries(LEDGER.employees).filter(([n]) => !emp || n === emp).reduce((s, [, v]) => s + v.pending_commission, 0);
+    $('alCardAdvance').textContent = money(totAdv);
+    const n = (c, word) => `${c} ${word}${c === 1 ? '' : 's'}`;
+    $('alCardAdvanceSub').textContent = filtered ? `Showing ${advs.length} of ${advAll} advance entries` : `Across ${advs.length} advance ${advs.length === 1 ? 'entry' : 'entries'}`;
+    $('alCardAdjusted').textContent = money(totAdj);
+    $('alCardAdjustedSub').textContent = filtered ? `Showing ${adjs.length} of ${adjAll} adjustment entries` : `Across ${adjs.length} adjustment ${adjs.length === 1 ? 'entry' : 'entries'}`;
+    $('alCardBalance').textContent = money(totAdv - totAdj);
+    $('alCardBalanceSub').textContent = filtered ? 'Based on the entries shown'
+      : (openAdv ? `Total advanced less adjustments` : (advs.length ? 'All advances fully recovered' : 'No advances issued yet'));
+    $('alCardCommission').textContent = money(pending);
+  }
+
+  function descriptionHtml(e) {
+    if (e.kind === 'advance') {
+      let html = `<div class="al-desc-main" title="${esc(e.payment_method || '')}">${esc(e.description)}</div>`;
+      if (e.remarks) html += `<div class="al-desc-sub"><i>${esc(e.remarks)}</i></div>`;
+      return html;
+    }
+    const projects = (e.project_breakdown || []).map(b =>
+      `<a href="/commission/${encodeURIComponent(COMMISSION_NAME)}?q=${encodeURIComponent(b.project_number)}">${esc(b.label || b.project_number)}</a>`);
+    let html = e.description ? `<div class="al-desc-main">${esc(e.description)}</div>` : '';
+    if (projects.length) html += `<div class="al-desc-label ${e.description ? 'al-with' : ''}">${projects.join(', ')}</div>`;
+    if (e.remarks) html += `<div class="al-desc-sub"><i>${esc(e.remarks)}</i></div>`;
+    return html || '<span style="color:#94a3b8;">—</span>';
+  }
+
+  function actionsHtml(e, i) {
+    if (e.kind === 'advance') {
+      let del;
+      if (DELETE_PERMS.has(e.advance_no)) {
+        del = `<button type="button" class="al-btn al-danger" title="Delete" onclick="AdvLedger.deleteAdvance(${i})"><i class="bi bi-trash"></i></button>`;
+      } else {
+        del = `<button type="button" class="al-btn al-warn" title="Request delete" onclick="openDeleteRequestModal('advance','${esc(e.advance_no)}','Advance: ${money(e.amount)} on ${fmtDate(e.date)}')"><i class="bi bi-send"></i></button>`;
+      }
+      return `<div class="al-actions"><button type="button" class="al-btn" title="Edit" onclick="AdvLedger.editAdvance(${i})"><i class="bi bi-pencil"></i></button>${del}</div>`;
+    }
+    const edit = `<button type="button" class="al-btn" title="Edit" onclick="AdvLedger.editAdjustment(${i})"><i class="bi bi-pencil"></i></button>`;
+    return `<div class="al-actions">${edit}<button type="button" class="al-btn al-danger" title="Delete" onclick="AdvLedger.deleteAdjustment(${i})"><i class="bi bi-trash"></i></button></div>`;
+  }
+
+  function render() {
+    $('alClear').hidden = !filterKeys.some(id => $(id).value.trim() !== '');
+    const rows = visibleEntries();
+    renderCards(rows);
+    const showEmp = false;
+    const cols = 8;
+    const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    page = Math.min(Math.max(1, page), totalPages);
+    const body = $('alBody');
+
+    if (!rows.length) {
+      body.innerHTML = `<tr class="al-empty"><td colspan="${cols}">${
+        LEDGER.entries.length ? 'No entries match your filters.' : 'No advances yet. Use “Add Advance Entry” to create one.'}</td></tr>`;
+    } else {
+      let adv = 0, adj = 0;
+      rows.forEach(({ e }) => { if (e.kind === 'advance') adv += e.amount; else adj += e.amount; });
+      const start = (page - 1) * PAGE_SIZE;
+      body.innerHTML = rows.slice(start, start + PAGE_SIZE).map(({ e, i }) => {
+        const isAdv = e.kind === 'advance';
+        return `<tr>
+          <td class="al-c" style="white-space:nowrap;">${fmtDate(e.date)}</td>
+          ${showEmp ? `<td class="al-c" style="font-weight:600;color:#0d9488;">${esc(e.employee)}</td>` : ''}
+          <td><span class="al-type"><span class="al-type-ico ${badgeClass(e)}"><i class="bi ${typeIcon(e)}"></i></span>${isAdv ? 'Advance Issued' : esc(e.type_label || e.type || 'Adjustment')}</span></td>
+          <td>${descriptionHtml(e)}</td>
+          <td class="al-num al-adv">${isAdv ? money(e.amount) : ''}</td>
+          <td class="al-num al-adj">${isAdv ? '' : money(e.amount)}</td>
+          <td class="al-num al-bal ${e.balance > 0.005 ? '' : 'al-zero'}">${money(e.balance)}</td>
+          <td class="al-c" style="font-size:13px;"><div>${e.submitted_by ? esc(e.submitted_by) : '<span style="color:#94a3b8;">—</span>'}</div><div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">${fmtSubmitted(e.submitted_at)}</div></td>
+          <td class="al-c">${actionsHtml(e, i)}</td>
+        </tr>`;
+      }).join('') + `<tr class="al-total">
+          <td colspan="${showEmp ? 4 : 3}" style="text-align:center;">Total (${rows.length} ${rows.length === 1 ? 'entry' : 'entries'})</td>
+          <td class="al-num al-adv">${money(adv)}</td><td class="al-num al-adj">${money(adj)}</td>
+          <td class="al-num al-bal ${adv - adj > 0.005 ? '' : 'al-zero'}">${money(adv - adj)}</td><td colspan="2"></td></tr>`;
+    }
+    $('alTotal').textContent = rows.length;
+    $('alStart').textContent = rows.length ? (page - 1) * PAGE_SIZE + 1 : 0;
+    $('alEnd').textContent = Math.min(page * PAGE_SIZE, rows.length);
+    $('alPages').textContent = totalPages;
+    $('alPageInput').value = page;
+    $('alPageInput').max = totalPages;
+    $('alPrev').disabled = page <= 1;
+    $('alNext').disabled = page >= totalPages;
+  }
+
+  function goToPage(delta, exact) { page = exact ? exact : page + delta; if (isNaN(page)) page = 1; render(); }
+  function filterChanged() { page = 1; render(); }
+  function clearFilters() { filterKeys.forEach(id => { $(id).value = ''; }); filterChanged(); }
+
+  // ── advances ─────────────────────────────────────────────────────────────
+  function addAdvance() { AdvanceDialog.open({ employee: FIXED }); }
+  function editAdvance(i) { const e = LEDGER.entries[i]; AdvanceDialog.open({ advance: Object.assign({ employee_name: e.employee, minAmount: e.min_amount }, e) }); }
+
+  function confirmDelete(title, msg, detail, run) {
+    $('alDelTitle').textContent = title;
+    $('alDelMsg').textContent = msg;
+    $('alDelDetail').textContent = detail;
+    $('alDelError').classList.add('d-none');
+    $('alDelBtn').disabled = false;
+    pendingDelete = run;
+    bootstrap.Modal.getOrCreateInstance($('alDelModal')).show();
+  }
+  function deleteAdvance(i) {
+    const e = LEDGER.entries[i];
+    const url = '{{ url_for("delete_employee_advance") }}';
+    const done = data => `The ${money(e.amount)} advance has been deleted.` + (data && data.moved ? ' Its adjustments were moved to the remaining advances.' : '');
+    const detail = 'This action cannot be undone.';
+    confirmDelete('Delete Advance', `Delete ${e.employee}'s ${money(e.amount)} advance from ${fmtDate(e.date)}?`, detail,
+      () => postJson(url, { advance_no: e.advance_no }).then(res => Object.assign(res, {
+        message: done(res.data),
+        // Used when the server says some adjustments cannot stay once this advance is gone
+        retry: () => postJson(url, { advance_no: e.advance_no, confirm_adjustments: true }).then(r => Object.assign(r, { message: done(r.data) }))
+      })));
+  }
+
+  function askToDeleteAdjustments(e, data, retry) {
+    const list = (data.adjustments || []).map(a =>
+      `<li>${fmtDate(a.date)} · ${esc(a.type)} · <strong>${money(a.amount)}</strong>${a.description ? ' · ' + esc(a.description) : ''}</li>`).join('');
+    $('alDelTitle').textContent = 'Delete Advance and Adjustments';
+    $('alDelMsg').textContent = `This advance is covered by adjustments that no longer fit once it is removed.`;
+    $('alDelDetail').innerHTML = `Deleting it will also delete the following adjustment${(data.adjustments || []).length === 1 ? '' : 's'}. ` +
+      `Their expenses will be removed and any commission they reduced will be restored.` +
+      `<ul style="margin:10px 0 0;padding-left:20px;">${list}</ul>`;
+    $('alDelError').classList.add('d-none');
+    $('alDelBtn').disabled = false;
+    pendingDelete = retry;
+  }
+
+  function deleteAdjustment(i) {
+    const e = LEDGER.entries[i];
+    const label = e.type_label || e.type;
+    const isCommission = e.type === 'Commission Deduction';
+    confirmDelete('Delete Adjustment',
+      `Delete ${e.employee}'s ${money(e.amount)} ${label}?`,
+      'Deleting this adjustment will restore the advance balance, remove the associated expense' +
+        (isCommission ? ', and restore the commission amount reduced by this adjustment.' : '.'),
+      () => postJson('{{ url_for("delete_employee_adjustment") }}', { pieces: e.pieces })
+        .then(res => Object.assign(res, { message: `${label} adjustment of ${money(e.amount)} has been deleted.` })));
+  }
+
+  // ── adjustments ──────────────────────────────────────────────────────────
+  function adjErr(msg) { $('alAdjError').textContent = msg || ''; $('alAdjError').classList.toggle('d-none', !msg); }
+  const adjEmployee = () => FIXED;
+
+  // The adjustment being edited (null when adding). Only the employee's overall balance matters.
+  let editing = null;
+  function maxAllowed() {
+    const info = LEDGER.employees[adjEmployee()];
+    if (!info) return Infinity;
+    let max = info.balance + (editing ? editing.amount : 0);
+    if ($('alAdjType').value === 'Commission Deduction') {
+      max = Math.min(max, info.pending_commission + (editing && editing.type === 'Commission Deduction' ? editing.amount : 0));
+    }
+    return Math.max(0, Math.round(max * 100) / 100);
+  }
+  function updateHints() {
+    const amount = parseFloat($('alAdjAmount').value);
+    const box = $('alAdjHint');
+    const max = maxAllowed();
+    $('alAdjAmount').max = isFinite(max) && max ? String(max) : '';
+    if (!(amount > max + 0.005)) { box.classList.add('d-none'); return; }
+    const info = LEDGER.employees[adjEmployee()];
+    box.classList.remove('d-none');
+    box.textContent = $('alAdjType').value === 'Commission Deduction' && info.pending_commission < info.balance
+      ? `Only ${money(info.pending_commission)} of pending commission is available for this employee (maximum ${money(max)}).`
+      : `The maximum you can adjust is ${money(max)}.`;
+  }
+  function addAdjustment() {
+    if (!(LEDGER.employees[FIXED] && LEDGER.employees[FIXED].balance > 0.005)) { AdvanceDialog.notify('Nothing to adjust', `${FIXED} has no outstanding advance balance.`); return; }
+    $('alAdjForm').reset();
+    adjErr('');
+    editing = null;
+    $('alAdjTitle').textContent = 'Add Adjustment Entry';
+    $('alAdjSaveText').textContent = 'Save Adjustment';
+    $('alAdjDate').value = todayISO();
+    updateHints();
+    bootstrap.Modal.getOrCreateInstance($('alAdjModal')).show();
+  }
+  function editAdjustment(i) {
+    const e = LEDGER.entries[i];
+    $('alAdjForm').reset();
+    adjErr('');
+    editing = e;
+    $('alAdjTitle').textContent = 'Edit Adjustment Entry';
+    $('alAdjSaveText').textContent = 'Update Adjustment';
+    $('alAdjDate').value = e.date || todayISO();
+    $('alAdjType').value = e.type || '';
+    $('alAdjAmount').value = e.amount;
+    $('alAdjDesc').value = e.description || '';
+    $('alAdjRemarks').value = e.remarks || '';
+    updateHints();
+    bootstrap.Modal.getOrCreateInstance($('alAdjModal')).show();
+  }
+  function saveAdjustment(event) {
+    event.preventDefault();
+    adjErr('');
+    const editId = !!editing;
+    const employee = adjEmployee();
+    const payload = {
+      date: $('alAdjDate').value, type: $('alAdjType').value, amount: parseFloat($('alAdjAmount').value),
+      reference: $('alAdjDesc').value.trim(), remarks: $('alAdjRemarks').value.trim()
+    };
+    if (!payload.date) return adjErr('Please select an adjustment date.');
+    if (!payload.type) return adjErr('Please select an adjustment type.');
+    if (!(payload.amount > 0)) return adjErr('Please enter an adjustment amount greater than 0.');
+    if (payload.amount > maxAllowed() + 0.005) return adjErr(`The maximum you can adjust is ${money(maxAllowed())}.`);
+    if (editId) payload.pieces = editing.pieces.map(p => ({ advance_no: p.advance_no, adjustment_id: p.adjustment_id })); else payload.employee_name = employee;
+
+    const btn = $('alAdjSave');
+    btn.disabled = true;
+    postJson(editId ? '{{ url_for("update_employee_adjustment") }}' : '{{ url_for("add_employee_adjustment") }}', payload)
+      .then(({ ok, data }) => {
+        if (ok && data.success) {
+          AdvanceDialog.flash(editId ? 'Adjustment Updated' : 'Adjustment Added',
+            `${money(payload.amount)} ${$('alAdjType').selectedOptions[0].text} ${editId ? 'updated' : 'recorded'} for ${employee}.`);
+          location.reload();
+        } else { adjErr(data.error || 'Could not save the adjustment.'); btn.disabled = false; }
+      })
+      .catch(err => { console.error(err); adjErr('Error saving adjustment. Please try again.'); btn.disabled = false; });
+  }
+
+  function exportCsv() {
+    const cell = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+    const lines = [['Date', 'Employee', 'Type', 'Description', 'Advance Amount', 'Adjustment Amount', 'Balance', 'Remarks', 'Submitted By', 'Submitted On']];
+    visibleEntries().forEach(({ e }) => {
+      const isAdv = e.kind === 'advance';
+      lines.push([e.date, FIXED, isAdv ? 'Advance Issued' : (e.type_label || e.type), e.description,
+        isAdv ? e.amount.toFixed(2) : '', isAdv ? '' : e.amount.toFixed(2), e.balance.toFixed(2), e.remarks, e.submitted_by, e.submitted_at]);
+    });
+    const blob = new Blob(['\ufeff' + lines.map(l => l.map(cell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `advance-ledger-${FIXED.replace(/[^a-z0-9]+/gi, '_')}-${todayISO()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  }
+
+  // ── boot ─────────────────────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', function () {
+    $('alAdjForm').addEventListener('submit', saveAdjustment);
+    $('alDelBtn').addEventListener('click', function () {
+      if (!pendingDelete) return;
+      this.disabled = true;
+      pendingDelete().then(res => {
+        if (res.ok && res.data.success) { AdvanceDialog.flash('Deleted', res.message); location.reload(); }
+        else if (res.data && res.data.needs_confirmation && res.retry) { askToDeleteAdjustments(null, res.data, res.retry); }
+        else { $('alDelError').textContent = res.data.error || 'Could not delete.'; $('alDelError').classList.remove('d-none'); this.disabled = false; }
+      }).catch(err => {
+        console.error(err);
+        $('alDelError').textContent = 'Error while deleting. Please try again.';
+        $('alDelError').classList.remove('d-none');
+        this.disabled = false;
+      });
+    });
+    load();
+  });
+
+  return { filterChanged, clearFilters, goToPage, addAdvance, editAdvance, deleteAdvance,
+           addAdjustment, editAdjustment, deleteAdjustment, updateHints, exportCsv };
+})();
+</script>

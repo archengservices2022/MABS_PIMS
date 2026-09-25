@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Advance & Adjustment Details – {{ employee_name }}{% endblock %}
+{% block page_title %}Advance &amp; Adjustment Details — {{ employee_name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  {% with fixed_employee=employee_name %}
+  {% include "_advance_ledger.html" %}
+  {% endwith %}
+</div>
+
+{% include "_advance_entry_modal.html" %}
+{% endblock %}

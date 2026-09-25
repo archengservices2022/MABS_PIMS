@@ -588,23 +588,6 @@ input:checked + .toggle-slider:before {
               <div style="font-weight:600;margin-bottom:6px;">
                 {{ currency_symbol }}{{ "{:,.2f}".format(adjusted) }}
               </div>
-              {% if deductions %}
-                {% set seen_adv = [] %}
-                {% for deduction in deductions %}
-                  {% set adv_no = deduction.get('advance_no', '') %}
-                  {% set adv_id = deduction.get('advance_id', '') %}
-                  {% if adv_no and adv_no not in seen_adv %}
-                    {% if seen_adv.append(adv_no) %}{% endif %}
-                    <div style="font-size:11px;margin-top:2px;">
-                      {% if adv_id %}
-                        <a href="/payroll/advance/{{ adv_id }}" class="advance-link" title="View advance details">{{ adv_no }}</a>
-                      {% else %}
-                        <span class="advance-link" style="cursor:pointer;" onclick="alert('Advance ID not available')">{{ adv_no }}</span>
-                      {% endif %}
-                    </div>
-                  {% endif %}
-                {% endfor %}
-              {% endif %}
             </td>
             <td class="amount-success">
               <div style="font-weight:600;color:#10b981;">{{ currency_symbol }}{{ "{:,.2f}".format(paid_amount) }}</div>
