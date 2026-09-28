@@ -9562,7 +9562,7 @@ def invoicing_export_pdf_selected():
 
     from flask import Response
     return Response(out.getvalue(), mimetype="application/pdf",
-                    headers={"Content-Disposition": f"inline;filename={fname}"})
+                    headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 # ── Routes: Invoicing Export ──────────────────────────────────────────────────
 def _filter_invoices_export(items):
@@ -28670,7 +28670,7 @@ def _generate_invoice_summary_pdf_bytes(invoice_ids: list):
     elems.append(Spacer(1, 3*mm))
 
     first_meta = invoices[0].get("meta", {}) or {}
-    invoice_date = first_meta.get("invoice_date") or datetime.now(COMPANY_TZ).strftime("%m/%d/%Y")
+    invoice_date = datetime.now(COMPANY_TZ).strftime("%m-%d-%Y")
     elems.append(Paragraph(f"<b>Invoice Date:</b> {invoice_date}", left10))
     elems.append(Spacer(1, 2*mm))
 

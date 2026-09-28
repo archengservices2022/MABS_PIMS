@@ -100,7 +100,7 @@
   <!-- ?? Tab 1: All Invoices ?????????????????????????????????????????????? -->
   <div class="tab-pane fade" id="tab-all-invoices">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <form method="GET" id="invFilterForm">
+      <form method="GET" id="invFilterForm" class="w-100">
         <input type="hidden" name="tab" value="all-invoices">
         <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
           <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm"
@@ -142,6 +142,21 @@
             <i class="bi bi-x-lg me-1"></i>Clear
           </a>
           {% endif %}
+          <button type="button" id="invSelectModeBtn" class="btn btn-sm btn-outline-teal ms-auto" onclick="enableInvSelectMode()">
+            <i class="bi bi-check2-square me-1"></i>Select Invoices for Summary
+          </button>
+          <div id="invSelectionBar" class="d-flex flex-column align-items-center ms-auto" style="display:none!important;">
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm btn-teal shadow-sm" onclick="exportSelectedInvoicesPdf()">
+                <i class="bi bi-file-earmark-pdf me-1"></i>Generate Invoice Summary
+              </button>
+              <button type="button" class="btn btn-sm btn-light text-muted border p-0 d-inline-flex align-items-center justify-content-center"
+                      style="width:31px;height:31px;" title="Cancel" onclick="exitInvSelectMode()">
+                <i class="bi bi-x-lg" style="font-size:13px;"></i>
+              </button>
+            </div>
+            <span class="text-muted small text-nowrap mt-1"><span id="invSelectedCount">0</span> invoice(s) selected</span>
+          </div>
         </div>
         {% if search or status_filter or date_from or date_to or client_filter or plant_filter %}
         <div class="alert alert-light py-1 px-3 mt-2 small d-flex align-items-center gap-2"
@@ -156,22 +171,6 @@
         </div>
         {% endif %}
       </form>
-      <div class="d-flex align-items-center gap-2 ms-auto">
-        <button type="button" id="invSelectModeBtn" class="btn btn-sm btn-outline-primary" onclick="enableInvSelectMode()">
-          <i class="bi bi-check2-square me-1"></i>Select Invoices for Summary
-        </button>
-        <div id="invSelectionBar" class="d-flex flex-column align-items-center" style="display:none!important;">
-          <div class="d-flex align-items-center gap-2">
-            <button type="button" class="btn btn-sm btn-danger" onclick="exportSelectedInvoicesPdf()">
-              <i class="bi bi-file-earmark-pdf me-1"></i>Generate Invoice Summary
-            </button>
-            <button type="button" class="btn btn-link text-muted p-0 border-0" title="Cancel" onclick="exitInvSelectMode()">
-              <i class="bi bi-x-lg" style="font-size:16px;"></i>
-            </button>
-          </div>
-          <span class="text-muted small text-nowrap mt-1"><span id="invSelectedCount">0</span> invoice(s) selected</span>
-        </div>
-      </div>
     </div>
 
     <form id="invSelectedExportForm" method="POST" action="{{ url_for('invoicing_export_pdf_selected') }}" target="_blank"></form>
