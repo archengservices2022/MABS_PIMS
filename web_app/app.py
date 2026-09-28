@@ -6574,7 +6574,7 @@ def invoicing():
     inv_clients = sorted(inv_clients_set) if inv_clients_set else _load_clients()
     all_plants = sorted({i.get("plant_state", "") for i in all_invoices_raw if i.get("plant_state", "")})
 
-    statuses = ["Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"]
+    statuses = ["Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Invoice Disputed", "Incorrect Invoice", "Cancelled"]
     active_tab = request.args.get("tab", "all-invoices")
 
     # KPI stats — invoices filtered by invoice_date, collected by payment_date
