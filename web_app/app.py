@@ -9560,9 +9560,24 @@ def invoicing_export_pdf_selected():
     base_number = (first_invoice.get("meta", {}) or {}).get("invoice_number", "").split("_")[0]
     fname = f"Invoices_{base_number}.pdf" if base_number else f"Invoices_{datetime.now(COMPANY_TZ).strftime('%Y%m%d_%H%M%S')}.pdf"
 
+    # Stash the generated PDF and redirect to a GET url: the POST response itself
+    # can't be re-fetched, but the PDF viewer's own download button re-requests
+    # the current tab's URL via GET, so it needs a GET-able endpoint to land on.
+    token = secrets.token_urlsafe(16)
+    _cache_set(f"invpdf:{token}", (out.getvalue(), fname), 600)
+    return redirect(url_for("invoicing_export_pdf_selected_view", token=token))
+
+@app.route("/invoicing/export/pdf-selected/<token>")
+@role_required("invoicing")
+def invoicing_export_pdf_selected_view(token):
+    cached, hit = _cache_get(f"invpdf:{token}")
+    if not hit:
+        flash("This invoice summary link has expired. Please generate it again.", "warning")
+        return redirect(url_for("invoicing", tab="all-invoices"))
+    pdf_bytes, fname = cached
     from flask import Response
-    return Response(out.getvalue(), mimetype="application/pdf",
-                    headers={"Content-Disposition": f"attachment;filename={fname}"})
+    return Response(pdf_bytes, mimetype="application/pdf",
+                    headers={"Content-Disposition": f"inline;filename={fname}"})
 
 # ── Routes: Invoicing Export ──────────────────────────────────────────────────
 def _filter_invoices_export(items):
