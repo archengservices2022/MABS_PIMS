@@ -9522,18 +9522,21 @@ def invoice_pdf(invoice_id):
     return Response(pdf_bytes, mimetype="application/pdf",
                     headers={"Content-Disposition": f"inline;filename={fname}"})
 
-@app.route("/invoicing/export/pdf-selected", methods=["POST"])
+@app.route("/invoicing/export/pdf-selected", methods=["GET"])
 @role_required("invoicing")
 def invoicing_export_pdf_selected():
     """Combine an 'Invoice Summary' cover page + Payment Information with the
-    (unmodified) per-invoice detail PDF of each selected invoice into one file."""
+    (unmodified) per-invoice detail PDF of each selected invoice into one file.
+    A plain GET (like the single-invoice invoice_pdf route) so the browser's own
+    PDF-viewer download button can re-fetch this exact URL directly — no
+    redirect, no server-side token cache, nothing that can "expire"."""
     try:
         from pypdf import PdfReader, PdfWriter
     except ImportError:
         flash("pypdf not installed.", "danger")
         return redirect(url_for("invoicing", tab="all-invoices"))
 
-    invoice_ids = [i for i in request.form.getlist("invoice_ids") if i]
+    invoice_ids = [i for i in request.args.getlist("invoice_ids") if i]
     if not invoice_ids:
         flash("Select at least one invoice to export.", "warning")
         return redirect(url_for("invoicing", tab="all-invoices"))
@@ -9563,26 +9566,9 @@ def invoicing_export_pdf_selected():
     writer.write(out)
     out.seek(0)
 
-    fname = "Invoice Summary.pdf"
-
-    # Stash the generated PDF and redirect to a GET url: the POST response itself
-    # can't be re-fetched, but the PDF viewer's own download button re-requests
-    # the current tab's URL via GET, so it needs a GET-able endpoint to land on.
-    token = secrets.token_urlsafe(16)
-    _cache_set(f"invpdf:{token}", (out.getvalue(), fname), 600)
-    return redirect(url_for("invoicing_export_pdf_selected_view", token=token))
-
-@app.route("/invoicing/export/pdf-selected/<token>")
-@role_required("invoicing")
-def invoicing_export_pdf_selected_view(token):
-    cached, hit = _cache_get(f"invpdf:{token}")
-    if not hit:
-        flash("This invoice summary link has expired. Please generate it again.", "warning")
-        return redirect(url_for("invoicing", tab="all-invoices"))
-    pdf_bytes, fname = cached
     from flask import Response
-    return Response(pdf_bytes, mimetype="application/pdf",
-                    headers={"Content-Disposition": f'inline; filename="{fname}"'})
+    return Response(out.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="Invoice Summary.pdf"'})
 
 # ── Routes: Invoicing Export ──────────────────────────────────────────────────
 def _filter_invoices_export(items):
