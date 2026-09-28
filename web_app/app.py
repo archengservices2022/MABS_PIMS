@@ -19937,6 +19937,7 @@ def api_employee_terminate(uid):
         "terminated_by":     terminated_by,
         "updated_at":        datetime.now(timezone.utc).isoformat(),
     })
+    cache_bust("all_users")
 
     user = fb_get(f"/users/{uid}") or {}
     return jsonify({
@@ -19974,6 +19975,7 @@ def api_employee_reactivate(uid):
         "terminated_by":     "",
         "updated_at":        datetime.now(timezone.utc).isoformat(),
     })
+    cache_bust("all_users")
 
     user = fb_get(f"/users/{uid}") or {}
     return jsonify({
