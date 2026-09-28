@@ -217,7 +217,7 @@
           <thead>
             <tr>
               <th>Project #</th>
-              <th>Name</th>
+              <th>PO/WO #</th>
               <th>Client</th>
               <th>Plant</th>
               <th>Received Date</th>
@@ -244,7 +244,18 @@
                 </span>
                 {% endif %}
               </td>
-              <td class="fw-500">{{ p.get('project_name','—') }}</td>
+              <td class="fw-500">
+                {{ p.get('po_wo_number') or '—' }}
+                {% set _co_powos = [] %}
+                {% for _co in (p.get('change_orders') or []) %}
+                  {% if _co.get('po_wo_number') %}{% set _ = _co_powos.append(_co.get('po_wo_number')) %}{% endif %}
+                {% endfor %}
+                {% if _co_powos %}
+                <div class="text-muted" style="margin-top:2px;font-size:.8rem;font-weight:600;letter-spacing:.02em;">
+                  CO_{{ _co_powos | join(', ') }}
+                </div>
+                {% endif %}
+              </td>
               <td class="text-muted">{{ p.get('company_name') or p.get('client_name','—') }}</td>
               <td>
                 {% if p.get('_plant_display') %}

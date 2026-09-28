@@ -156,13 +156,33 @@
         </div>
         {% endif %}
       </form>
+      <div class="d-flex align-items-center gap-2 ms-auto">
+        <button type="button" id="invSelectModeBtn" class="btn btn-sm btn-outline-primary" onclick="enableInvSelectMode()">
+          <i class="bi bi-check2-square me-1"></i>Select Invoices for Summary
+        </button>
+        <div id="invSelectionBar" class="d-flex flex-column align-items-center" style="display:none!important;">
+          <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm btn-danger" onclick="exportSelectedInvoicesPdf()">
+              <i class="bi bi-file-earmark-pdf me-1"></i>Generate Invoice Summary
+            </button>
+            <button type="button" class="btn btn-link text-muted p-0 border-0" title="Cancel" onclick="exitInvSelectMode()">
+              <i class="bi bi-x-lg" style="font-size:16px;"></i>
+            </button>
+          </div>
+          <span class="text-muted small text-nowrap mt-1"><span id="invSelectedCount">0</span> invoice(s) selected</span>
+        </div>
+      </div>
     </div>
 
+    <form id="invSelectedExportForm" method="POST" action="{{ url_for('invoicing_export_pdf_selected') }}" target="_blank"></form>
     <div class="card-panel">
       <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
           <thead>
             <tr>
+              <th class="inv-select-col" style="width:36px;display:none;" onclick="event.stopPropagation()">
+                <input type="checkbox" id="invSelectAllCb" onclick="toggleAllInvSelect(this)">
+              </th>
               <th>Invoice #</th>
               <th>Client</th>
               <th>Project</th>
@@ -180,6 +200,9 @@
             {% set meta = inv.get('meta', {}) %}
             <tr class="inv-row" onclick="location.href=getInvoiceDetailUrl('{{ inv.firebase_id }}');"
                 style="cursor:pointer;">
+              <td class="inv-select-col" style="display:none;" onclick="event.stopPropagation()">
+                <input type="checkbox" class="inv-select-cb" value="{{ inv.firebase_id }}" onchange="updateInvSelection()">
+              </td>
               <td style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
                 <span class="fw-bold text-teal" style="text-decoration:none;white-space:nowrap;">{{ meta.get('invoice_number','—') }}</span>
               </td>
@@ -224,7 +247,7 @@
             </tr>
             {% else %}
             <tr>
-              <td colspan="9" class="text-center text-muted py-5">
+              <td colspan="10" class="text-center text-muted py-5">
                 <i class="bi bi-receipt fs-2 d-block mb-2"></i>
                 No invoices found.
               </td>
@@ -241,7 +264,7 @@
             {% set total_paid_with_tax = paid_all + ns.tax_paid_all %}
             {% if invoices %}
             <tr style="font-weight:700; border-top:2px solid #E2E8F0;">
-              <td colspan="6">Totals</td>
+              <td colspan="7">Totals</td>
               <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(total_all) }}</td>
               <td class="text-end text-success">{{ currency_symbol }}{{ "{:,.2f}".format(total_paid_with_tax) }}</td>
               <td colspan="2"></td>
@@ -435,6 +458,47 @@ async function quickPay(invoiceId, total, amountPaid, btn) {
     btn.innerHTML = '<i class="bi bi-check-circle"></i>';
     alert('? Error recording payment');
   }
+}
+
+// ?? Invoice selection ??? export combined PDF ??????????????????????????????????
+function enableInvSelectMode() {
+  document.querySelectorAll('.inv-select-col').forEach(el => el.style.display = '');
+  document.getElementById('invSelectModeBtn').style.display = 'none';
+  document.getElementById('invSelectionBar').style.display = 'flex';
+}
+function exitInvSelectMode() {
+  document.querySelectorAll('.inv-select-cb').forEach(cb => cb.checked = false);
+  const selectAllCb = document.getElementById('invSelectAllCb');
+  if (selectAllCb) selectAllCb.checked = false;
+  document.querySelectorAll('.inv-select-col').forEach(el => el.style.display = 'none');
+  document.getElementById('invSelectionBar').style.setProperty('display', 'none', 'important');
+  document.getElementById('invSelectModeBtn').style.display = '';
+  updateInvSelection();
+}
+function updateInvSelection() {
+  const boxes = document.querySelectorAll('.inv-select-cb:checked');
+  document.getElementById('invSelectedCount').textContent = boxes.length;
+  const all = document.querySelectorAll('.inv-select-cb');
+  const selectAllCb = document.getElementById('invSelectAllCb');
+  if (selectAllCb) selectAllCb.checked = all.length > 0 && boxes.length === all.length;
+}
+function toggleAllInvSelect(masterCb) {
+  document.querySelectorAll('.inv-select-cb').forEach(cb => cb.checked = masterCb.checked);
+  updateInvSelection();
+}
+function exportSelectedInvoicesPdf() {
+  const boxes = document.querySelectorAll('.inv-select-cb:checked');
+  if (boxes.length === 0) return;
+  const form = document.getElementById('invSelectedExportForm');
+  form.innerHTML = '';
+  boxes.forEach(cb => {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'invoice_ids';
+    input.value = cb.value;
+    form.appendChild(input);
+  });
+  form.submit();
 }
 
 // ?? Invoice filter quick-range ???????????????????????????????????????????????

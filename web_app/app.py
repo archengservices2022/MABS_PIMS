@@ -9522,6 +9522,48 @@ def invoice_pdf(invoice_id):
     return Response(pdf_bytes, mimetype="application/pdf",
                     headers={"Content-Disposition": f"inline;filename={fname}"})
 
+@app.route("/invoicing/export/pdf-selected", methods=["POST"])
+@role_required("invoicing")
+def invoicing_export_pdf_selected():
+    """Combine an 'Invoice Summary' cover page + Payment Information with the
+    (unmodified) per-invoice detail PDF of each selected invoice into one file."""
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except ImportError:
+        flash("pypdf not installed.", "danger")
+        return redirect(url_for("invoicing", tab="all-invoices"))
+
+    invoice_ids = [i for i in request.form.getlist("invoice_ids") if i]
+    if not invoice_ids:
+        flash("Select at least one invoice to export.", "warning")
+        return redirect(url_for("invoicing", tab="all-invoices"))
+
+    summary_bytes = _generate_invoice_summary_pdf_bytes(invoice_ids)
+    if not summary_bytes:
+        flash("Could not build the invoice summary PDF.", "danger")
+        return redirect(url_for("invoicing", tab="all-invoices"))
+
+    import io as _io
+    writer = PdfWriter()
+    for chunk in [summary_bytes] + [_generate_invoice_pdf_bytes(iid, job_style_header=True) for iid in invoice_ids]:
+        if not chunk:
+            continue
+        reader = PdfReader(_io.BytesIO(chunk))
+        for page in reader.pages:
+            writer.add_page(page)
+
+    out = _io.BytesIO()
+    writer.write(out)
+    out.seek(0)
+
+    first_invoice = fb_get(f"/invoices/{invoice_ids[0]}") or {}
+    base_number = (first_invoice.get("meta", {}) or {}).get("invoice_number", "").split("_")[0]
+    fname = f"Invoices_{base_number}.pdf" if base_number else f"Invoices_{datetime.now(COMPANY_TZ).strftime('%Y%m%d_%H%M%S')}.pdf"
+
+    from flask import Response
+    return Response(out.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"inline;filename={fname}"})
+
 # ── Routes: Invoicing Export ──────────────────────────────────────────────────
 def _filter_invoices_export(items):
     if request.args.get("status"):
@@ -27779,8 +27821,45 @@ def project_pdf(project_id):
                     headers={"Content-Disposition": f"inline;filename={fname}"})
 
 # ── Email helper ─────────────────────────────────────────────────────────────
-def _generate_invoice_pdf_bytes(invoice_id: str):
-    """Generate invoice PDF and return as bytes. Returns None on error."""
+def _pdf_job_style_footer(canvas_obj, doc_obj, co):
+    """Draw the same disclaimer footer used on the job/quote PDF (Note: As the CEO...
+    + address/phone/website), on every page. Shared by callers that opt into
+    job_style_header so the export matches the job-generated PDF's look."""
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph
+    from reportlab.lib.units import mm, inch
+
+    canvas_obj.saveState()
+    footer_blue = colors.HexColor("#003D82")
+    canvas_obj.setLineWidth(0.5)
+    canvas_obj.setStrokeColor(footer_blue)
+    canvas_obj.line(doc_obj.leftMargin, 0.72*inch, doc_obj.width + doc_obj.leftMargin, 0.72*inch)
+
+    footer_style = ParagraphStyle(
+        name="JobStyleFooter", alignment=1, fontName="Helvetica", fontSize=7,
+        textColor=footer_blue, leading=9
+    )
+    footer_lines = [
+        "Note: As the CEO of MABS Engineering LLC, Dr. Ashiq reserves the right to change or cancel this policy at any time, at his discretion.",
+        f"Address: {co.get('address','15455 Manchester Rd, PO Box 1144, Ballwin, MO 63011')}",
+        f"Telephone: {co.get('phone','(314) 585-2003')} • {co.get('email','info@mabs-engineering.com')}",
+        co.get('website', 'www.mabs-engineering.com'),
+    ]
+    y_position = 0.55*inch
+    for line in footer_lines:
+        p = Paragraph(line, footer_style)
+        p.wrap(doc_obj.width - 1*inch, 12*mm)
+        p.drawOn(canvas_obj, doc_obj.leftMargin + 0.5*inch, y_position)
+        y_position -= 3*mm
+    canvas_obj.restoreState()
+
+def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False):
+    """Generate invoice PDF and return as bytes. Returns None on error.
+    job_style_header=True switches the header/footer to match the job/quote PDF
+    (logo + big company name only, disclaimer footer on every page) — used only
+    by the combined multi-invoice export; the standalone single-invoice download
+    keeps calling this with the default (False), so its look is unchanged."""
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
@@ -27801,7 +27880,8 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
                             leftMargin=10*mm, rightMargin=10*mm,
-                            topMargin=5*mm, bottomMargin=5*mm)
+                            topMargin=5*mm,
+                            bottomMargin=(0.95*inch if job_style_header else 5*mm))
     styles = getSampleStyleSheet()
     story = []
 
@@ -27827,21 +27907,36 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
             pass
 
     company_name = co.get('name', 'MABS Engineering LLC')
-    address_text = ""
-    for line in co.get('address', '').split('\n'):
-        if line.strip():
-            address_text += f"{line.strip()}<br/>"
-    contact_text = f"Phone: {co.get('phone','')} • Email: {co.get('email','')} • {co.get('website','')}"
-    header_html = f"<b><font size=16>{company_name}</font></b><br/><font size=9>{address_text}{contact_text}</font>"
 
-    if logo_img:
-        hdr_table_data = [[logo_img, Paragraph(header_html, ParagraphStyle("cn", parent=styles["Normal"], fontName="Helvetica", textColor=colors.black, alignment=1))]]
-        hdr_table = Table(hdr_table_data, colWidths=[0.95*inch, doc.width - 0.95*inch])
-        hdr_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 5), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0), ("LINEBELOW", (0,0), (-1,-1), 1, colors.black)]))
-        story.append(hdr_table)
+    if job_style_header:
+        # Logo + big company name only (teal double-line) — address/contact
+        # moves to the disclaimer footer, matching the job/quote PDF exactly.
+        teal_line = colors.HexColor("#0D9488")
+        name_style = ParagraphStyle("cnjob", parent=styles["Normal"], fontSize=22, fontName="Helvetica-Bold", textColor=colors.HexColor("#333333"), alignment=1)
+        if logo_img:
+            hdr_table_data = [[logo_img, Paragraph(f"<b>{company_name}</b>", name_style)]]
+            hdr_table = Table(hdr_table_data, colWidths=[1.0*inch, doc.width - 1.0*inch], hAlign='LEFT')
+            hdr_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,0), (1,0), "CENTER"), ("LINEBELOW", (0,0), (-1,-1), 2, teal_line), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0)]))
+            story.append(hdr_table)
+        else:
+            story.append(Paragraph(f"<b>{company_name}</b>", name_style))
+            story.append(Table([['']], colWidths=[doc.width], hAlign='LEFT', style=[('LINEBELOW', (0,0), (-1,-1), 2, teal_line)]))
     else:
-        story.append(Paragraph(header_html, ParagraphStyle("cn", parent=styles["Normal"], fontName="Helvetica", textColor=colors.black, alignment=1)))
-        story.append(Table([['']], colWidths=[doc.width], style=[('LINEBELOW', (0,0), (-1,-1), 1, colors.black)]))
+        address_text = ""
+        for line in co.get('address', '').split('\n'):
+            if line.strip():
+                address_text += f"{line.strip()}<br/>"
+        contact_text = f"Phone: {co.get('phone','')} • Email: {co.get('email','')} • {co.get('website','')}"
+        header_html = f"<b><font size=16>{company_name}</font></b><br/><font size=9>{address_text}{contact_text}</font>"
+
+        if logo_img:
+            hdr_table_data = [[logo_img, Paragraph(header_html, ParagraphStyle("cn", parent=styles["Normal"], fontName="Helvetica", textColor=colors.black, alignment=1))]]
+            hdr_table = Table(hdr_table_data, colWidths=[0.95*inch, doc.width - 0.95*inch])
+            hdr_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 5), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0), ("LINEBELOW", (0,0), (-1,-1), 1, colors.black)]))
+            story.append(hdr_table)
+        else:
+            story.append(Paragraph(header_html, ParagraphStyle("cn", parent=styles["Normal"], fontName="Helvetica", textColor=colors.black, alignment=1)))
+            story.append(Table([['']], colWidths=[doc.width], style=[('LINEBELOW', (0,0), (-1,-1), 1, colors.black)]))
 
     story.append(Spacer(1, 2*mm))
 
@@ -28338,6 +28433,8 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         ('BOTTOMPADDING', (0,0), (-1,-1), 3),
         ('TOPPADDING', (0,0), (-1,-1), 3),
     ]))
+    if job_style_header:
+        item_table.hAlign = 'LEFT'
     story.append(item_table)
     story.append(Spacer(1, 5*mm))
 
@@ -28362,6 +28459,8 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         ('BACKGROUND', (0, len(totals_data)-1), (-1, len(totals_data)-1), colors.lightgrey),
         ('FONTNAME', (0, len(totals_data)-1), (-1, len(totals_data)-1), 'Helvetica-Bold'),
     ]))
+    if job_style_header:
+        totals_table.hAlign = 'LEFT'
     story.append(totals_table)
     story.append(Spacer(1, 5*mm))
 
@@ -28405,6 +28504,8 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
 
     payment_table = Table([[left_section, right_section]], colWidths=[doc.width * 0.55, doc.width * 0.40])
     payment_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('BOX', (0,0), (-1,-1), 1, colors.black), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.black)]))
+    if job_style_header:
+        payment_table.hAlign = 'LEFT'
     story.append(payment_table)
 
     story.append(Spacer(1, 3*mm))
@@ -28413,22 +28514,368 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
     story.append(Paragraph(f"<b>Note:</b> {notes_text}", styles['Left9']))
 
     calculated_status = _calculate_invoice_status(invoice)
-    if (calculated_status or "").lower() == 'paid':
-        def add_paid_watermark(canvas_obj, doc_obj):
-            canvas_obj.saveState()
-            center_x = A4[0] / 2
-            center_y = A4[1] / 2
-            canvas_obj.setFont("Helvetica-Bold", 130)
-            canvas_obj.setFillColor(colors.HexColor("#00B050"))
-            canvas_obj.setFillAlpha(0.25)
-            canvas_obj.translate(center_x, center_y)
-            canvas_obj.rotate(45)
-            canvas_obj.drawCentredString(0, 0, "PAID")
-            canvas_obj.restoreState()
+    is_paid = (calculated_status or "").lower() == 'paid'
+
+    def add_paid_watermark(canvas_obj, doc_obj):
+        canvas_obj.saveState()
+        center_x = A4[0] / 2
+        center_y = A4[1] / 2
+        canvas_obj.setFont("Helvetica-Bold", 130)
+        canvas_obj.setFillColor(colors.HexColor("#00B050"))
+        canvas_obj.setFillAlpha(0.25)
+        canvas_obj.translate(center_x, center_y)
+        canvas_obj.rotate(45)
+        canvas_obj.drawCentredString(0, 0, "PAID")
+        canvas_obj.restoreState()
+
+    if job_style_header:
+        def page_decorations(canvas_obj, doc_obj):
+            if is_paid:
+                add_paid_watermark(canvas_obj, doc_obj)
+            _pdf_job_style_footer(canvas_obj, doc_obj, co)
+        doc.build(story, onFirstPage=page_decorations, onLaterPages=page_decorations)
+    elif is_paid:
         doc.build(story, onFirstPage=add_paid_watermark, onLaterPages=add_paid_watermark)
     else:
         doc.build(story)
 
+    buf.seek(0)
+    return buf.getvalue()
+
+def _generate_invoice_summary_pdf_bytes(invoice_ids: list):
+    """Build the 'Invoice Summary' cover page (+ Payment Information block) for a
+    combined multi-invoice export. Returns PDF bytes, or None on error.
+    Does not touch _generate_invoice_pdf_bytes; the per-invoice detail pages are
+    generated separately (unchanged) and merged in by the caller."""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm, inch
+    except ImportError:
+        return None
+
+    import io as _io
+    from pathlib import Path
+
+    invoices = []
+    for iid in invoice_ids:
+        inv = fb_get(f"/invoices/{iid}")
+        if inv:
+            inv["firebase_id"] = iid
+            invoices.append(inv)
+    if not invoices:
+        return None
+
+    # project_number -> plant lookup (same approach as the invoicing() list route)
+    raw_proj = fb_get("/projects") or {}
+    proj_plant_map = {}
+    if isinstance(raw_proj, dict):
+        for pdata in raw_proj.values():
+            if isinstance(pdata, dict):
+                pnum = pdata.get("project_number", "")
+                plt = (pdata.get("plant") or "").strip().upper()
+                if pnum and plt:
+                    proj_plant_map[pnum] = plt
+
+    def invoice_plant(inv):
+        m = inv.get("meta", {}) or {}
+        proj_num = m.get("project_number", "")
+        if not proj_num:
+            for li in (inv.get("line_items") or []):
+                if isinstance(li, dict) and li.get("project_number"):
+                    proj_num = li["project_number"]
+                    break
+        return proj_plant_map.get(proj_num, "") or m.get("plant", "") or "—"
+
+    co = company_info()
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=10*mm, rightMargin=10*mm,
+                            topMargin=5*mm, bottomMargin=0.95*inch)
+    styles = getSampleStyleSheet()
+    elems = []
+
+    dark_gray = colors.HexColor("#333333")
+    light_blue = colors.HexColor("#B6DDE8")
+    light_green = colors.HexColor("#B6D7A8")
+    light_red = colors.HexColor("#EA9999")
+    border_col = colors.HexColor("#000000")
+
+    form_label = ParagraphStyle("sumfl", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=dark_gray)
+    form_value = ParagraphStyle("sumfv", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=dark_gray)
+    section_title = ParagraphStyle("sumst", parent=styles["Normal"], fontSize=12, fontName="Helvetica-Bold", textColor=dark_gray)
+    title_s = ParagraphStyle("sumtitle", parent=styles["Normal"], fontSize=15, fontName="Helvetica-Bold",
+                              textColor=dark_gray, alignment=1, spaceAfter=2)
+    left10 = ParagraphStyle("suml10", parent=styles["Normal"], fontSize=10, fontName="Helvetica", textColor=colors.black)
+    left10b = ParagraphStyle("suml10b", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black)
+    center10 = ParagraphStyle("sumc10", parent=styles["Normal"], fontSize=10, fontName="Helvetica", textColor=colors.black, alignment=1)
+    center10b = ParagraphStyle("sumc10b", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, alignment=1)
+    right10 = ParagraphStyle("sumr10", parent=styles["Normal"], fontSize=10, fontName="Helvetica", textColor=colors.black, alignment=2)
+    right10b = ParagraphStyle("sumr10b", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, alignment=2)
+
+    # ── Company header: logo + big name only (job/quote-PDF style); address
+    # and contact info live in the disclaimer footer instead ──
+    logo_path = _get_company_logo_path()
+    logo_img = None
+    if logo_path:
+        try:
+            logo_file = Path(logo_path)
+            if logo_file.exists():
+                logo_img = Image(str(logo_file.resolve()), width=1.0*inch, height=0.85*inch)
+        except Exception:
+            pass
+
+    company_name = co.get('name', 'MABS Engineering LLC')
+    teal_line = colors.HexColor("#0D9488")
+    name_style = ParagraphStyle("sumcn", parent=styles["Normal"], fontSize=22, fontName="Helvetica-Bold", textColor=dark_gray, alignment=1)
+
+    if logo_img:
+        hdr_table_data = [[logo_img, Paragraph(f"<b>{company_name}</b>", name_style)]]
+        hdr_table = Table(hdr_table_data, colWidths=[1.0*inch, doc.width - 1.0*inch], hAlign='LEFT')
+        hdr_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,0), (1,0), "CENTER"), ("LINEBELOW", (0,0), (-1,-1), 2, teal_line), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0)]))
+        elems.append(hdr_table)
+    else:
+        elems.append(Paragraph(f"<b>{company_name}</b>", name_style))
+        elems.append(Table([['']], colWidths=[doc.width], hAlign='LEFT', style=[('LINEBELOW', (0,0), (-1,-1), 2, teal_line)]))
+
+    elems.append(Spacer(1, 4*mm))
+    elems.append(Paragraph("<u>INVOICE SUMMARY</u>", title_s))
+    elems.append(Spacer(1, 3*mm))
+
+    # ── Company details block, above the Invoice Date ──
+    # MABS keeps its fixed, correct values; any other company (e.g. Arch)
+    # pulls its info from Settings instead, since this code is shared
+    # between both deployments.
+    if 'mabs' in company_name.lower():
+        co_info_lines = [
+            "MABS Engineering LLC",
+            "Manchester, MO 63011",
+            '<font color="#1155CC"><u>info@mabs-engineering.com</u></font>',
+            "314-948-8787",
+        ]
+    else:
+        co_info_lines = [company_name] if company_name else []
+        address_parts = [line.strip() for line in co.get('address', '').split('\n') if line.strip()]
+        if address_parts:
+            co_info_lines.append(", ".join(address_parts))
+        co_email = co.get('email', '')
+        if co_email:
+            co_info_lines.append(f'<font color="#1155CC"><u>{co_email}</u></font>')
+        co_phone = co.get('phone', '')
+        if co_phone:
+            co_info_lines.append(co_phone)
+    elems.append(Paragraph("<br/>".join(co_info_lines), left10))
+    elems.append(Spacer(1, 3*mm))
+
+    first_meta = invoices[0].get("meta", {}) or {}
+    invoice_date = first_meta.get("invoice_date") or datetime.now(COMPANY_TZ).strftime("%m/%d/%Y")
+    elems.append(Paragraph(f"<b>Invoice Date:</b> {invoice_date}", left10))
+    elems.append(Spacer(1, 2*mm))
+
+    # ── Bill To (from the first selected invoice) ──
+    company_identifier = first_meta.get('company_name', '') or first_meta.get('client_name', '')
+    client_email = ""
+    client_address = ""
+    if company_identifier:
+        try:
+            client_data = fb_get(f"/clients/{company_identifier}") or {}
+            client_email = client_data.get("email", "")
+            client_address = client_data.get("address", "")
+        except Exception:
+            pass
+
+    bill_to_lines = [company_identifier] if company_identifier else []
+    if client_email:
+        bill_to_lines.append(client_email)
+    if client_address:
+        for line in client_address.split('\n'):
+            if line.strip():
+                bill_to_lines.append(line.strip())
+
+    elems.append(Paragraph("<b>Bill To:</b>", left10b))
+    if bill_to_lines:
+        elems.append(Paragraph("<br/>".join(bill_to_lines), left10))
+    elems.append(Spacer(1, 5*mm))
+
+    # ── Itemized Charges: Invoice No. / Plant / Total ──
+    elems.append(Paragraph("Itemized Charges", left10b))
+    elems.append(Spacer(1, 2*mm))
+
+    data = [[Paragraph("Invoice No.", center10b), Paragraph("Plant", center10b), Paragraph("Total", center10b)]]
+    subtotal = 0.0
+    for inv in invoices:
+        m = inv.get("meta", {}) or {}
+        total = _safe_float(m.get('total', 0))
+        subtotal += total
+        data.append([
+            Paragraph(m.get('invoice_number', '—'), center10),
+            Paragraph(invoice_plant(inv), center10),
+            Paragraph(f"${total:,.2f}", center10),
+        ])
+
+    tbl = Table(data, colWidths=[doc.width * 0.4, doc.width * 0.3, doc.width * 0.3], hAlign='LEFT')
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
+        ("GRID", (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")),
+        ("ALIGN", (0,0), (-1,-1), "CENTER"),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("TOPPADDING", (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+    ]))
+    elems.append(tbl)
+    elems.append(Spacer(1, 5*mm))
+
+    totals_data = [
+        [Paragraph("Subtotal:", right10b), Paragraph(f"${subtotal:,.2f}", right10)],
+        [Paragraph("Tax (if applicable):", right10b), Paragraph("N/A", right10)],
+        [Paragraph("Total Amount Due:", right10b), Paragraph(f"${subtotal:,.2f}", right10b)],
+    ]
+    totals_table = Table(totals_data, colWidths=[doc.width * 0.7, doc.width * 0.3], hAlign='LEFT')
+    totals_table.setStyle(TableStyle([
+        ("ALIGN", (0,0), (-1,-1), "RIGHT"),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("LEFTPADDING", (0,0), (-1,-1), 3),
+        ("RIGHTPADDING", (0,0), (-1,-1), 3),
+        ("TOPPADDING", (0,0), (-1,-1), 2),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+    ]))
+    elems.append(totals_table)
+    elems.append(Spacer(1, 4*mm))
+
+    # ── Payment Information (same block/QR used on the job & quote PDFs) ──
+    def add_section_title(label):
+        title_para = Paragraph(f"<b>{label}</b>", section_title)
+        title_table = Table([[title_para]], colWidths=[doc.width], hAlign='LEFT')
+        title_table.setStyle(TableStyle([
+            ("TEXTCOLOR", (0,0), (-1,-1), dark_gray),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+            ("TOPPADDING", (0,0), (-1,-1), 1),
+            ("LEFTPADDING", (0,0), (-1,-1), 0),
+            ("RIGHTPADDING", (0,0), (-1,-1), 0),
+            ("ALIGN", (0,0), (-1,-1), "LEFT"),
+        ]))
+        elems.append(title_table)
+        elems.append(Spacer(1, 0.5*mm))
+
+    add_section_title("Payment Information")
+
+    pay_warning_table = Table([
+        [Paragraph("<b>A 50% DOWN PAYMENT IS REQUIRED TO INITIATE</b>", ParagraphStyle("sumwarning", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=colors.red, alignment=1))]
+    ], colWidths=[doc.width], hAlign='LEFT')
+    pay_warning_table.setStyle(TableStyle([
+        ("BOX", (0,0), (-1,-1), 1, border_col),
+        ("BACKGROUND", (0,0), (-1,-1), colors.white),
+        ("ALIGN", (0,0), (-1,-1), "CENTER"),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("TOPPADDING", (0,0), (-1,-1), 1*mm),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 1*mm),
+    ]))
+    elems.append(pay_warning_table)
+
+    qr_path = Path(__file__).parent / "static" / "venmo.png"
+    qr_image = None
+    if qr_path.exists():
+        try:
+            qr_image = Image(str(qr_path), width=35*mm, height=35*mm)
+        except Exception:
+            pass
+
+    available_width = doc.width
+
+    left_section = [
+        Table(
+            [[Paragraph("<b>Option 1: Check</b>", form_label)]],
+            colWidths=[available_width * 0.60], rowHeights=[7*mm],
+            style=TableStyle([
+                ("BACKGROUND", (0,0), (-1,-1), light_blue),
+                ("BOX", (0,0), (-1,-1), 0.7, colors.black),
+                ("ALIGN", (0,0), (-1,-1), "LEFT"),
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ])
+        ),
+        Table(
+            [[Paragraph(f"<b>Payable to:</b> {co.get('name','MABS Engineering LLC')}<br/><b>Mailing Address:</b> 15455 Manchester Rd, PO Box 1144 Manchester, MO 63011", form_value)]],
+            colWidths=[available_width * 0.60],
+            style=TableStyle([
+                ("ALIGN", (0,0), (-1,-1), "LEFT"),
+                ("VALIGN", (0,0), (-1,-1), "TOP"),
+                ("TOPPADDING", (0,0), (-1,-1), 2*mm),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 2*mm),
+                ("LEFTPADDING", (0,0), (-1,-1), 4*mm),
+            ])
+        ),
+        Table(
+            [[Paragraph("<b>Option 3: ACH Transfer</b>", form_label)]],
+            colWidths=[available_width * 0.60], rowHeights=[7*mm],
+            style=TableStyle([
+                ("BACKGROUND", (0,0), (-1,-1), light_red),
+                ("BOX", (0,0), (-1,-1), 0.7, colors.black),
+                ("ALIGN", (0,0), (-1,-1), "LEFT"),
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ])
+        ),
+        Table(
+            [[Paragraph("<b>Account Type:</b> Checking<br/><b>Bank Name:</b> First Citizens Bank<br/><b>Routing Number:</b> 101089810<br/><b>Acct. Number:</b> 4834994317", form_value)]],
+            colWidths=[available_width * 0.60],
+            style=TableStyle([
+                ("ALIGN", (0,0), (-1,-1), "LEFT"),
+                ("VALIGN", (0,0), (-1,-1), "TOP"),
+                ("TOPPADDING", (0,0), (-1,-1), 2*mm),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 2*mm),
+                ("LEFTPADDING", (0,0), (-1,-1), 4*mm),
+            ])
+        ),
+    ]
+
+    right_section = [
+        Table(
+            [[Paragraph("<b>Option 2: Zelle QR code</b>", form_label)]],
+            colWidths=[available_width * 0.40], rowHeights=[7*mm],
+            style=TableStyle([
+                ("BACKGROUND", (0,0), (-1,-1), light_green),
+                ("BOX", (0,0), (-1,-1), 0.8, colors.black),
+                ("ALIGN", (0,0), (-1,-1), "LEFT"),
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ])
+        ),
+        Spacer(1, 1*mm),
+    ]
+    if qr_image:
+        right_section.append(
+            Table([[qr_image]], style=TableStyle([
+                ("ALIGN", (0,0), (-1,-1), "CENTER"),
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                ("TOPPADDING", (0,0), (-1,-1), 1*mm),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 1*mm),
+            ]))
+        )
+    right_section.append(
+        Paragraph("Scan to pay with Zelle", ParagraphStyle("sumqrtext", parent=styles["Normal"], fontSize=8, alignment=1))
+    )
+
+    pay_table = Table([[left_section, right_section]], colWidths=[available_width * 0.60, available_width * 0.40], hAlign='LEFT')
+    pay_table.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("ALIGN", (0,0), (-1,-1), "CENTER"),
+        ("BOX", (0,0), (-1,-1), 1, colors.black),
+        ("INNERGRID", (0,0), (-1,-1), 0.5, colors.black),
+        ("LEFTPADDING", (0,0), (-1,-1), 0),
+        ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("TOPPADDING", (0,0), (-1,-1), 0),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 0),
+    ]))
+    elems.append(pay_table)
+    elems.append(Spacer(1, 4*mm))
+
+    default_terms = co.get('default_terms', 'Thank you for your business! Best regards, MABS Engineering LLC')
+    elems.append(Paragraph(default_terms.replace('\n', '<br/>') if default_terms else "Thank you for your business!", left10))
+
+    def summary_page_decorations(canvas_obj, doc_obj):
+        _pdf_job_style_footer(canvas_obj, doc_obj, co)
+
+    doc.build(elems, onFirstPage=summary_page_decorations, onLaterPages=summary_page_decorations)
     buf.seek(0)
     return buf.getvalue()
 
