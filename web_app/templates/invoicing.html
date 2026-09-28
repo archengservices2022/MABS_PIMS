@@ -163,10 +163,14 @@
              style="border-left:3px solid #0D9488;">
           <i class="bi bi-funnel text-teal"></i>
           <span>
-            {% if date_from and date_to %}{{ date_from }} to {{ date_to }}{% elif date_from %}From {{ date_from }}{% elif date_to %}Up to {{ date_to }}{% endif %}
-            {% if status_filter %} — Status: <strong>{{ status_filter }}</strong>{% endif %}
-            {% if client_filter %} — Client: <strong>{{ client_filter }}</strong>{% endif %}
-            {% if plant_filter %} — State: <strong>{{ plant_filter }}</strong>{% endif %}
+            {%- set ns = namespace(any=false) -%}
+            {%- if date_from and date_to -%}{{ date_from }} to {{ date_to }}{% set ns.any = true %}
+            {%- elif date_from -%}From {{ date_from }}{% set ns.any = true %}
+            {%- elif date_to -%}Up to {{ date_to }}{% set ns.any = true %}
+            {%- endif -%}
+            {%- if status_filter -%}{% if ns.any %} — {% endif %}Status: <strong>{{ status_filter }}</strong>{% set ns.any = true %}{%- endif -%}
+            {%- if client_filter -%}{% if ns.any %} — {% endif %}Client: <strong>{{ client_filter }}</strong>{% set ns.any = true %}{%- endif -%}
+            {%- if plant_filter -%}{% if ns.any %} — {% endif %}State: <strong>{{ plant_filter }}</strong>{% set ns.any = true %}{%- endif -%}
           </span>
         </div>
         {% endif %}
@@ -200,7 +204,7 @@
             <tr class="inv-row" onclick="location.href=getInvoiceDetailUrl('{{ inv.firebase_id }}');"
                 style="cursor:pointer;">
               <td class="inv-select-col" style="display:none;" onclick="event.stopPropagation()">
-                <input type="checkbox" class="inv-select-cb" value="{{ inv.firebase_id }}" onchange="updateInvSelection()">
+                <input type="checkbox" class="inv-select-cb" value="{{ inv.firebase_id }}" onchange="onInvCbChange(this)">
               </td>
               <td style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
                 <span class="fw-bold text-teal" style="text-decoration:none;white-space:nowrap;">{{ meta.get('invoice_number','—') }}</span>
@@ -460,14 +464,23 @@ async function quickPay(invoiceId, total, amountPaid, btn) {
 }
 
 // ?? Invoice selection ??? export combined PDF ??????????????????????????????????
-// Selection persists across filter/page reloads via sessionStorage, since the
-// filter form does a full GET navigation (not AJAX).
+// The selected set is the source of truth in sessionStorage, independent of
+// which invoices the current filter happens to show — so switching filters
+// (or reloading via the filter form's GET navigation) never drops a
+// selection made under a different filter. Checkboxes just reflect
+// membership in that set for whichever rows are currently rendered.
 const INV_SEL_IDS_KEY = 'invSelectedIds';
 const INV_SEL_MODE_KEY = 'invSelectModeActive';
 
-function saveInvSelection() {
-  const ids = Array.from(document.querySelectorAll('.inv-select-cb:checked')).map(cb => cb.value);
-  sessionStorage.setItem(INV_SEL_IDS_KEY, JSON.stringify(ids));
+function getInvSelectedSet() {
+  try {
+    return new Set(JSON.parse(sessionStorage.getItem(INV_SEL_IDS_KEY) || '[]'));
+  } catch (e) {
+    return new Set();
+  }
+}
+function setInvSelectedSet(set) {
+  sessionStorage.setItem(INV_SEL_IDS_KEY, JSON.stringify(Array.from(set)));
 }
 function enableInvSelectMode() {
   document.querySelectorAll('.inv-select-col').forEach(el => el.style.display = '');
@@ -486,39 +499,50 @@ function exitInvSelectMode() {
   sessionStorage.removeItem(INV_SEL_IDS_KEY);
   updateInvSelection();
 }
+function onInvCbChange(cb) {
+  const set = getInvSelectedSet();
+  if (cb.checked) set.add(cb.value); else set.delete(cb.value);
+  setInvSelectedSet(set);
+  updateInvSelection();
+}
 function updateInvSelection() {
-  const boxes = document.querySelectorAll('.inv-select-cb:checked');
-  document.getElementById('invSelectedCount').textContent = boxes.length;
+  const set = getInvSelectedSet();
+  document.getElementById('invSelectedCount').textContent = set.size;
   const all = document.querySelectorAll('.inv-select-cb');
   const selectAllCb = document.getElementById('invSelectAllCb');
-  if (selectAllCb) selectAllCb.checked = all.length > 0 && boxes.length === all.length;
-  saveInvSelection();
+  if (selectAllCb) {
+    const visibleChecked = Array.from(all).filter(cb => set.has(cb.value));
+    selectAllCb.checked = all.length > 0 && visibleChecked.length === all.length;
+  }
 }
 function toggleAllInvSelect(masterCb) {
-  document.querySelectorAll('.inv-select-cb').forEach(cb => cb.checked = masterCb.checked);
+  const set = getInvSelectedSet();
+  document.querySelectorAll('.inv-select-cb').forEach(cb => {
+    cb.checked = masterCb.checked;
+    if (masterCb.checked) set.add(cb.value); else set.delete(cb.value);
+  });
+  setInvSelectedSet(set);
   updateInvSelection();
 }
 function restoreInvSelection() {
   if (sessionStorage.getItem(INV_SEL_MODE_KEY) !== '1') return;
-  let ids = [];
-  try { ids = JSON.parse(sessionStorage.getItem(INV_SEL_IDS_KEY) || '[]'); } catch (e) { ids = []; }
   enableInvSelectMode();
-  const idSet = new Set(ids);
+  const set = getInvSelectedSet();
   document.querySelectorAll('.inv-select-cb').forEach(cb => {
-    if (idSet.has(cb.value)) cb.checked = true;
+    cb.checked = set.has(cb.value);
   });
   updateInvSelection();
 }
 function exportSelectedInvoicesPdf() {
-  const boxes = document.querySelectorAll('.inv-select-cb:checked');
-  if (boxes.length === 0) return;
+  const set = getInvSelectedSet();
+  if (set.size === 0) return;
   const form = document.getElementById('invSelectedExportForm');
   form.innerHTML = '';
-  boxes.forEach(cb => {
+  set.forEach(id => {
     const input = document.createElement('input');
     input.type = 'hidden';
     input.name = 'invoice_ids';
-    input.value = cb.value;
+    input.value = id;
     form.appendChild(input);
   });
   form.submit();
