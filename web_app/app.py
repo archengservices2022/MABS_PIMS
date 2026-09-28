@@ -28432,7 +28432,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
         total_due = f"${total_due_val:,.2f}"
         item_data.append([
             project_cell,
-            Paragraph(description_display, center_style),
+            Paragraph(description_display, left_style),
             Paragraph(plant or "", center_style),
             Paragraph(qty, center_style),
             Paragraph(unit_price, center_style),
@@ -28954,7 +28954,10 @@ def _generate_invoice_summary_pdf_bytes(invoice_ids: list):
     elems.append(pay_table)
     elems.append(Spacer(1, 4*mm))
 
-    default_terms = co.get('default_terms', 'Thank you for your business! Best regards, MABS Engineering LLC')
+    if 'mabs' in company_name.lower():
+        default_terms = "Thank you for your business! Best regards, MABS Engineering LLC"
+    else:
+        default_terms = co.get('default_terms', 'Thank you for your business!')
     elems.append(Paragraph(default_terms.replace('\n', '<br/>') if default_terms else "Thank you for your business!", left10))
 
     def summary_page_decorations(canvas_obj, doc_obj):

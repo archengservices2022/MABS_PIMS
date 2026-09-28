@@ -460,10 +460,20 @@ async function quickPay(invoiceId, total, amountPaid, btn) {
 }
 
 // ?? Invoice selection ??? export combined PDF ??????????????????????????????????
+// Selection persists across filter/page reloads via sessionStorage, since the
+// filter form does a full GET navigation (not AJAX).
+const INV_SEL_IDS_KEY = 'invSelectedIds';
+const INV_SEL_MODE_KEY = 'invSelectModeActive';
+
+function saveInvSelection() {
+  const ids = Array.from(document.querySelectorAll('.inv-select-cb:checked')).map(cb => cb.value);
+  sessionStorage.setItem(INV_SEL_IDS_KEY, JSON.stringify(ids));
+}
 function enableInvSelectMode() {
   document.querySelectorAll('.inv-select-col').forEach(el => el.style.display = '');
   document.getElementById('invSelectModeBtn').style.display = 'none';
   document.getElementById('invSelectionBar').style.display = 'flex';
+  sessionStorage.setItem(INV_SEL_MODE_KEY, '1');
 }
 function exitInvSelectMode() {
   document.querySelectorAll('.inv-select-cb').forEach(cb => cb.checked = false);
@@ -472,6 +482,8 @@ function exitInvSelectMode() {
   document.querySelectorAll('.inv-select-col').forEach(el => el.style.display = 'none');
   document.getElementById('invSelectionBar').style.setProperty('display', 'none', 'important');
   document.getElementById('invSelectModeBtn').style.display = '';
+  sessionStorage.removeItem(INV_SEL_MODE_KEY);
+  sessionStorage.removeItem(INV_SEL_IDS_KEY);
   updateInvSelection();
 }
 function updateInvSelection() {
@@ -480,9 +492,21 @@ function updateInvSelection() {
   const all = document.querySelectorAll('.inv-select-cb');
   const selectAllCb = document.getElementById('invSelectAllCb');
   if (selectAllCb) selectAllCb.checked = all.length > 0 && boxes.length === all.length;
+  saveInvSelection();
 }
 function toggleAllInvSelect(masterCb) {
   document.querySelectorAll('.inv-select-cb').forEach(cb => cb.checked = masterCb.checked);
+  updateInvSelection();
+}
+function restoreInvSelection() {
+  if (sessionStorage.getItem(INV_SEL_MODE_KEY) !== '1') return;
+  let ids = [];
+  try { ids = JSON.parse(sessionStorage.getItem(INV_SEL_IDS_KEY) || '[]'); } catch (e) { ids = []; }
+  enableInvSelectMode();
+  const idSet = new Set(ids);
+  document.querySelectorAll('.inv-select-cb').forEach(cb => {
+    if (idSet.has(cb.value)) cb.checked = true;
+  });
   updateInvSelection();
 }
 function exportSelectedInvoicesPdf() {
@@ -603,6 +627,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     _PAGERS['invoicePager'].refresh();
+    restoreInvSelection();
   }
 });
 </script>
