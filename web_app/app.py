@@ -9538,6 +9538,13 @@ def invoicing_export_pdf_selected():
         flash("Select at least one invoice to export.", "warning")
         return redirect(url_for("invoicing", tab="all-invoices"))
 
+    # Warm the whole-table caches once up front: each invoice below gets looked
+    # up twice (once for the summary page, once for its own detail pages) and
+    # each pulls its client record too. Without this, an uncached run does a
+    # separate Firebase round trip per lookup instead of one per table.
+    fb_get("/invoices")
+    fb_get("/clients")
+
     summary_bytes = _generate_invoice_summary_pdf_bytes(invoice_ids)
     if not summary_bytes:
         flash("Could not build the invoice summary PDF.", "danger")
@@ -9556,9 +9563,7 @@ def invoicing_export_pdf_selected():
     writer.write(out)
     out.seek(0)
 
-    first_invoice = fb_get(f"/invoices/{invoice_ids[0]}") or {}
-    base_number = (first_invoice.get("meta", {}) or {}).get("invoice_number", "").split("_")[0]
-    fname = f"Invoices_{base_number}.pdf" if base_number else f"Invoices_{datetime.now(COMPANY_TZ).strftime('%Y%m%d_%H%M%S')}.pdf"
+    fname = "Invoice Summary.pdf"
 
     # Stash the generated PDF and redirect to a GET url: the POST response itself
     # can't be re-fetched, but the PDF viewer's own download button re-requests
@@ -9577,7 +9582,7 @@ def invoicing_export_pdf_selected_view(token):
     pdf_bytes, fname = cached
     from flask import Response
     return Response(pdf_bytes, mimetype="application/pdf",
-                    headers={"Content-Disposition": f"inline;filename={fname}"})
+                    headers={"Content-Disposition": f'inline; filename="{fname}"'})
 
 # ── Routes: Invoicing Export ──────────────────────────────────────────────────
 def _filter_invoices_export(items):
