@@ -27857,8 +27857,8 @@ def _pdf_job_style_footer(canvas_obj, doc_obj, co):
     canvas_obj.line(doc_obj.leftMargin, 0.72*inch, doc_obj.width + doc_obj.leftMargin, 0.72*inch)
 
     footer_style = ParagraphStyle(
-        name="JobStyleFooter", alignment=1, fontName="Helvetica", fontSize=7,
-        textColor=footer_blue, leading=9
+        name="JobStyleFooter", alignment=1, fontName="Helvetica", fontSize=7.5,
+        textColor=footer_blue, leading=9.5
     )
     footer_lines = [
         "Note: As the CEO of MABS Engineering LLC, Dr. Ashiq reserves the right to change or cancel this policy at any time, at his discretion.",
@@ -28484,54 +28484,119 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
     story.append(totals_table)
     story.append(Spacer(1, 5*mm))
 
-    story.append(Paragraph("PAYMENT OPTIONS", styles['LeftBold12']))
-    story.append(Spacer(1, 3*mm))
-
-    InvLabel = ParagraphStyle("InvLabel", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, leading=12)
-    InvValue = ParagraphStyle("InvValue", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.black, leading=11, leftIndent=3, spaceAfter=3)
-    TableCenter = ParagraphStyle("TableCenter", parent=styles["Normal"], fontSize=8, fontName="Helvetica", textColor=colors.black, alignment=1)
-
-    qr_path = Path(__file__).parent / "static" / "venmo.png"
-    qr_img = None
-    if qr_path.exists():
-        try:
-            qr_img = Image(str(qr_path), width=1.45*inch, height=1.45*inch)
-        except (IOError, OSError):
-            qr_img = None
-
-    right_section = [
-        Table([[Paragraph("<b>Option 2: Zelle QR code</b>", InvLabel)]], colWidths=[doc.width * 0.40], rowHeights=[8*mm],
-              style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#B6D7A8")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
-        Spacer(1, 1*mm),
-    ]
-    if qr_img:
-        right_section.append(Table([[qr_img]], colWidths=[doc.width * 0.40],
-                                   style=TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 1*mm), ("BOTTOMPADDING", (0,0), (-1,-1), 1*mm)])))
-    right_section.append(Paragraph("Scan to pay with Zelle", TableCenter))
-
-    left_section = [
-        Table([[Paragraph("<b>Option 1: Check</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
-              style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#B6DDE8")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
-        Spacer(1, 1*mm),
-        Paragraph("<b>Payable to:</b> MABS Engineering LLC<br/><b>Mailing Address:</b> 15455 Manchester Rd, PO Box 1144 Manchester, MO 63011", InvValue),
-        Spacer(1, 4*mm),
-        Table([[Paragraph("<b>Option 3: ACH Transfer</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
-              style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EA9999")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
-        Spacer(1, 1*mm),
-        Paragraph("<b>Account Type:</b> Checking<br/><b>Bank Name:</b> First Citizens Bank<br/><b>Routing Number:</b> 101089810<br/><b>Acct. Number:</b> 4834994317", InvValue),
-        Spacer(1, 2.5*mm),
-    ]
-
-    payment_table = Table([[left_section, right_section]], colWidths=[doc.width * 0.55, doc.width * 0.40])
-    payment_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('BOX', (0,0), (-1,-1), 1, colors.black), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.black)]))
     if job_style_header:
-        payment_table.hAlign = 'LEFT'
-    story.append(payment_table)
+        # Combined multi-invoice export: match the summary cover page's
+        # "Payment Information" block exactly (same title, 50% down-payment
+        # warning, colors and QR sizing) — no per-invoice Note here, since
+        # the summary cover page already shows it once.
+        dark_gray = colors.HexColor("#333333")
+        light_blue = colors.HexColor("#B6DDE8")
+        light_green = colors.HexColor("#B6D7A8")
+        light_red = colors.HexColor("#EA9999")
+        form_label = ParagraphStyle("pilabel", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=dark_gray)
+        form_value = ParagraphStyle("pivalue", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=dark_gray)
+        section_title = ParagraphStyle("pisect", parent=styles["Normal"], fontSize=12, fontName="Helvetica-Bold", textColor=dark_gray)
 
-    story.append(Spacer(1, 3*mm))
-    default_terms = co.get('default_terms', 'Thank you for your business! Best regards, MABS Engineering LLC')
-    notes_text = default_terms if default_terms else meta.get('notes', 'Thank you for your business!')
-    story.append(Paragraph(f"<b>Note:</b> {notes_text}", styles['Left9']))
+        title_table = Table([[Paragraph("<b>Payment Information</b>", section_title)]], colWidths=[doc.width], hAlign='LEFT')
+        title_table.setStyle(TableStyle([
+            ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("TOPPADDING", (0,0), (-1,-1), 1),
+            ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0),
+            ("ALIGN", (0,0), (-1,-1), "LEFT"),
+        ]))
+        story.append(title_table)
+        story.append(Spacer(1, 0.5*mm))
+
+        pay_warning_table = Table([
+            [Paragraph("<b>A 50% DOWN PAYMENT IS REQUIRED TO INITIATE</b>", ParagraphStyle("piwarning", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=colors.red, alignment=1))]
+        ], colWidths=[doc.width], hAlign='LEFT')
+        pay_warning_table.setStyle(TableStyle([
+            ("BOX", (0,0), (-1,-1), 1, colors.black),
+            ("BACKGROUND", (0,0), (-1,-1), colors.white),
+            ("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("TOPPADDING", (0,0), (-1,-1), 1*mm), ("BOTTOMPADDING", (0,0), (-1,-1), 1*mm),
+        ]))
+        story.append(pay_warning_table)
+
+        qr_path = Path(__file__).parent / "static" / "venmo.png"
+        qr_image = None
+        if qr_path.exists():
+            try:
+                qr_image = Image(str(qr_path), width=35*mm, height=35*mm)
+            except Exception:
+                pass
+
+        available_width = doc.width
+
+        left_section = [
+            Table([[Paragraph("<b>Option 1: Check</b>", form_label)]], colWidths=[available_width * 0.60], rowHeights=[7*mm],
+                  style=TableStyle([("BACKGROUND", (0,0), (-1,-1), light_blue), ("BOX", (0,0), (-1,-1), 0.7, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE")])),
+            Table([[Paragraph(f"<b>Payable to:</b> {co.get('name','MABS Engineering LLC')}<br/><b>Mailing Address:</b> 15455 Manchester Rd, PO Box 1144 Manchester, MO 63011", form_value)]], colWidths=[available_width * 0.60],
+                  style=TableStyle([("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "TOP"), ("TOPPADDING", (0,0), (-1,-1), 2*mm), ("BOTTOMPADDING", (0,0), (-1,-1), 2*mm), ("LEFTPADDING", (0,0), (-1,-1), 4*mm)])),
+            Table([[Paragraph("<b>Option 3: ACH Transfer</b>", form_label)]], colWidths=[available_width * 0.60], rowHeights=[7*mm],
+                  style=TableStyle([("BACKGROUND", (0,0), (-1,-1), light_red), ("BOX", (0,0), (-1,-1), 0.7, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE")])),
+            Table([[Paragraph("<b>Account Type:</b> Checking<br/><b>Bank Name:</b> First Citizens Bank<br/><b>Routing Number:</b> 101089810<br/><b>Acct. Number:</b> 4834994317", form_value)]], colWidths=[available_width * 0.60],
+                  style=TableStyle([("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "TOP"), ("TOPPADDING", (0,0), (-1,-1), 2*mm), ("BOTTOMPADDING", (0,0), (-1,-1), 2*mm), ("LEFTPADDING", (0,0), (-1,-1), 4*mm)])),
+        ]
+
+        right_section = [
+            Table([[Paragraph("<b>Option 2: Zelle QR code</b>", form_label)]], colWidths=[available_width * 0.40], rowHeights=[7*mm],
+                  style=TableStyle([("BACKGROUND", (0,0), (-1,-1), light_green), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE")])),
+            Spacer(1, 1*mm),
+        ]
+        if qr_image:
+            right_section.append(Table([[qr_image]], style=TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 1*mm), ("BOTTOMPADDING", (0,0), (-1,-1), 1*mm)])))
+        right_section.append(Paragraph("Scan to pay with Zelle", ParagraphStyle("piqrtext", parent=styles["Normal"], fontSize=8, alignment=1)))
+
+        payment_table = Table([[left_section, right_section]], colWidths=[available_width * 0.60, available_width * 0.40], hAlign='LEFT')
+        payment_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "TOP"), ("ALIGN", (0,0), (-1,-1), "CENTER"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("BOX", (0,0), (-1,-1), 1, colors.black), ("INNERGRID", (0,0), (-1,-1), 0.5, colors.black)]))
+        story.append(payment_table)
+    else:
+        story.append(Paragraph("PAYMENT OPTIONS", styles['LeftBold12']))
+        story.append(Spacer(1, 3*mm))
+
+        InvLabel = ParagraphStyle("InvLabel", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, leading=12)
+        InvValue = ParagraphStyle("InvValue", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.black, leading=11, leftIndent=3, spaceAfter=3)
+        TableCenter = ParagraphStyle("TableCenter", parent=styles["Normal"], fontSize=8, fontName="Helvetica", textColor=colors.black, alignment=1)
+
+        qr_path = Path(__file__).parent / "static" / "venmo.png"
+        qr_img = None
+        if qr_path.exists():
+            try:
+                qr_img = Image(str(qr_path), width=1.45*inch, height=1.45*inch)
+            except (IOError, OSError):
+                qr_img = None
+
+        right_section = [
+            Table([[Paragraph("<b>Option 2: Zelle QR code</b>", InvLabel)]], colWidths=[doc.width * 0.40], rowHeights=[8*mm],
+                  style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#B6D7A8")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
+            Spacer(1, 1*mm),
+        ]
+        if qr_img:
+            right_section.append(Table([[qr_img]], colWidths=[doc.width * 0.40],
+                                       style=TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 1*mm), ("BOTTOMPADDING", (0,0), (-1,-1), 1*mm)])))
+        right_section.append(Paragraph("Scan to pay with Zelle", TableCenter))
+
+        left_section = [
+            Table([[Paragraph("<b>Option 1: Check</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
+                  style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#B6DDE8")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
+            Spacer(1, 1*mm),
+            Paragraph("<b>Payable to:</b> MABS Engineering LLC<br/><b>Mailing Address:</b> 15455 Manchester Rd, PO Box 1144 Manchester, MO 63011", InvValue),
+            Spacer(1, 4*mm),
+            Table([[Paragraph("<b>Option 3: ACH Transfer</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
+                  style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EA9999")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
+            Spacer(1, 1*mm),
+            Paragraph("<b>Account Type:</b> Checking<br/><b>Bank Name:</b> First Citizens Bank<br/><b>Routing Number:</b> 101089810<br/><b>Acct. Number:</b> 4834994317", InvValue),
+            Spacer(1, 2.5*mm),
+        ]
+
+        payment_table = Table([[left_section, right_section]], colWidths=[doc.width * 0.55, doc.width * 0.40])
+        payment_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('BOX', (0,0), (-1,-1), 1, colors.black), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.black)]))
+        story.append(payment_table)
+
+        story.append(Spacer(1, 3*mm))
+        default_terms = co.get('default_terms', 'Thank you for your business! Best regards, MABS Engineering LLC')
+        notes_text = default_terms if default_terms else meta.get('notes', 'Thank you for your business!')
+        story.append(Paragraph(f"<b>Note:</b> {notes_text}", styles['Left9']))
 
     calculated_status = _calculate_invoice_status(invoice)
     is_paid = (calculated_status or "").lower() == 'paid'
