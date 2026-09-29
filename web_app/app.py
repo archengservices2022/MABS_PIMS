@@ -28917,10 +28917,14 @@ def _generate_invoice_summary_pdf_bytes(invoice_ids: list, data_get=None):
 
     data = [[Paragraph("Invoice No.", center10b), Paragraph("Plant", center10b), Paragraph("Total", center10b)]]
     subtotal = 0.0
+    tax_total = 0.0
     for inv in invoices:
         m = inv.get("meta", {}) or {}
         total = _safe_float(m.get('total', 0))
-        subtotal += total
+        inv_tax = _safe_float(m.get('tax_amount', 0))
+        inv_subtotal = _safe_float(m.get('subtotal', 0)) or (total - inv_tax)
+        subtotal += inv_subtotal
+        tax_total += inv_tax
         data.append([
             Paragraph(m.get('invoice_number', '—'), center10),
             Paragraph(invoice_plant(inv), center10),
@@ -28941,8 +28945,8 @@ def _generate_invoice_summary_pdf_bytes(invoice_ids: list, data_get=None):
 
     totals_data = [
         [Paragraph("Subtotal:", right10b), Paragraph(f"${subtotal:,.2f}", right10)],
-        [Paragraph("Tax (if applicable):", right10b), Paragraph("N/A", right10)],
-        [Paragraph("Total Amount Due:", right10b), Paragraph(f"${subtotal:,.2f}", right10b)],
+        [Paragraph("Tax (if applicable):", right10b), Paragraph(f"${tax_total:,.2f}" if tax_total > 0.01 else "N/A", right10)],
+        [Paragraph("Total Amount Due:", right10b), Paragraph(f"${subtotal + tax_total:,.2f}", right10b)],
     ]
     totals_table = Table(totals_data, colWidths=[doc.width * 0.7, doc.width * 0.3], hAlign='LEFT')
     totals_table.setStyle(TableStyle([
