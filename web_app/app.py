@@ -2419,11 +2419,25 @@ def dashboard():
     # year-only) monthly chart for context. A project can legitimately count
     # here AND in this year's numbers if it has a change order in both years,
     # same as filtering the Projects tab to either year would show.
+    # A project still counts (and its count is unaffected) even if it later got
+    # a change order this year — but that change order's amount belongs to
+    # THIS year's numbers, not last year's, so it's subtracted back out of the
+    # carryover value to avoid inflating last year's total with this year's work.
+    def _co_amount_in_year(project, year):
+        return sum(
+            _safe_float(co.get("amount", 0))
+            for co in _normalise_list(project.get("change_orders"))
+            if isinstance(co, dict) and co.get("status") in ("Approved", "Invoiced", "Paid")
+            and (co.get("created_at", "") or "")[:10].startswith(year)
+        )
     _prev_year = str(int(cur_year) - 1)
     _carryover_projs = [p for p in proj_list if isinstance(p, dict)
                          and _project_in_date_range(p, f"{_prev_year}-01-01", f"{_prev_year}-12-31")]
     carryover_count = len(_carryover_projs)
-    carryover_value = sum(_safe_float(p.get("contract_value", 0)) for p in _carryover_projs)
+    carryover_value = sum(
+        _safe_float(p.get("contract_value", 0)) - _co_amount_in_year(p, cur_year)
+        for p in _carryover_projs
+    )
 
     # Project monthly chart data
     proj_chart_labels = []
