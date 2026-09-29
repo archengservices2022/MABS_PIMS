@@ -115,10 +115,24 @@
       'Scope Disagreement':      ('bi-chat-dots',           'bg-cyan'),
       'Project Completion Issue':('bi-tools',                'bg-green'),
     } %}
+    {% set _status_labels = {
+      'Fully Invoiced_Not paid':        'Fully Invoiced – Not Paid',
+      'Fully Invoiced_Partially paid':  'Fully Invoiced – Partially Paid',
+      'Fully Invoiced_Fully paid':      'Fully Invoiced – Fully Paid',
+      'Partially Invoiced_Not paid':    'Partially Invoiced – Not Paid',
+      'Partially Invoiced_paid':        'Partially Invoiced – Paid',
+      'Sent out_Invoiced':              'Sent Out – Invoiced',
+      'Sent out_Not Invoiced':          'Sent Out – Not Invoiced',
+    } %}
     {% if status_counts %}
+    {% set _ordered_statuses = [] %}
+    {% for st in statuses %}{% if st in status_counts %}{% set _ = _ordered_statuses.append(st) %}{% endif %}{% endfor %}
+    {% for st in status_counts %}{% if st not in _ordered_statuses %}{% set _ = _ordered_statuses.append(st) %}{% endif %}{% endfor %}
     <div class="row g-2 mb-3">
-      {% for st, count in status_counts.items() %}
+      {% for st in _ordered_statuses %}
+      {% set count = status_counts[st] %}
       {% set icon, color = status_styles.get(st, ('bi-kanban', 'bg-slate')) %}
+      {% set label = _status_labels.get(st, st) %}
       <div class="col-6 col-md-3 col-lg-2">
         <a href="{{ url_for('projects', status=st, tab='all-projects', q=search, client=client_filter, plant=plant_filter, from=date_from, to=date_to) }}" class="text-decoration-none">
           <div class="stat-card py-2 px-3" style="gap:10px;{{ 'border-color:var(--slate-400);box-shadow:0 0 0 1px var(--slate-300);' if status_filter == st }}">
@@ -127,7 +141,7 @@
             </div>
             <div style="min-width:0;flex:1;">
               <div class="stat-value" style="font-size:18px;">{{ count }}</div>
-              <div class="stat-label" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;{{ 'font-size:9px;' if st|length > 14 }}" title="{{ st }}">{{ st }}</div>
+              <div class="stat-label" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;{{ 'font-size:9px;' if label|length > 14 }}" title="{{ label }}">{{ label }}</div>
             </div>
           </div>
         </a>

@@ -2396,7 +2396,7 @@ def dashboard():
         "Other / On Hold":                        "others_on_hold_amt",
     }
     ar_data = {_v: 0.0 for _v in _AR_CATEGORY_KEY.values()}
-    for _e in _compute_ar_entries(proj_list):
+    for _e in _compute_ar_entries(proj_list, invoices):
         ar_data[_AR_CATEGORY_KEY[_e["category"]]] += _e["outstanding"]
 
     # Advance Payment Received — employee advances still carrying a balance
@@ -2412,6 +2412,17 @@ def dashboard():
     proj_value_all = sum(_safe_float(p.get("contract_value", 0)) for p in proj_list if isinstance(p, dict))
     total_projects_2026 = len(cur_year_projs)
     proj_value_2026 = proj_contract_total
+
+    # Carryover: projects received in a PRIOR year that are still active (not
+    # completed/fully paid/cancelled) — work that rolled over into this year's
+    # pipeline, shown above the (current-year-only) monthly chart for context.
+    _CARRYOVER_DONE_ST = {"Completed", "Fully Invoiced_Fully paid", "Cancelled"}
+    _carryover_projs = [p for p in proj_list if isinstance(p, dict)
+                         and (p.get("date_received", "") or "")
+                         and (p.get("date_received", "") or "") < cur_year
+                         and (p.get("status", "") or "") not in _CARRYOVER_DONE_ST]
+    carryover_count = len(_carryover_projs)
+    carryover_value = sum(_safe_float(p.get("contract_value", 0)) for p in _carryover_projs)
 
     # Project monthly chart data
     proj_chart_labels = []
@@ -2446,6 +2457,8 @@ def dashboard():
 
     return render_template("dashboard.html",
         cur_year=cur_year,
+        carryover_count=carryover_count,
+        carryover_value=carryover_value,
         clocked_in_now=clocked_in_now,
         pending_time_off=pending_time_off,
         pending_expenses_dash=pending_expenses_dash,
@@ -17417,7 +17430,7 @@ def financial():
     # A/R Summary is entirely Projects-based (invoicing never feeds it) —
     # see _compute_ar_entries() for the categorization rules, shared with
     # the dashboard route's ar_data so the two stay identical.
-    ar_flagged_projects = _compute_ar_entries(projects_list)
+    ar_flagged_projects = _compute_ar_entries(projects_list, invoices)
 
     return render_template("financial.html",
         total_invoiced=total_invoiced,
@@ -25279,12 +25292,13 @@ _AR_SIMPLE_STATUS_CATEGORY = {
 # so its balance is split per-stage rather than treated as one lump amount.
 _AR_STAGED_STATUSES = _PARTIAL_INVOICE_STATUSES | {"Fully Invoiced_Not paid", "Fully Invoiced_Partially paid"}
 
-def _compute_ar_entries(proj_list):
+def _compute_ar_entries(proj_list, raw_inv=None):
     """Every project's outstanding balance, split into Accounts Receivable
     categories. This is the sole source of Accounts Receivable — invoicing
-    records are never consulted; only a project's own status and
-    payment_stages drive it, so the dashboard's AR widget and the Finance ->
-    AR Summary tab can both build off this one function and stay identical.
+    records are never consulted for the categorization itself; only a
+    project's own status and payment_stages drive it, so the dashboard's AR
+    widget and the Finance -> AR Summary tab can both build off this one
+    function and stay identical.
 
     A staged project (Partially/Fully Invoiced_*) can produce two separate
     entries: whatever's still sitting in "Pending Invoice" stages (billed to
@@ -25295,7 +25309,14 @@ def _compute_ar_entries(proj_list):
     Disagreement / Project Completion Issue / the simple, non-staged
     "Sent out_*" statuses) contributes its full remaining balance as one
     entry — see _AR_SIMPLE_STATUS_CATEGORY.
+
+    Each entry also carries "has_overdue": whether the PROJECT (not any raw
+    invoice list) has a payment stage whose linked invoice is past its due
+    date and still unpaid — cancelled/fully-paid projects never reach here
+    at all, so "Overdue Amount" on the AR Summary only ever reflects real,
+    outstanding project balances, never invoices in isolation.
     """
+    raw_inv = raw_inv or {}
     entries = []
     for p in proj_list:
         if not isinstance(p, dict):
@@ -25308,6 +25329,7 @@ def _compute_ar_entries(proj_list):
             continue
         cv  = _safe_float(p.get("contract_value", 0))
         amt = _safe_float(p.get("amount_paid", 0))
+        has_overdue = _project_has_overdue_stage(p.get("payment_stages"), raw_inv, p)
         base = {
             "project_id":     p.get("firebase_id", ""),
             "project_number": project_number,
@@ -25315,6 +25337,7 @@ def _compute_ar_entries(proj_list):
             "status":         status,
             "start_date":     p.get("start_date") or p.get("date_received") or "",
             "due_date":       p.get("end_date", ""),
+            "has_overdue":    has_overdue,
         }
 
         if status in _AR_STAGED_STATUSES:

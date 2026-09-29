@@ -6021,9 +6021,11 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       receivableProjectsAmount += outstanding;
       if (p.client) clients.add(p.client);
 
-      // Overdue Amount = outstanding balance of projects past their due date
-      const dueDate = p.due_date ? new Date(p.due_date) : null;
-      if (dueDate && !isNaN(dueDate) && dueDate < today) {
+      // Overdue Amount = outstanding balance of projects with an unpaid invoice
+      // past its due date (server-computed has_overdue — cancelled and fully
+      // paid projects never reach arFlaggedProjects in the first place, so this
+      // is already project-based, not invoice-based, and already excludes them)
+      if (p.has_overdue) {
         overdueAmount += outstanding;
       }
 
