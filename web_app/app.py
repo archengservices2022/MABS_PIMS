@@ -1913,7 +1913,7 @@ def dashboard():
     cur_year_invs = [i for i in inv_list if isinstance(i, dict)
                      and (i.get("meta", {}).get("invoice_date", "") or "").startswith(cur_year)]
     cur_year_projs = [p for p in proj_list if isinstance(p, dict)
-                      and (p.get("date_received", "") or "").startswith(cur_year)]
+                      and _project_in_date_range(p, f"{cur_year}-01-01", f"{cur_year}-12-31")]
     cur_year_quots = [q for q in quot_list if isinstance(q, dict)
                       and (q.get("date", "") or q.get("created_at", "") or "").startswith(cur_year)]
 
@@ -2005,7 +2005,7 @@ def dashboard():
     # agree with that page.
     import copy as _copy
     _cur_year_projects_raw = {k: v for k, v in (projects.items() if isinstance(projects, dict) else [])
-                               if isinstance(v, dict) and (v.get("date_received", "") or "").startswith(cur_year)}
+                               if isinstance(v, dict) and _project_in_date_range(v, f"{cur_year}-01-01", f"{cur_year}-12-31")}
     _pipe_items = _load_project_items(_copy.deepcopy(_cur_year_projects_raw), invoices, persist=False)
     _PIPELINE_ORDER = ["Not Started", "In Progress",
                        "Sent out_Invoiced", "Sent out_Not Invoiced",
