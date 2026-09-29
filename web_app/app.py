@@ -2413,15 +2413,15 @@ def dashboard():
     total_projects_2026 = len(cur_year_projs)
     proj_value_2026 = proj_contract_total
 
-    # Carryover: every project from a prior year (by the same received-date-or-
-    # change-order-date rule as cur_year_projs) that isn't already counted in
-    # this year's numbers — shown above the (current-year-only) monthly chart
-    # for context. Includes completed/fully-paid prior-year work (it's still
-    # part of the portfolio), only Cancelled is excluded.
-    _cur_year_ids = {p.get("firebase_id") for p in cur_year_projs if isinstance(p, dict)}
+    # Carryover: the immediately preceding calendar year's projects, matched
+    # the exact same way the Projects tab's date filter would (received date
+    # OR any change order date in that year) — shown above the (current-
+    # year-only) monthly chart for context. A project can legitimately count
+    # here AND in this year's numbers if it has a change order in both years,
+    # same as filtering the Projects tab to either year would show.
+    _prev_year = str(int(cur_year) - 1)
     _carryover_projs = [p for p in proj_list if isinstance(p, dict)
-                         and p.get("firebase_id") not in _cur_year_ids
-                         and (p.get("status", "") or "") != "Cancelled"]
+                         and _project_in_date_range(p, f"{_prev_year}-01-01", f"{_prev_year}-12-31")]
     carryover_count = len(_carryover_projs)
     carryover_value = sum(_safe_float(p.get("contract_value", 0)) for p in _carryover_projs)
 
