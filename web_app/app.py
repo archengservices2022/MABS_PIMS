@@ -2413,14 +2413,15 @@ def dashboard():
     total_projects_2026 = len(cur_year_projs)
     proj_value_2026 = proj_contract_total
 
-    # Carryover: projects received in a PRIOR year that are still active (not
-    # completed/fully paid/cancelled) — work that rolled over into this year's
-    # pipeline, shown above the (current-year-only) monthly chart for context.
-    _CARRYOVER_DONE_ST = {"Completed", "Fully Invoiced_Fully paid", "Cancelled"}
+    # Carryover: every project from a prior year (by the same received-date-or-
+    # change-order-date rule as cur_year_projs) that isn't already counted in
+    # this year's numbers — shown above the (current-year-only) monthly chart
+    # for context. Includes completed/fully-paid prior-year work (it's still
+    # part of the portfolio), only Cancelled is excluded.
+    _cur_year_ids = {p.get("firebase_id") for p in cur_year_projs if isinstance(p, dict)}
     _carryover_projs = [p for p in proj_list if isinstance(p, dict)
-                         and (p.get("date_received", "") or "")
-                         and (p.get("date_received", "") or "") < cur_year
-                         and (p.get("status", "") or "") not in _CARRYOVER_DONE_ST]
+                         and p.get("firebase_id") not in _cur_year_ids
+                         and (p.get("status", "") or "") != "Cancelled"]
     carryover_count = len(_carryover_projs)
     carryover_value = sum(_safe_float(p.get("contract_value", 0)) for p in _carryover_projs)
 
