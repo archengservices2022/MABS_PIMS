@@ -25,29 +25,29 @@
     <div class="kpi-card" style="border-left:4px solid #7C3AED;">
       <div class="kpi-top"><span class="kpi-label">Total Projects</span><i class="bi bi-kanban kpi-icon-sm" style="color:#7C3AED;"></i></div>
       <div class="kpi-value" style="color:#7C3AED;">{{ p_total_count }}</div>
-      <div class="kpi-sub">all time</div>
+      <div class="kpi-sub">{{ 'including ' ~ p_cancelled_count ~ ' cancelled' if p_cancelled_count else 'all time' }}</div>
     </div>
   </div>
   {% if 'financial' in allowed_pages %}
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-blue">
       <div class="kpi-top"><span class="kpi-label">Portfolio Value</span><i class="bi bi-briefcase-fill kpi-icon-sm"></i></div>
-      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(p_total_cv) }}</div>
-      <div class="kpi-sub">total contract value</div>
+      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(p_active_cv) }}</div>
+      <div class="kpi-sub">{{ 'total contract value (cancelled)' if status_filter == 'Cancelled' else 'total contract value of active projects' }}</div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-green">
       <div class="kpi-top"><span class="kpi-label">Total Paid</span><i class="bi bi-check-circle-fill kpi-icon-sm"></i></div>
       <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(p_total_paid) }}</div>
-      <div class="kpi-sub">received so far</div>
+      <div class="kpi-sub">payments received</div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-red">
       <div class="kpi-top"><span class="kpi-label">Outstanding</span><i class="bi bi-hourglass-split kpi-icon-sm"></i></div>
       <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(p_outstanding) }}</div>
-      <div class="kpi-sub">remaining to collect</div>
+      <div class="kpi-sub">{{ 'remaining to collect (cancelled)' if status_filter == 'Cancelled' else 'remaining to collect from active projects' }}</div>
     </div>
   </div>
   {% endif %}
@@ -107,9 +107,11 @@
       'Ready to Sent':         ('bi-send',                'bg-amber'),
       'Sent out_Invoiced':     ('bi-receipt-cutoff',      'bg-green'),
       'Sent out_Not Invoiced': ('bi-envelope-check',      'bg-blue'),
-      'invoiced_Not paid yet':   ('bi-hourglass-split',     'bg-amber'),
-      'invoiced_Partially paid': ('bi-pie-chart-fill',      'bg-amber'),
-      'invoiced_Fully paid':     ('bi-check-circle-fill',   'bg-green'),
+      'Fully Invoiced_Not paid':   ('bi-hourglass-split',     'bg-amber'),
+      'Fully Invoiced_Partially paid': ('bi-pie-chart-fill',      'bg-amber'),
+      'Fully Invoiced_Fully paid':     ('bi-check-circle-fill',   'bg-green'),
+      'Partially Invoiced_Not paid':       ('bi-hourglass-split', 'bg-purple'),
+      'Partially Invoiced_paid': ('bi-pie-chart-fill',  'bg-purple'),
       'Scope Disagreement':      ('bi-chat-dots',           'bg-cyan'),
       'Project Completion Issue':('bi-tools',                'bg-green'),
     } %}

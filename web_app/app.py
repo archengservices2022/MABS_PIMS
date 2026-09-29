@@ -1460,7 +1460,7 @@ def inject_globals():
             "my_open_entry":         next((e for e in my_entries if e.get("status") == "open"), None),
             "last_project_number":   my_entries[0].get("project_number", "") if my_entries else "",
             "clock_active_projects": [p for p in _load_projects_list()
-                                       if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Fully paid", "Cancelled")],
+                                       if isinstance(p, dict) and p.get("status", "") not in ("Completed", "Fully Invoiced_Fully paid", "Cancelled")],
             "today_str":             datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
         }
 
@@ -1941,7 +1941,7 @@ def dashboard():
 
     # Current year counts only
     active_projects = sum(1 for p in cur_year_projs
-                          if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Fully paid", "Cancelled"))
+                          if isinstance(p, dict) and p.get("status", "") not in ("Completed", "Fully Invoiced_Fully paid", "Cancelled"))
     open_quotes     = sum(1 for q in cur_year_quots
                           if isinstance(q, dict) and q.get("status", "Not Started") not in ("Completed", "Cancelled", "Invoiced"))
 
@@ -2000,13 +2000,17 @@ def dashboard():
             proj_status_counts[st] = proj_status_counts.get(st, 0) + 1
 
     # Project Pipeline: every status the Projects tab has, with its project count and total
-    # contract value. Uses the Projects tab's own loader (read-only here) so counts and
-    # amounts always agree with that page.
+    # contract value — current year only, same year filter as the rest of the dashboard.
+    # Uses the Projects tab's own loader (read-only here) so counts and amounts otherwise
+    # agree with that page.
     import copy as _copy
-    _pipe_items = _load_project_items(_copy.deepcopy(projects), invoices, persist=False)
+    _cur_year_projects_raw = {k: v for k, v in (projects.items() if isinstance(projects, dict) else [])
+                               if isinstance(v, dict) and (v.get("date_received", "") or "").startswith(cur_year)}
+    _pipe_items = _load_project_items(_copy.deepcopy(_cur_year_projects_raw), invoices, persist=False)
     _PIPELINE_ORDER = ["Not Started", "In Progress",
                        "Sent out_Invoiced", "Sent out_Not Invoiced",
-                       "invoiced_Not paid yet", "invoiced_Partially paid", "invoiced_Fully paid",
+                       "Partially Invoiced_Not paid", "Partially Invoiced_paid",
+                       "Fully Invoiced_Not paid", "Fully Invoiced_Partially paid", "Fully Invoiced_Fully paid",
                        "On Hold", "Scope Disagreement", "Project Completion Issue", "Cancelled"]
     _pipe = {st: {"status": st, "count": 0, "amount": 0.0} for st in _PIPELINE_ORDER}
     for _pi in _pipe_items:
@@ -2057,9 +2061,10 @@ def dashboard():
 
     # Active projects by status for pipeline view
     # Map all status variants to display buckets
-    _IN_PROGRESS = {"In Progress", "Active", "invoiced_Not paid yet",
-                    "invoiced_Partially paid", "Invoiced", "Sent",
-                    "Sent out_Invoiced", "Scope Disagreement", "Project Completion Issue"}
+    _IN_PROGRESS = {"In Progress", "Active", "Fully Invoiced_Not paid",
+                    "Fully Invoiced_Partially paid", "Invoiced", "Sent",
+                    "Sent out_Invoiced", "Scope Disagreement", "Project Completion Issue",
+                    "Partially Invoiced_Not paid", "Partially Invoiced_paid"}
     _NOT_STARTED = {"Not Started"}
     _ON_HOLD     = {"On Hold"}
 
@@ -2068,7 +2073,7 @@ def dashboard():
         if s in _IN_PROGRESS:  return "In Progress"
         if s in _ON_HOLD:      return "On Hold"
         if s in _NOT_STARTED:  return "Not Started"
-        return None  # Completed / Cancelled / invoiced_Fully paid — excluded
+        return None  # Completed / Cancelled / Fully Invoiced_Fully paid — excluded
 
     pipeline = {"Not Started": [], "In Progress": [], "On Hold": []}
     for _p in cur_year_projs:
@@ -2105,7 +2110,7 @@ def dashboard():
     for p in cur_year_projs:
         if not isinstance(p, dict):
             continue
-        if p.get("status", "") in ("Completed", "invoiced_Fully paid", "Cancelled"):
+        if p.get("status", "") in ("Completed", "Fully Invoiced_Fully paid", "Cancelled"):
             continue
         stages = p.get("payment_stages", []) or []
         pending_stages = [s for s in stages if isinstance(s, dict) and s.get("status", "") == "Pending Invoice"]
@@ -2162,10 +2167,10 @@ def dashboard():
     # Active Contract Value = sum of contract values for active projects created in current year
     proj_contract_active = sum(
         _safe_float(p.get("contract_value", 0)) for p in cur_year_projs
-        if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Fully paid", "Cancelled")
+        if isinstance(p, dict) and p.get("status", "") not in ("Completed", "Fully Invoiced_Fully paid", "Cancelled")
     )
     proj_contract_total  = sum(_safe_float(p.get("contract_value", 0)) for p in cur_year_projs if isinstance(p, dict))
-    proj_completed_count = sum(1 for p in cur_year_projs if isinstance(p, dict) and p.get("status", "") in ("Completed", "invoiced_Fully paid"))
+    proj_completed_count = sum(1 for p in cur_year_projs if isinstance(p, dict) and p.get("status", "") in ("Completed", "Fully Invoiced_Fully paid"))
 
     inv_overdue_amt = sum(
         _safe_float(i.get("meta", {}).get("total", 0)) - _safe_float(i.get("meta", {}).get("amount_paid", 0))
@@ -2375,98 +2380,24 @@ def dashboard():
             if _edate[:7] == _fin_month:
                 current_month_expenses += _eamt
 
-    # Account Receivable Summary
-    # Mirror the Financial page's A/R Summary tab (financial.html → initArSummary)
-    # exactly so the dashboard and Financial → Receivables show identical values.
-    # Rules replicated from that JS:
-    #   • Invoice status is recalculated with _calculate_invoice_status().
-    #   • Paid / Cancelled invoices are excluded.
-    #   • Amount = (total − amount_paid) for Partial, otherwise the full total.
-    #   • Category is meta.ar_category when set, else inferred from status;
-    #     unknown/Draft invoices fall into "Others / On Hold". This is purely
-    #     invoice-level and never looks at the invoice's project's status —
-    #     Partial Payment - Outstanding is always built from invoices.
-    #   • Separately (not netted against the above — the two are deliberately
-    #     not mixed), every project whose own status is "Scope Disagreement",
-    #     "Project Completion Issue", or "On Hold" (→ "Others / On Hold")
-    #     contributes one project-level entry equal to its full outstanding
-    #     balance (contract value − amount paid), regardless of what its
-    #     invoices are separately doing. So "Project Completion Issue" always
-    #     lists projects, never invoices.
-    #   • "Advance Payment Received" comes from employee advances with a
-    #     remaining balance, NOT from invoices.
-    ar_data = {
-        "advanced_payment_amt": 0.0,
-        "partial_payment_amt": 0.0,
-        "invoiced_not_paid_amt": 0.0,
-        "invoice_disputed_amt": 0.0,
-        "scope_disagreement_amt": 0.0,
-        "incorrect_invoice_amt": 0.0,
-        "project_completion_issue_amt": 0.0,
-        "others_on_hold_amt": 0.0,
-    }
+    # Account Receivable Summary — see _compute_ar_entries() for the rules.
+    # Mirrors the Financial page's A/R Summary tab (financial.html →
+    # initArSummary) exactly so the dashboard and Financial → Receivables
+    # show identical values.
     _AR_CATEGORY_KEY = {
-        "Advance Payment Received":      "advanced_payment_amt",
-        "Invoiced - Not Paid":           "invoiced_not_paid_amt",
-        "Partial Payment - Outstanding": "partial_payment_amt",
-        "Invoice Disputed":              "invoice_disputed_amt",
-        "Scope Disagreement":            "scope_disagreement_amt",
-        "Incorrect Invoice":             "incorrect_invoice_amt",
-        "Project Completion Issue":      "project_completion_issue_amt",
-        "Others / On Hold":              "others_on_hold_amt",
+        "Advance Payment Received":              "advanced_payment_amt",
+        "Not Started":                            "not_started_amt",
+        "In Progress":                            "in_progress_amt",
+        "Pending Invoice":                        "pending_invoice_amt",
+        "Invoiced - Not Paid":                    "invoiced_not_paid_amt",
+        "Invoiced_Partially Paid – Balance Due":  "partial_payment_amt",
+        "Scope Disagreement":                     "scope_disagreement_amt",
+        "Project Completion Issue":               "project_completion_issue_amt",
+        "Other / On Hold":                        "others_on_hold_amt",
     }
-    _PROJECT_STATUS_AR = {
-        "Scope Disagreement":       "Scope Disagreement",
-        "Project Completion Issue": "Project Completion Issue",
-        "On Hold":                  "Others / On Hold",
-    }
-
-    def _ar_categorize(_meta):
-        _cat = (_meta.get("ar_category") or "").strip()
-        if _cat:
-            return _cat
-        _st = (_meta.get("status") or "").strip()
-        if _st == "Invoice Disputed":
-            return "Invoice Disputed"
-        if _st == "Incorrect Invoice":
-            return "Incorrect Invoice"
-        if _st == "Partial":
-            return "Partial Payment - Outstanding"
-        if _st in ("Paid", "Cancelled"):
-            return None
-        if _st in ("Sent", "Viewed", "Overdue"):
-            return "Invoiced - Not Paid"
-        return "Others / On Hold"
-
-    for inv in inv_list:
-        if not isinstance(inv, dict):
-            continue
-        meta = dict(inv.get("meta", {}) or {})
-        meta["status"] = _calculate_invoice_status(inv)
-        status = meta["status"]
-        if status in ("Paid", "Cancelled"):
-            continue
-        total = _safe_float(meta.get("total", 0)) or _safe_float(inv.get("amount", 0))
-        amount = (total - _safe_float(meta.get("amount_paid", 0))) if status == "Partial" else total
-        if amount <= 0:
-            continue
-        _key = _AR_CATEGORY_KEY.get(_ar_categorize(meta))
-        if _key:
-            ar_data[_key] += amount
-
-    # Scope Disagreement / Project Completion Issue / On Hold: one entry per
-    # flagged project, equal to its full outstanding balance — independent of
-    # (not netted against) whatever category its own invoices landed in
-    # above, so this always reflects project records, never invoice records.
-    for _p in proj_list:
-        if not isinstance(_p, dict):
-            continue
-        _cat = _PROJECT_STATUS_AR.get((_p.get("status") or "").strip())
-        if not _cat:
-            continue
-        _outstanding = _safe_float(_p.get("contract_value", 0)) - _safe_float(_p.get("amount_paid", 0))
-        if _outstanding > 0.01:
-            ar_data[_AR_CATEGORY_KEY[_cat]] += _outstanding
+    ar_data = {_v: 0.0 for _v in _AR_CATEGORY_KEY.values()}
+    for _e in _compute_ar_entries(proj_list):
+        ar_data[_AR_CATEGORY_KEY[_e["category"]]] += _e["outstanding"]
 
     # Advance Payment Received — employee advances still carrying a balance
     _dash_adv_raw = fb_get("/employee_advances") or {}
@@ -2508,12 +2439,13 @@ def dashboard():
                     _status = inv.get("status", "")
                     if _status == "Cancelled":
                         proj_chart_cancelled[idx] += 1
-                    elif _status not in ("Completed", "invoiced_Fully paid"):
+                    elif _status not in ("Completed", "Fully Invoiced_Fully paid"):
                         proj_chart_ongoing[idx] += 1
                 except Exception:
                     pass
 
     return render_template("dashboard.html",
+        cur_year=cur_year,
         clocked_in_now=clocked_in_now,
         pending_time_off=pending_time_off,
         pending_expenses_dash=pending_expenses_dash,
@@ -3738,6 +3670,77 @@ def _redirect_project_detail(project_id, anchor=""):
         url += anchor
     return redirect(url)
 
+def _repair_project_status(pid: str, pdata: dict, persist: bool = True) -> None:
+    """Correct pdata["status"] in place when it contradicts amount_paid / payment_stages,
+    and (if persist) write the correction back to Firebase.
+
+    Single source of truth for this repair so the Projects list, dashboard, and the
+    project detail page all agree on a project's status instead of drifting apart —
+    a previous copy-pasted version of this logic in the project detail route is exactly
+    how a project could show a stale status there that the Projects list had already
+    self-corrected.
+    """
+    _now_iso = datetime.now(timezone.utc).isoformat()
+    _amt   = _safe_float(pdata.get("amount_paid", 0))
+    _cv    = _safe_float(pdata.get("contract_value", 0))
+    _st    = pdata.get("status") or "Not Started"
+    # One-time migration: old records still hold the pre-rename status
+    # strings ("invoiced_Not paid yet" etc. — renamed to the
+    # "Fully Invoiced_..." / "Partially Invoiced_..." pair of tiers).
+    # Re-derive the correct new status from the stage data on read.
+    _LEGACY_INVOICE_STATUS_RENAME = {
+        "invoiced_Not paid yet":   "Fully Invoiced_Not paid",
+        "invoiced_Partially paid": "Fully Invoiced_Partially paid",
+        "invoiced_Fully paid":     "Fully Invoiced_Fully paid",
+        "Partially Invoiced_Partially paid": "Partially Invoiced_paid",
+        "Partially Invoiced_Fully paid":      "Partially Invoiced_paid",
+    }
+    if _st in _LEGACY_INVOICE_STATUS_RENAME:
+        _st = _compute_project_invoice_status(pdata) or _LEGACY_INVOICE_STATUS_RENAME[_st]
+        pdata["status"] = _st
+        if persist:
+            fb_update(f"/projects/{pid}", {"status": _st, "updated_at": _now_iso})
+    _DONE_ST   = {"Fully Invoiced_Fully paid", "Cancelled"}
+    _MANUAL_ST = {"Cancelled", "On Hold", "Ready to Sent",
+                  "Sent out_Invoiced", "Sent out_Not Invoiced",
+                  "Scope Disagreement", "Project Completion Issue"}
+    if _st not in _DONE_ST:
+        if _cv > 0 and _amt >= _cv - 0.01:
+            # Fully paid — also migrates legacy "Completed" → "Fully Invoiced_Fully paid"
+            pdata["status"] = "Fully Invoiced_Fully paid"
+            if persist:
+                fb_update(f"/projects/{pid}", {"status": "Fully Invoiced_Fully paid", "updated_at": _now_iso})
+        elif _cv > 0 and 0 < _amt < _cv - 0.01 and _st not in _MANUAL_ST:
+            # Partial payment — upgrades from any status, using the stage-aware
+            # tier (Partially Invoiced vs Fully Invoiced) so the status reflects
+            # how much has actually been billed, not just the full contract value
+            _new_st = _compute_project_invoice_status(pdata) or "Fully Invoiced_Partially paid"
+            if _new_st != _st:
+                pdata["status"] = _new_st
+                if persist:
+                    fb_update(f"/projects/{pid}", {"status": _new_st, "updated_at": _now_iso})
+        elif _amt == 0 and _st not in _MANUAL_ST:
+            # Invoice(s) created but $0 collected yet — re-evaluate every time (not
+            # just from a base status) so the status keeps advancing as more stages
+            # get invoiced, e.g. Partially Invoiced_Not paid -> Fully Invoiced_Not paid
+            _new_st = _compute_project_invoice_status(pdata)
+            if _new_st and _new_st != _st:
+                pdata["status"] = _new_st
+                if persist:
+                    fb_update(f"/projects/{pid}", {"status": _new_st, "updated_at": _now_iso})
+            elif not _new_st and _st in _ALL_INVOICE_PAYMENT_STATUSES:
+                # Status claims an invoice tier (e.g. a stale value, or the Excel
+                # importer guessing "invoiced" from free-text notes) but no payment
+                # stage actually backs that up — same as an invoice getting deleted,
+                # fall back to In Progress rather than keep an unsupported claim
+                pdata["status"] = "In Progress"
+                if persist:
+                    fb_update(f"/projects/{pid}", {"status": "In Progress", "updated_at": _now_iso})
+        elif _amt > 0 and _st == "Not Started":
+            pdata["status"] = "In Progress"
+            if persist:
+                fb_update(f"/projects/{pid}", {"status": "In Progress", "updated_at": _now_iso})
+
 def _load_project_items(raw, raw_inv, persist=True):
     """Every project as the Projects page lists it: contract value synced from approved change
     orders and the status repaired when the amount paid contradicts it.
@@ -3746,42 +3749,12 @@ def _load_project_items(raw, raw_inv, persist=True):
     it shows the very same statuses and amounts without writing anything).
     """
     items = []
-    _now_iso = datetime.now(timezone.utc).isoformat()
     for pid, pdata in (raw.items() if isinstance(raw, dict) else []):
         if pdata and isinstance(pdata, dict):
             pdata["firebase_id"] = pid
             pdata["_has_overdue"] = _project_has_overdue_stage(pdata.get("payment_stages"), raw_inv, pdata)
             _sync_contract_value_from_cos(pid, pdata, persist=persist)
-            # Repair status if amount_paid contradicts stored status
-            _amt   = _safe_float(pdata.get("amount_paid", 0))
-            _cv    = _safe_float(pdata.get("contract_value", 0))
-            _st    = pdata.get("status") or "Not Started"
-            _DONE_ST   = {"invoiced_Fully paid", "Cancelled"}
-            _MANUAL_ST = {"Cancelled", "On Hold", "Ready to Sent",
-                          "Sent out_Invoiced", "Sent out_Not Invoiced",
-                          "Scope Disagreement", "Project Completion Issue"}
-            if _st not in _DONE_ST:
-                if _cv > 0 and _amt >= _cv - 0.01:
-                    # Fully paid — also migrates legacy "Completed" → "invoiced_Fully paid"
-                    pdata["status"] = "invoiced_Fully paid"
-                    if persist:
-                        fb_update(f"/projects/{pid}", {"status": "invoiced_Fully paid", "updated_at": _now_iso})
-                elif _cv > 0 and 0 < _amt < _cv - 0.01 and _st not in (_MANUAL_ST | {"invoiced_Partially paid"}):
-                    # Partial payment — upgrades from any status including "invoiced_Not paid yet"
-                    pdata["status"] = "invoiced_Partially paid"
-                    if persist:
-                        fb_update(f"/projects/{pid}", {"status": "invoiced_Partially paid", "updated_at": _now_iso})
-                elif _amt == 0 and _st in ("Not Started", "In Progress", "Active"):
-                    # Invoice created but $0 collected yet
-                    _stages = pdata.get("payment_stages") or []
-                    if any(isinstance(s, dict) and s.get("status") == "Invoiced" for s in _stages):
-                        pdata["status"] = "invoiced_Not paid yet"
-                        if persist:
-                            fb_update(f"/projects/{pid}", {"status": "invoiced_Not paid yet", "updated_at": _now_iso})
-                elif _amt > 0 and _st == "Not Started":
-                    pdata["status"] = "In Progress"
-                    if persist:
-                        fb_update(f"/projects/{pid}", {"status": "In Progress", "updated_at": _now_iso})
+            _repair_project_status(pid, pdata, persist=persist)
             items.append(pdata)
     items.sort(key=_project_number_sort_key, reverse=True)
     return items
@@ -3836,7 +3809,8 @@ def projects():
 
     statuses = ["Not Started", "In Progress",
                 "Sent out_Invoiced", "Sent out_Not Invoiced",
-                "invoiced_Not paid yet", "invoiced_Partially paid", "invoiced_Fully paid",
+                "Partially Invoiced_Not paid", "Partially Invoiced_paid",
+                "Fully Invoiced_Not paid", "Fully Invoiced_Partially paid", "Fully Invoiced_Fully paid",
                 "On Hold", "Scope Disagreement", "Project Completion Issue", "Cancelled"]
     # Get unique client names from all projects (company_name preferred over client_name)
     clients_set = set()
@@ -3854,16 +3828,24 @@ def projects():
     active_tab = request.args.get("tab", "all-projects")
 
     # KPI stats from filtered projects
-    _EXCLUDED_STATUSES = {"invoiced_Fully paid", "Cancelled"}
-    p_total_count = len(items)
-    p_total_cv    = sum(_safe_float(p.get("contract_value", 0)) for p in items)
-    p_active_cv   = sum(_safe_float(p.get("contract_value", 0)) for p in items if p.get("status", "") not in _EXCLUDED_STATUSES)
+    p_total_count     = len(items)
+    p_cancelled_count = sum(1 for p in items if p.get("status", "") == "Cancelled")
+    p_total_cv        = sum(_safe_float(p.get("contract_value", 0)) for p in items)
 
+    # Portfolio Value / Total Paid / Outstanding should reflect ACTIVE projects only —
+    # a cancelled project's contract value was never really "in the portfolio" and its
+    # balance was never really "still to collect". Exception: if the user explicitly
+    # filtered the list down to Cancelled, show that filtered set's own totals rather
+    # than zeroing everything out.
+    if status_filter == "Cancelled":
+        _stat_items = items
+    else:
+        _stat_items = [p for p in items if p.get("status", "") != "Cancelled"]
+    p_active_cv   = sum(_safe_float(p.get("contract_value", 0)) for p in _stat_items)
     # Calculate collected amount from projects' amount_paid (already synced from invoices)
     # Using project.amount_paid avoids double-counting in multi-project invoices
-    p_total_paid = sum(_safe_float(p.get("amount_paid", 0)) for p in items)
-
-    p_outstanding = p_total_cv - p_total_paid
+    p_total_paid  = sum(_safe_float(p.get("amount_paid", 0)) for p in _stat_items)
+    p_outstanding = max(p_active_cv - p_total_paid, 0)
 
     deleted_projects_raw = fb_get("/deleted_projects") or {}
     deleted_projects = sorted(
@@ -3880,7 +3862,8 @@ def projects():
                            clients=clients, next_project_num=next_project_num,
                            active_tab=active_tab, status_counts=status_counts,
                            deleted_projects=deleted_projects,
-                           p_total_count=p_total_count, p_total_cv=p_total_cv,
+                           p_total_count=p_total_count, p_cancelled_count=p_cancelled_count,
+                           p_total_cv=p_total_cv,
                            p_active_cv=p_active_cv, p_total_paid=p_total_paid,
                            p_outstanding=p_outstanding)
 
@@ -4063,7 +4046,11 @@ def projects_import_excel():
         xl_stat         = str_val("xl_status").lower()
 
         if "invoiced" in xl_stat or "invoiced" in note_lc:
-            status = "invoiced_Not paid yet"
+            # Free-text guess only — no structured payment-stage data backs this up,
+            # so use the manual "Sent out_Invoiced" status rather than one of the
+            # stage-evidence-based tiers (which would get auto-reverted to In Progress
+            # by _repair_project_status the moment nothing invoiced is actually found)
+            status = "Sent out_Invoiced"
         elif "completed" in xl_stat or "complete" in note_lc:
             status = "Completed"
         elif "cancelled" in xl_stat or "cancel" in note_lc:
@@ -4394,6 +4381,7 @@ def project_detail(project_id):
         abort(404)
     data["firebase_id"] = project_id
     proj_num = data.get("project_number", "")
+    _repair_project_status(project_id, data, persist=True)
 
     # Load commission entry early (needed for P&L calculation)
     _comm_entry = fb_get(f"/project_commissions/{project_id}") or {}
@@ -4956,7 +4944,7 @@ def co_status(project_id, co_idx):
             "payment_stages": stages,
         }
         # Auto-update project status to "In Progress" if project was fully paid and new CO payment is unpaid
-        if project.get("status") in ("Completed", "invoiced_Fully paid") and co_amount > 0:
+        if project.get("status") in ("Completed", "Fully Invoiced_Fully paid") and co_amount > 0:
             update_data["status"] = "In Progress"
             update_data["updated_at"] = now_str
         fb_update(f"/projects/{project_id}", update_data)
@@ -9400,11 +9388,11 @@ def invoice_delete(invoice_id):
 
                 # Invoice-driven statuses that should revert when the invoice is removed
                 _invoice_statuses = {
-                    "Invoiced", "invoiced_Not paid yet", "invoiced_Partially paid",
-                    "invoiced_Fully paid", "Sent", "Sent out_Invoiced",
-                }
+                    "Invoiced", "Fully Invoiced_Not paid", "Fully Invoiced_Partially paid",
+                    "Fully Invoiced_Fully paid", "Sent", "Sent out_Invoiced",
+                } | _PARTIAL_INVOICE_STATUSES
                 # If still has payments, change to In Progress
-                if amount_paid > 0 and current_status in ("Completed", "invoiced_Fully paid"):
+                if amount_paid > 0 and current_status in ("Completed", "Fully Invoiced_Fully paid"):
                     fb_update(f"/projects/{proj_id}", {
                         "status": "In Progress",
                         "updated_at": datetime.now(timezone.utc).isoformat()
@@ -9541,21 +9529,20 @@ def invoicing_export_pdf_selected():
         flash("Select at least one invoice to export.", "warning")
         return redirect(url_for("invoicing", tab="all-invoices"))
 
-    # Warm the whole-table caches once up front: each invoice below gets looked
-    # up twice (once for the summary page, once for its own detail pages) and
-    # each pulls its client record too. Without this, an uncached run does a
-    # separate Firebase round trip per lookup instead of one per table.
-    fb_get("/invoices")
-    fb_get("/clients")
-
-    summary_bytes = _generate_invoice_summary_pdf_bytes(invoice_ids)
+    # Keep one data snapshot for this export, including when the global cache
+    # is disabled or expires during a large PDF. Fetch only selected invoices.
+    pdf_get = _invoice_pdf_data_reader()
+    summary_bytes = _generate_invoice_summary_pdf_bytes(invoice_ids, data_get=pdf_get)
     if not summary_bytes:
         flash("Could not build the invoice summary PDF.", "danger")
         return redirect(url_for("invoicing", tab="all-invoices"))
 
     import io as _io
     writer = PdfWriter()
-    for chunk in [summary_bytes] + [_generate_invoice_pdf_bytes(iid, job_style_header=True) for iid in invoice_ids]:
+    from itertools import chain
+    for chunk in chain([summary_bytes], (
+            _generate_invoice_pdf_bytes(iid, job_style_header=True, data_get=pdf_get)
+            for iid in invoice_ids)):
         if not chunk:
             continue
         reader = PdfReader(_io.BytesIO(chunk))
@@ -17427,32 +17414,10 @@ def financial():
     project_pnl = [_ensure_json_serializable(p) for p in (project_pnl or [])]
     advances_list = [_ensure_json_serializable(a) for a in (advances_list or [])]
 
-    # A/R Summary: projects flagged "Scope Disagreement", "Project Completion
-    # Issue", or "On Hold" (On Hold → "Others / On Hold") each contribute one
-    # project-level entry equal to their full outstanding balance, independent
-    # of whatever category their own invoices separately land in — mirrors
-    # the same logic in the dashboard route's ar_data. Kept as a small lookup
-    # (with just enough project info to display) rather than shipping the
-    # full projects list to the AR Summary tab's JS.
-    _AR_PROJECT_STATUS_CATEGORY = {
-        "Scope Disagreement":       "Scope Disagreement",
-        "Project Completion Issue": "Project Completion Issue",
-        "On Hold":                  "Others / On Hold",
-    }
-    ar_flagged_projects = [
-        {
-            "project_id": p.get("firebase_id", ""),
-            "project_number": (p.get("project_number") or "").strip(),
-            "client": p.get("company_name") or p.get("client_name") or "",
-            "status": p.get("status", ""),
-            "category": _AR_PROJECT_STATUS_CATEGORY[p.get("status")],
-            "outstanding": _safe_float(p.get("contract_value", 0)) - _safe_float(p.get("amount_paid", 0)),
-            "start_date": p.get("start_date") or p.get("date_received") or "",
-            "due_date": p.get("end_date", ""),
-        }
-        for p in projects_list
-        if isinstance(p, dict) and p.get("status") in _AR_PROJECT_STATUS_CATEGORY and p.get("project_number")
-    ]
+    # A/R Summary is entirely Projects-based (invoicing never feeds it) —
+    # see _compute_ar_entries() for the categorization rules, shared with
+    # the dashboard route's ar_data so the two stay identical.
+    ar_flagged_projects = _compute_ar_entries(projects_list)
 
     return render_template("financial.html",
         total_invoiced=total_invoiced,
@@ -17548,7 +17513,6 @@ def financial():
             key=lambda x: x.get("deleted_at", ""), reverse=True
         ),
         bdt_exchange_rate=_safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110,
-        inv_list=inv_list,
         advances_list=advances_list,
         advances_total=advances_total,
         ar_flagged_projects=ar_flagged_projects,
@@ -21765,7 +21729,7 @@ def employees():
     all_entries = _load_time_entries()
     all_time_off = _load_time_off_requests()
     active_projects = [p for p in _load_projects_list()
-                       if p.get("status", "") not in ("Completed", "invoiced_Fully paid", "Cancelled")]
+                       if p.get("status", "") not in ("Completed", "Fully Invoiced_Fully paid", "Cancelled")]
 
     now = datetime.now(COMPANY_TZ)
     today_str = now.strftime("%Y-%m-%d")
@@ -25291,6 +25255,133 @@ def _enrich_projects_with_next_stage(projects: list, all_invoices: dict = None) 
             p["next_stage_amount"] = detection.get("amount", 0)
     return projects
 
+_INVOICED_STAGE_STATES = {"Invoiced", "Paid", "Partially Paid", "Overdue"}
+_PARTIAL_INVOICE_STATUSES = {
+    "Partially Invoiced_Not paid", "Partially Invoiced_paid",
+}
+_FULL_INVOICE_STATUSES = {
+    "Fully Invoiced_Not paid", "Fully Invoiced_Partially paid", "Fully Invoiced_Fully paid",
+}
+_ALL_INVOICE_PAYMENT_STATUSES = _PARTIAL_INVOICE_STATUSES | _FULL_INVOICE_STATUSES
+
+# Statuses whose whole remaining balance (contract value - amount_paid) maps
+# straight to one Accounts Receivable category, no per-stage split needed.
+_AR_SIMPLE_STATUS_CATEGORY = {
+    "Not Started":              "Not Started",
+    "In Progress":              "In Progress",
+    "Sent out_Not Invoiced":    "Pending Invoice",
+    "Sent out_Invoiced":        "Invoiced - Not Paid",
+    "On Hold":                  "Other / On Hold",
+    "Scope Disagreement":       "Scope Disagreement",
+    "Project Completion Issue": "Project Completion Issue",
+}
+# Staged tiers: a project here can be invoiced for only part of its stages,
+# so its balance is split per-stage rather than treated as one lump amount.
+_AR_STAGED_STATUSES = _PARTIAL_INVOICE_STATUSES | {"Fully Invoiced_Not paid", "Fully Invoiced_Partially paid"}
+
+def _compute_ar_entries(proj_list):
+    """Every project's outstanding balance, split into Accounts Receivable
+    categories. This is the sole source of Accounts Receivable — invoicing
+    records are never consulted; only a project's own status and
+    payment_stages drive it, so the dashboard's AR widget and the Finance ->
+    AR Summary tab can both build off this one function and stay identical.
+
+    A staged project (Partially/Fully Invoiced_*) can produce two separate
+    entries: whatever's still sitting in "Pending Invoice" stages (billed to
+    nobody yet) goes to "Pending Invoice", while the portion that HAS been
+    invoiced goes to "Invoiced - Not Paid" or "Invoiced_Partially Paid –
+    Balance Due" depending on whether any payment has come in against it.
+    Everything else (Not Started / In Progress / On Hold / Scope
+    Disagreement / Project Completion Issue / the simple, non-staged
+    "Sent out_*" statuses) contributes its full remaining balance as one
+    entry — see _AR_SIMPLE_STATUS_CATEGORY.
+    """
+    entries = []
+    for p in proj_list:
+        if not isinstance(p, dict):
+            continue
+        status = (p.get("status") or "").strip()
+        if status in ("Cancelled", "Completed", "Fully Invoiced_Fully paid"):
+            continue
+        project_number = (p.get("project_number") or "").strip()
+        if not project_number:
+            continue
+        cv  = _safe_float(p.get("contract_value", 0))
+        amt = _safe_float(p.get("amount_paid", 0))
+        base = {
+            "project_id":     p.get("firebase_id", ""),
+            "project_number": project_number,
+            "client":         p.get("company_name") or p.get("client_name") or "",
+            "status":         status,
+            "start_date":     p.get("start_date") or p.get("date_received") or "",
+            "due_date":       p.get("end_date", ""),
+        }
+
+        if status in _AR_STAGED_STATUSES:
+            stages = p.get("payment_stages") or []
+            if isinstance(stages, list) and stages:
+                invoiced_total = sum(_safe_float(s.get("amount", 0)) for s in stages
+                                      if isinstance(s, dict) and s.get("status") in _INVOICED_STAGE_STATES)
+                pending_total = sum(_safe_float(s.get("amount", 0)) for s in stages
+                                     if isinstance(s, dict) and s.get("status") == "Pending Invoice")
+            else:
+                # Defensive fallback for a staged status with no stage data —
+                # treat the whole contract as already invoiced rather than
+                # silently dropping it from Accounts Receivable.
+                invoiced_total, pending_total = cv, 0.0
+            if pending_total > 0.01:
+                entries.append({**base, "category": "Pending Invoice", "outstanding": pending_total})
+            invoiced_outstanding = invoiced_total - amt
+            if invoiced_outstanding > 0.01:
+                _cat = "Invoiced - Not Paid" if amt <= 0.01 else "Invoiced_Partially Paid – Balance Due"
+                entries.append({**base, "category": _cat, "outstanding": invoiced_outstanding})
+            continue
+
+        category = _AR_SIMPLE_STATUS_CATEGORY.get(status)
+        if not category:
+            continue
+        outstanding = cv - amt
+        if outstanding > 0.01:
+            entries.append({**base, "category": category, "outstanding": outstanding})
+    return entries
+
+def _compute_project_invoice_status(pdata: dict):
+    """Return the invoice/payment status implied by a project's payment_stages +
+    amount_paid, or None if nothing has been invoiced yet.
+
+    Compares amount_paid against the INVOICED total (sum of stages actually
+    billed), not the full contract value, so a project isn't called "fully
+    invoiced" just because some payment came in - only once every stage has
+    actually been billed does it move from the "Partially Invoiced" tier to
+    the "Fully Invoiced" one.
+    """
+    stages = pdata.get("payment_stages") or []
+    if not isinstance(stages, list) or not stages:
+        return None
+    invoiced_total = sum(_safe_float(s.get("amount", 0)) for s in stages
+                          if isinstance(s, dict) and s.get("status") in _INVOICED_STAGE_STATES)
+    if invoiced_total <= 0.01:
+        return None
+    contract_val = _safe_float(pdata.get("contract_value", 0))
+    amount_paid  = _safe_float(pdata.get("amount_paid", 0))
+    fully_invoiced = contract_val > 0 and invoiced_total >= contract_val - 0.01
+    if amount_paid <= 0.01:
+        tier = "Not paid"
+    elif amount_paid >= invoiced_total - 0.01:
+        tier = "Fully paid"
+    else:
+        tier = "Partially paid"
+    if fully_invoiced:
+        return {"Not paid": "Fully Invoiced_Not paid",
+                "Partially paid": "Fully Invoiced_Partially paid",
+                "Fully paid": "Fully Invoiced_Fully paid"}[tier]
+    # Partially Invoiced tier only distinguishes Not paid vs paid (any amount) —
+    # it doesn't separate partial vs full payment against what's invoiced so far,
+    # since the remaining un-invoiced stages make "fully paid" a moving target.
+    if tier == "Not paid":
+        return "Partially Invoiced_Not paid"
+    return "Partially Invoiced_paid"
+
 def _find_project_by_number(project_number: str):
     """Return (firebase_id, project_dict) for the project with this number, or (None, None)."""
     raw_proj = fb_get("/projects") or {}
@@ -25325,12 +25416,16 @@ def _mark_project_stage(project_number: str, stage_index: int, status: str, invo
 
     proj_updates = {"payment_stages": stages, "updated_at": datetime.now(timezone.utc).isoformat()}
 
-    # Auto-update project status when a stage first gets invoiced and $0 collected
+    # Auto-update project status whenever a stage gets invoiced and $0 collected.
+    # Re-evaluates every time (not just the first stage) so the status advances from
+    # Partially Invoiced_Not paid to Fully Invoiced_Not paid once every stage is billed.
     if status == "Invoiced":
         proj_status = pdata.get("status", "Not Started")
         proj_paid   = _safe_float(pdata.get("amount_paid", 0))
-        if proj_paid == 0 and proj_status in ("In Progress", "Active", "Not Started"):
-            proj_updates["status"] = "invoiced_Not paid yet"
+        _LOCKED_ST = {"Cancelled", "On Hold", "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced",
+                      "Scope Disagreement", "Project Completion Issue", "Fully Invoiced_Fully paid"}
+        if proj_paid == 0 and proj_status not in _LOCKED_ST:
+            proj_updates["status"] = _compute_project_invoice_status(pdata) or "Fully Invoiced_Not paid"
 
     fb_update(f"/projects/{pid}", proj_updates)
 
@@ -26123,7 +26218,7 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
         existing_paid = _safe_float(proj_data.get("amount_paid", 0))
 
         # Skip writing amount_paid=0 for a done project — it would corrupt the record
-        if current_status in ("Completed", "invoiced_Fully paid") and total_allocated <= 0.01 and existing_paid > 0:
+        if current_status in ("Completed", "Fully Invoiced_Fully paid") and total_allocated <= 0.01 and existing_paid > 0:
             updates = {
                 "payment_stages": stages,
                 "updated_at": datetime.now(timezone.utc).isoformat()
@@ -26135,15 +26230,16 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
 
-        # Update project status if needed (never downgrade invoiced_Fully paid/Cancelled)
-        if current_status not in ("invoiced_Fully paid", "Cancelled"):
+        # Update project status if needed (never downgrade Fully Invoiced_Fully paid/Cancelled)
+        if current_status not in ("Fully Invoiced_Fully paid", "Cancelled"):
             if contract_val > 0 and total_allocated >= contract_val - 0.01:
-                updates["status"] = "invoiced_Fully paid"
+                updates["status"] = "Fully Invoiced_Fully paid"
             elif contract_val > 0 and 0 < total_allocated < contract_val - 0.01 and \
-                    current_status not in ("On Hold", "invoiced_Fully paid", "Cancelled",
+                    current_status not in ("On Hold", "Fully Invoiced_Fully paid", "Cancelled",
                                           "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced",
                                           "Scope Disagreement", "Project Completion Issue"):
-                updates["status"] = "invoiced_Partially paid"
+                proj_data["amount_paid"] = total_allocated
+                updates["status"] = _compute_project_invoice_status(proj_data) or "Fully Invoiced_Partially paid"
             elif total_allocated > 0 and current_status == "Not Started":
                 updates["status"] = "In Progress"
 
@@ -26214,13 +26310,14 @@ def _sync_project_payment(project_number: str) -> None:
     # Never downgrade a cancelled project; always correct everything else.
     if current_status != "Cancelled":
         if contract_val > 0 and total_paid >= contract_val - 0.01:
-            updates["status"] = "invoiced_Fully paid"
+            updates["status"] = "Fully Invoiced_Fully paid"
         elif contract_val > 0 and 0 < total_paid < contract_val - 0.01:
-            if current_status not in ("On Hold", "invoiced_Fully paid", "Cancelled",
+            if current_status not in ("On Hold", "Fully Invoiced_Fully paid", "Cancelled",
                                       "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced",
                                       "Scope Disagreement", "Project Completion Issue"):
-                updates["status"] = "invoiced_Partially paid"
-        # Do NOT downgrade invoiced_Fully paid/invoiced_Not paid yet when total_paid == 0 — payment_log may be incomplete
+                pdata["amount_paid"] = total_paid
+                updates["status"] = _compute_project_invoice_status(pdata) or "Fully Invoiced_Partially paid"
+        # Do NOT downgrade Fully Invoiced_Fully paid/Fully Invoiced_Not paid when total_paid == 0 — payment_log may be incomplete
 
     fb_update(f"/projects/{pid}", updates)
 
@@ -26345,12 +26442,12 @@ def _auto_complete_project_if_paid(project_number: str) -> None:
     raw_proj = fb_get("/projects") or {}
     for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
         if isinstance(pdata, dict) and pdata.get("project_number", "") == project_number:
-            if pdata.get("status", "") not in ("invoiced_Fully paid", "Completed", "Cancelled"):
+            if pdata.get("status", "") not in ("Fully Invoiced_Fully paid", "Completed", "Cancelled"):
                 contract_val = _safe_float(pdata.get("contract_value", 0))
                 total_paid   = _safe_float(pdata.get("amount_paid", 0))
                 if contract_val > 0 and total_paid >= contract_val - 0.01:
                     fb_update(f"/projects/{pid}", {
-                        "status": "invoiced_Fully paid",
+                        "status": "Fully Invoiced_Fully paid",
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     })
                     if not pdata.get("completion_email_sent"):
@@ -27860,7 +27957,26 @@ def _pdf_job_style_footer(canvas_obj, doc_obj, co):
         y_position -= 3*mm
     canvas_obj.restoreState()
 
-def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False):
+def _invoice_pdf_data_reader():
+    """Memoize reads for one PDF export; never retain data between requests.
+
+    Projects are read-only in the renderers, so reuse the large snapshot without
+    serializing/copying it for every line item. Other records are copied because
+    the renderers annotate invoice metadata while producing the PDF.
+    """
+    from copy import deepcopy
+    snapshot = {}
+
+    def read(path):
+        if path not in snapshot:
+            snapshot[path] = fb_get(path)
+        value = snapshot[path]
+        return value if path == "/projects" else deepcopy(value)
+
+    return read
+
+
+def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False, data_get=None):
     """Generate invoice PDF and return as bytes. Returns None on error.
     job_style_header=True switches the header/footer to match the job/quote PDF
     (logo + big company name only, disclaimer footer on every page) — used only
@@ -27875,9 +27991,10 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
     except ImportError:
         return None
 
+    data_get = data_get or _invoice_pdf_data_reader()
     import io as _io
     from pathlib import Path
-    invoice = fb_get(f"/invoices/{invoice_id}")
+    invoice = data_get(f"/invoices/{invoice_id}")
     if not invoice:
         return None
 
@@ -27952,7 +28069,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
     client_address = ""
     if company_identifier:
         try:
-            client_data = fb_get(f"/clients/{company_identifier}") or {}
+            client_data = data_get(f"/clients/{company_identifier}") or {}
             client_email = client_data.get("email", "")
             client_address = client_data.get("address", "")
         except Exception:
@@ -28012,7 +28129,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
         co_firebase_id = item.get("co_firebase_id", "").strip()
         if co_firebase_id:
             try:
-                all_projects = fb_get("/projects") or {}
+                all_projects = data_get("/projects") or {}
                 for pid, pdata in (all_projects.items() if isinstance(all_projects, dict) else []):
                     if isinstance(pdata, dict):
                         change_orders = pdata.get("change_orders") or []
@@ -28053,7 +28170,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
         payment_stage_index = None
         if project_number:
             try:
-                raw_proj = fb_get("/projects") or {}
+                raw_proj = data_get("/projects") or {}
                 for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
                     if isinstance(pdata, dict) and pdata.get("project_number") == project_number:
                         if not project_name:
@@ -28078,7 +28195,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
                                             meta["co_number_firebase"] = co_fresh_num
                                         if co_fresh_powo:
                                             co_po_wo_from_stage = co_fresh_powo
-                                        log.info(f"[PDF_CO_FIREBASE] Fetched fresh CO: num={co_fresh_num}, powo={co_fresh_powo}")
+                                        log.debug(f"[PDF_CO_FIREBASE] Fetched fresh CO: num={co_fresh_num}, powo={co_fresh_powo}")
                                     break
                         payment_stages = pdata.get("payment_stages", [])
                         payment_stage_index = None
@@ -28138,28 +28255,28 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
         # For multi-project invoices, also check line item description for CO#
         # Description format could be "Testing2 — MABS-202608002_CO-1" or just "CO-1"
         if not invoice_co_num and description:
-            log.info(f"[PDF_CO_DEBUG_DESC] Checking description: {description}")
+            log.debug(f"[PDF_CO_DEBUG_DESC] Checking description: {description}")
             # Try to extract CO# from description
             if " — " in description:
                 # Format: "project_name — CO_reference"
                 parts = description.split(" — ", 1)
                 if len(parts) > 1:
                     potential_co = parts[1].strip()
-                    log.info(f"[PDF_CO_DEBUG_DESC] Found potential_co: {potential_co}")
+                    log.debug(f"[PDF_CO_DEBUG_DESC] Found potential_co: {potential_co}")
                     # Only treat as CO# if it contains "CO" or looks like a CO reference, and NOT a common stage name
                     if (potential_co and ("co" in potential_co.lower() or "-" in potential_co or "_" in potential_co) and
                         not any(x in potential_co.lower() for x in ["payment", "installment", "stage"])):
                         invoice_co_num = potential_co
-                        log.info(f"[PDF_CO_DEBUG_DESC] Set invoice_co_num to: {invoice_co_num}")
+                        log.debug(f"[PDF_CO_DEBUG_DESC] Set invoice_co_num to: {invoice_co_num}")
             elif description and "co" in description.lower():
                 # Description might be just a CO# like "CO-1"
                 if not any(x in description.lower() for x in ["payment", "installment", "stage"]):
                     invoice_co_num = description.strip()
-                    log.info(f"[PDF_CO_DEBUG_DESC] Set invoice_co_num from description: {invoice_co_num}")
-        log.info(f"[PDF_CO_DEBUG] invoice_co_num from meta={invoice_co_num}")
+                    log.debug(f"[PDF_CO_DEBUG_DESC] Set invoice_co_num from description: {invoice_co_num}")
+        log.debug(f"[PDF_CO_DEBUG] invoice_co_num from meta={invoice_co_num}")
         all_projects = None
         try:
-            all_projects = fb_get("/projects") or {}
+            all_projects = data_get("/projects") or {}
         except Exception:
             pass
 
@@ -28262,7 +28379,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
                                 break
 
         # Display CO number below project number if found (for CO stages only, no titles)
-        log.info(f"[PDF_CO_DEBUG] display_co_number={display_co_number}, invoice_co_num={invoice_co_num}")
+        log.debug(f"[PDF_CO_DEBUG] display_co_number={display_co_number}, invoice_co_num={invoice_co_num}")
         if display_co_number:
             # Clean CO number - remove address and project parts if present
             # Format variations: "MABS-202512112 CO-1", "CO-1", "MABS-202512112-CO-1", "title (co2)"
@@ -28287,7 +28404,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
             # Show only project number and CO# (no titles or names)
             project_number_display = f"{project_number}<br/><font size=8>{co_part}</font>"
             project_cell = Paragraph(project_number_display, left_style)
-            log.info(f"[PDF_CO_DEBUG] Setting project_cell - Project: {project_number}, CO: {co_part}")
+            log.debug(f"[PDF_CO_DEBUG] Setting project_cell - Project: {project_number}, CO: {co_part}")
 
         # Determine if this is a CO stage
         is_co_stage = bool(display_co_number or meta.get("co_number", "").strip())
@@ -28299,12 +28416,12 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
             # For CO stage, prioritize firebase_id for fresh CO data (both CO number and PO/WO)
             co_firebase_id = item.get("co_firebase_id", "").strip()
             po_to_use = ""
-            log.info(f"[PDF_CO_POWO_DEBUG] Starting CO PO/WO fetch - firebase_id={co_firebase_id}")
+            log.debug(f"[PDF_CO_POWO_DEBUG] Starting CO PO/WO fetch - firebase_id={co_firebase_id}")
 
             # If firebase_id available, fetch BOTH fresh CO number and PO/WO from CO
             if co_firebase_id:
                 try:
-                    all_projects = fb_get("/projects") or {}
+                    all_projects = data_get("/projects") or {}
                     for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
                         if isinstance(pdata_search, dict):
                             for _co in _normalise_list(pdata_search.get("change_orders")):
@@ -28314,21 +28431,21 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
                                     po_to_use = _co.get("po_wo_number", "").strip()
                                     if co_num_fresh:
                                         display_co_number = co_num_fresh
-                                    log.info(f"[PDF_CO_FRESH] FOUND CO! firebase_id={co_firebase_id}: co_number='{co_num_fresh}', powo='{po_to_use}'")
+                                    log.debug(f"[PDF_CO_FRESH] FOUND CO! firebase_id={co_firebase_id}: co_number='{co_num_fresh}', powo='{po_to_use}'")
                                     break
                             if po_to_use or display_co_number:
-                                log.info(f"[PDF_CO_FRESH] Breaking from project loop with po_to_use={po_to_use}")
+                                log.debug(f"[PDF_CO_FRESH] Breaking from project loop with po_to_use={po_to_use}")
                                 break
                 except Exception as e:
                     log.error(f"[PDF_CO_FRESH] Error fetching fresh CO data for firebase_id {co_firebase_id}: {e}")
             else:
-                log.info(f"[PDF_CO_POWO_DEBUG] No firebase_id found in item")
+                log.debug(f"[PDF_CO_POWO_DEBUG] No firebase_id found in item")
 
-            log.info(f"[PDF_CO_POWO_DEBUG] After firebase_id lookup: po_to_use='{po_to_use}'")
+            log.debug(f"[PDF_CO_POWO_DEBUG] After firebase_id lookup: po_to_use='{po_to_use}'")
             # Fallback: use stored PO/WO if firebase_id didn't provide one
             if not po_to_use:
                 stored_powo = item.get("powo_number", "").strip()
-                log.info(f"[PDF_CO_POWO_DEBUG] Fallback to stored powo_number: '{stored_powo}'")
+                log.debug(f"[PDF_CO_POWO_DEBUG] Fallback to stored powo_number: '{stored_powo}'")
                 po_to_use = stored_powo
 
             # If still empty, try CO's PO/WO from stage lookup or meta lookup
@@ -28341,7 +28458,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
                 if invoice_co_num:
                     # Search all projects
                     try:
-                        all_projects = fb_get("/projects") or {}
+                        all_projects = data_get("/projects") or {}
                         for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
                             if isinstance(pdata_search, dict):
                                 for _co in _normalise_list(pdata_search.get("change_orders")):
@@ -28369,7 +28486,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
             po_to_use = ""
             if project_number:
                 try:
-                    all_projects = fb_get("/projects") or {}
+                    all_projects = data_get("/projects") or {}
                     for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
                         if isinstance(pdata_search, dict) and pdata_search.get("project_number") == project_number:
                             po_to_use = pdata_search.get("po_wo_number", "").strip()
@@ -28613,7 +28730,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False)
     buf.seek(0)
     return buf.getvalue()
 
-def _generate_invoice_summary_pdf_bytes(invoice_ids: list):
+def _generate_invoice_summary_pdf_bytes(invoice_ids: list, data_get=None):
     """Build the 'Invoice Summary' cover page (+ Payment Information block) for a
     combined multi-invoice export. Returns PDF bytes, or None on error.
     Does not touch _generate_invoice_pdf_bytes; the per-invoice detail pages are
@@ -28627,12 +28744,13 @@ def _generate_invoice_summary_pdf_bytes(invoice_ids: list):
     except ImportError:
         return None
 
+    data_get = data_get or _invoice_pdf_data_reader()
     import io as _io
     from pathlib import Path
 
     invoices = []
     for iid in invoice_ids:
-        inv = fb_get(f"/invoices/{iid}")
+        inv = data_get(f"/invoices/{iid}")
         if inv:
             inv["firebase_id"] = iid
             invoices.append(inv)
@@ -28640,7 +28758,7 @@ def _generate_invoice_summary_pdf_bytes(invoice_ids: list):
         return None
 
     # project_number -> plant lookup (same approach as the invoicing() list route)
-    raw_proj = fb_get("/projects") or {}
+    raw_proj = data_get("/projects") or {}
     proj_plant_map = {}
     if isinstance(raw_proj, dict):
         for pdata in raw_proj.values():
@@ -28751,7 +28869,7 @@ def _generate_invoice_summary_pdf_bytes(invoice_ids: list):
     client_address = ""
     if company_identifier:
         try:
-            client_data = fb_get(f"/clients/{company_identifier}") or {}
+            client_data = data_get(f"/clients/{company_identifier}") or {}
             client_email = client_data.get("email", "")
             client_address = client_data.get("address", "")
         except Exception:
@@ -30348,7 +30466,7 @@ def payment_delete(invoice_id, payment_ref):
             amount_paid = _safe_float(pdata.get("amount_paid", 0))
             current_status = pdata.get("status", "Not Started")
             # If still has payments, change to In Progress
-            if amount_paid > 0 and current_status in ("Completed", "invoiced_Fully paid"):
+            if amount_paid > 0 and current_status in ("Completed", "Fully Invoiced_Fully paid"):
                 fb_update(f"/projects/{proj_id}", {
                     "status": "In Progress",
                     "updated_at": datetime.now(timezone.utc).isoformat()
@@ -30441,7 +30559,7 @@ def tax_payment_delete(invoice_id, payment_ref):
             amount_paid = _safe_float(pdata.get("amount_paid", 0))
             current_status = pdata.get("status", "Not Started")
             # If still has payments, change to In Progress
-            if amount_paid > 0 and current_status in ("Completed", "invoiced_Fully paid"):
+            if amount_paid > 0 and current_status in ("Completed", "Fully Invoiced_Fully paid"):
                 fb_update(f"/projects/{proj_id}", {
                     "status": "In Progress",
                     "updated_at": datetime.now(timezone.utc).isoformat()

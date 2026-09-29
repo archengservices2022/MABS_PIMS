@@ -5567,9 +5567,9 @@ function viewReceipt(expId) {
     </div>
     <div>
       <div class="kpi-card kpi-purple" style="height:100%;">
-        <div class="kpi-top"><span class="kpi-label">Clients Owing</span><i class="bi bi-people kpi-icon-sm"></i></div>
-        <div class="kpi-value" id="arSummaryTopClients">0</div>
-        <div class="kpi-sub">Total clients</div>
+        <div class="kpi-top"><span class="kpi-label">Total Projects Receivable</span><i class="bi bi-kanban kpi-icon-sm"></i></div>
+        <div class="kpi-value" id="arSummaryTopProjects">{{ currency_symbol }}0.00</div>
+        <div class="kpi-sub" id="arSummaryTopProjectsSub">0 Projects with an outstanding balance</div>
       </div>
     </div>
     <div>
@@ -5884,25 +5884,28 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
   // Define all A/R categories with their order and colors
   const AR_CATEGORIES = [
     { name: 'Advance Payment Received', icon: '▪', color: '#2563EB' },
+    { name: 'Not Started', icon: '▪', color: '#94A3B8' },
+    { name: 'In Progress', icon: '▪', color: '#0D9488' },
+    { name: 'Pending Invoice', icon: '▪', color: '#7C3AED' },
     { name: 'Invoiced - Not Paid', icon: '▪', color: '#16A34A' },
-    { name: 'Partial Payment Due', icon: '▪', color: '#F59E0B' },
-    { name: 'Invoice Disputed', icon: '▪', color: '#DC2626' },
+    { name: 'Invoiced_Partially Paid – Balance Due', icon: '▪', color: '#F59E0B' },
     { name: 'Scope Disagreement', icon: '▪', color: '#0EA5E9' },
-    { name: 'Incorrect Invoice', icon: '▪', color: '#8B5CF6' },
     { name: 'Project Completion Issue', icon: '▪', color: '#10B981' },
-    { name: 'Others / On Hold', icon: '▪', color: '#6366F1' }
+    { name: 'Other / On Hold', icon: '▪', color: '#6366F1' }
   ];
 
-  // Hover hint for each category: one short line saying what it is and where it comes from
+  // Hover hint for each category: one short line saying what it is and where it comes from.
+  // Accounts Receivable is entirely Projects-based — invoicing never feeds it.
   const AR_TIPS = {
-    'Advance Payment Received': 'Advance receivable from employees',
-    'Invoiced - Not Paid':      'Invoices sent, not yet paid — from Invoices',
-    'Partial Payment Due':      'Balance still due on partially paid invoices — from Invoices',
-    'Invoice Disputed':         'Unpaid amount of disputed invoices — from Invoices',
-    'Scope Disagreement':       'Unpaid balance of projects with a scope disagreement — from Projects',
-    'Incorrect Invoice':        'Unpaid amount of invoices marked incorrect — from Invoices',
-    'Project Completion Issue': 'Unpaid balance of projects with a completion issue — from Projects',
-    'Others / On Hold':         'Draft invoices and on-hold projects — from Invoices and Projects'
+    'Advance Payment Received':               'Advance receivable from employees',
+    'Not Started':                            'Full contract value of projects not yet started — from Projects',
+    'In Progress':                            'Full contract value of projects in progress, not yet invoiced — from Projects',
+    'Pending Invoice':                        'Work sent out / stages completed but not yet invoiced — from Projects',
+    'Invoiced - Not Paid':                    'Invoiced balance with no payment received yet — from Projects',
+    'Invoiced_Partially Paid – Balance Due':  'Remaining balance on invoiced amounts partially paid — from Projects',
+    'Scope Disagreement':                     'Unpaid balance of projects with a scope disagreement — from Projects',
+    'Project Completion Issue':               'Unpaid balance of projects with a completion issue — from Projects',
+    'Other / On Hold':                        'Unpaid balance of on-hold projects — from Projects'
   };
 
   let arTipEl = null, arTipRow = null;
@@ -5944,26 +5947,6 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
   let currentArCurrency = '$';
   let selectedArCategory = null;
 
-  function categorizeInvoice(inv) {
-    // Purely invoice-level — never looks at the invoice's project's status.
-    // Use explicit ar_category if set, otherwise infer from status.
-    if (inv.ar_category) {
-      return inv.ar_category;
-    }
-
-    const meta = inv.meta || inv;
-    const status = (meta.status || inv.status || '').trim();
-
-    if (status === 'Invoice Disputed') return 'Invoice Disputed';
-    if (status === 'Incorrect Invoice') return 'Incorrect Invoice';
-    if (status === 'Partial') return 'Partial Payment Due';
-    if (status === 'Paid' || status === 'Cancelled') return null;
-    if (status === 'Sent' || status === 'Viewed' || status === 'Overdue') return 'Invoiced - Not Paid';
-    // Draft invoices go to Others/On Hold, not Invoiced - Not Paid
-
-    return 'Others / On Hold';
-  }
-
   function initArSummary() {
     if (!document.getElementById('arCategoryList')) return;
 
@@ -5974,7 +5957,6 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     const detailsPanel = document.getElementById('arCategoryDetailsPanel');
     if (detailsPanel) detailsPanel.style.display = 'none';
 
-    const invList = {{ inv_list|default([])|tojson|safe }} || [];
     const advancesList = {{ advances_list|default([])|tojson|safe }} || [];
     const arFlaggedProjects = {{ ar_flagged_projects|default([])|tojson|safe }} || [];
     const currencySymbol = '{{ currency_symbol }}';
@@ -5988,6 +5970,8 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 
     let totalMarket = 0;
     let totalOutstanding = 0;
+    let receivableProjectsCount = 0;
+    let receivableProjectsAmount = 0;
     const clients = new Set();
     let overdueAmount = 0;
 
@@ -6023,70 +6007,9 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       }
     });
 
-    // Categorize all invoices using invoice-level data (not individual payments)
-    (invList || []).forEach(inv => {
-      if (!inv) return;
-
-      // Get invoice meta if it exists
-      const meta = inv.meta || inv;
-      const status = (meta.status || inv.status || '').trim();
-
-      if (status === 'Paid' || status === 'Cancelled') return; // Skip paid invoices
-
-      // Calculate unpaid amount based on status
-      let amount = 0;
-      if (status === 'Partial') {
-        const totalAmount = parseFloat(meta.total || inv.amount || 0);
-        const paidAmount = parseFloat(meta.amount_paid || 0);
-        amount = totalAmount - paidAmount;
-      } else {
-        // For unpaid invoices (Draft, Sent, Viewed, Overdue), show full amount
-        amount = parseFloat(meta.total || inv.amount || 0);
-      }
-
-      if (amount <= 0) return; // Skip if no outstanding amount
-
-      const invDate = meta.invoice_date || meta.date || inv.date ? new Date(meta.invoice_date || meta.date || inv.date) : null;
-      const daysPending = invDate ? Math.floor((today - invDate) / (1000 * 60 * 60 * 24)) : 0;
-
-      totalMarket += amount;
-      totalOutstanding += amount;
-
-      const clientName = meta.client_name || meta.company_name || inv.client_name || inv.company_name || '—';
-      if (clientName && clientName !== '—') {
-        clients.add(clientName);
-      }
-
-      // Overdue Amount = outstanding balance of invoices past their due date
-      const dueStr = meta.due_date || inv.due_date || '';
-      const dueDate = dueStr ? new Date(dueStr) : null;
-      if (status === 'Overdue' || (dueDate && !isNaN(dueDate) && dueDate < today)) {
-        overdueAmount += amount;
-      }
-
-      const category = categorizeInvoice(meta);
-      console.log(`[AR_DEBUG_CAT] Invoice ${meta.invoice_number || inv.id} categorized as: "${category}", Amount: ${amount}`);
-
-      if (category && arData[category]) {
-        arData[category].amount += amount;
-        arData[category].count += 1;
-        arData[category].invoices.push({
-          number: meta.invoice_number || inv.invoice_number || meta.id || inv.id,
-          href: inv.firebase_id ? ('/invoicing/' + inv.firebase_id) : '',
-          client: clientName,
-          amount: amount,
-          daysPending: daysPending,
-          status: status,
-          startDate: meta.invoice_date || meta.date || inv.date || '',
-          dueDate: meta.due_date || inv.due_date || ''
-        });
-      }
-    });
-
-    // Scope Disagreement / Project Completion Issue / On Hold: one entry per
-    // flagged project, equal to its full outstanding balance — independent
-    // of (not netted against) whatever category its own invoices landed in
-    // above, so this always lists project records, never invoice records.
+    // Accounts Receivable is entirely Projects-based — invoicing never feeds
+    // it. Every receivable-status project contributes one entry equal to its
+    // full outstanding balance (contract value − amount paid).
     arFlaggedProjects.forEach(p => {
       const category = p.category;
       const outstanding = parseFloat(p.outstanding) || 0;
@@ -6094,7 +6017,16 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 
       totalMarket += outstanding;
       totalOutstanding += outstanding;
+      receivableProjectsCount += 1;
+      receivableProjectsAmount += outstanding;
       if (p.client) clients.add(p.client);
+
+      // Overdue Amount = outstanding balance of projects past their due date
+      const dueDate = p.due_date ? new Date(p.due_date) : null;
+      if (dueDate && !isNaN(dueDate) && dueDate < today) {
+        overdueAmount += outstanding;
+      }
+
       arData[category].amount += outstanding;
       arData[category].count += 1;
       arData[category].invoices.push({
@@ -6112,7 +6044,8 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     // Update top KPI cards
     document.getElementById('arSummaryTopMarket').textContent = currencySymbol + totalMarket.toLocaleString('en-US', {minimumFractionDigits: 2});
     document.getElementById('arSummaryTopAdvance').textContent = currencySymbol + ((arData['Advance Payment Received'] || {}).amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2});
-    document.getElementById('arSummaryTopClients').textContent = clients.size;
+    document.getElementById('arSummaryTopProjects').textContent = currencySymbol + receivableProjectsAmount.toLocaleString('en-US', {minimumFractionDigits: 2});
+    document.getElementById('arSummaryTopProjectsSub').textContent = receivableProjectsCount + ' Projects with an outstanding balance';
     document.getElementById('arSummaryTopOverdue').textContent = currencySymbol + overdueAmount.toLocaleString('en-US', {minimumFractionDigits: 2});
 
     // Update large card on right
@@ -6129,13 +6062,14 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       const catData = arData[cat.name];
       const iconMap = {
         'Advance Payment Received': 'bi-cash-coin',
+        'Not Started': 'bi-flag',
+        'In Progress': 'bi-arrow-repeat',
+        'Pending Invoice': 'bi-hourglass-split',
         'Invoiced - Not Paid': 'bi-file-earmark',
-        'Partial Payment Due': 'bi-percent',
-        'Invoice Disputed': 'bi-exclamation-triangle',
+        'Invoiced_Partially Paid – Balance Due': 'bi-percent',
         'Scope Disagreement': 'bi-chat-dots',
-        'Incorrect Invoice': 'bi-x-circle',
         'Project Completion Issue': 'bi-tools',
-        'Others / On Hold': 'bi-hourglass'
+        'Other / On Hold': 'bi-hourglass'
       };
       const icon = iconMap[cat.name] || 'bi-circle';
       const clickable = catData.count > 0;
