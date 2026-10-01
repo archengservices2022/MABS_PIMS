@@ -38,6 +38,11 @@
                  value="{{ client.get('phone','') if client else '' }}">
         </div>
         <div class="mb-3">
+          <label class="form-label">Fax</label>
+          <input type="text" name="fax" class="form-control"
+                 value="{{ client.get('fax','') if client else '' }}">
+        </div>
+        <div class="mb-3">
           <label class="form-label">Address</label>
           <textarea name="address" class="form-control" rows="3">{{ client.get('address','') if client else '' }}</textarea>
         </div>

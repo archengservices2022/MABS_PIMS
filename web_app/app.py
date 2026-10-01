@@ -9569,7 +9569,8 @@ def invoicing_export_pdf_selected():
     writer = PdfWriter()
     from itertools import chain
     for chunk in chain([summary_bytes], (
-            _generate_invoice_pdf_bytes(iid, job_style_header=True, data_get=pdf_get)
+            _generate_invoice_pdf_bytes(iid, job_style_header=True, data_get=pdf_get,
+                                        closing_note=(iid == invoice_ids[-1]))
             for iid in invoice_ids)):
         if not chunk:
             continue
@@ -10478,6 +10479,7 @@ def client_new():
         client_name = request.form.get("client_name", "").strip()
         email = request.form.get("email", "").strip()
         phone = request.form.get("phone", "").strip()
+        fax = request.form.get("fax", "").strip()
         address = request.form.get("address", "").strip()
         notes = request.form.get("notes", "").strip()
         tags = request.form.get("tags", "").strip()
@@ -10503,6 +10505,7 @@ def client_new():
             "client_name": client_name,
             "email": email,
             "phone": phone,
+            "fax": fax,
             "address": address,
             "notes": notes,
             "tags": tags,
@@ -10539,6 +10542,7 @@ def client_new():
             "has_explicit_company": has_explicit_company,
             "email":        email,
             "phone":        phone,
+            "fax":          fax,
             "address":      request.form.get("address", ""),
             "notes":        request.form.get("notes", ""),
             "tags":         tags,
@@ -10560,6 +10564,7 @@ def client_edit(company_name):
         new_client_name = request.form.get("client_name", data.get("client_name", "")).strip()
         email = request.form.get("email", "").strip()
         phone = request.form.get("phone", "").strip()
+        fax = request.form.get("fax", "").strip()
         address = request.form.get("address", "").strip()
         notes = request.form.get("notes", "").strip()
         tags = request.form.get("tags", "").strip()
@@ -10585,6 +10590,7 @@ def client_edit(company_name):
             "client_name": new_client_name,
             "email": email,
             "phone": phone,
+            "fax": fax,
             "address": address,
             "notes": notes,
             "tags": tags,
@@ -10623,6 +10629,7 @@ def client_edit(company_name):
             "has_explicit_company": has_explicit_company,
             "email":        email,
             "phone":        phone,
+            "fax":          fax,
             "address":      request.form.get("address", ""),
             "notes":        request.form.get("notes", ""),
             "tags":         tags,
@@ -28014,7 +28021,7 @@ def _invoice_pdf_data_reader():
     return read
 
 
-def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False, data_get=None):
+def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False, data_get=None, closing_note: bool = False):
     """Generate invoice PDF and return as bytes. Returns None on error.
     job_style_header=True switches the header/footer to match the job/quote PDF
     (logo + big company name only, disclaimer footer on every page) — used only
@@ -28022,7 +28029,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
     keeps calling this with the default (False), so its look is unchanged."""
     try:
         from reportlab.lib.pagesizes import A4
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, KeepTogether
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib import colors
         from reportlab.lib.units import mm, inch
@@ -28074,14 +28081,17 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
         # moves to the disclaimer footer, matching the job/quote PDF exactly.
         teal_line = colors.HexColor("#0D9488")
         name_style = ParagraphStyle("cnjob", parent=styles["Normal"], fontSize=22, fontName="Helvetica-Bold", textColor=colors.HexColor("#333333"), alignment=1)
-        if logo_img:
-            hdr_table_data = [[logo_img, Paragraph(f"<b>{company_name}</b>", name_style)]]
-            hdr_table = Table(hdr_table_data, colWidths=[1.0*inch, doc.width - 1.0*inch], hAlign='LEFT')
-            hdr_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,0), (1,0), "CENTER"), ("LINEBELOW", (0,0), (-1,-1), 2, teal_line), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0)]))
-            story.append(hdr_table)
-        else:
-            story.append(Paragraph(f"<b>{company_name}</b>", name_style))
-            story.append(Table([['']], colWidths=[doc.width], hAlign='LEFT', style=[('LINEBELOW', (0,0), (-1,-1), 2, teal_line)]))
+
+        def make_job_header():
+            """Fresh header flowables (a flowable can't be reused across pages)."""
+            if logo_img:
+                t = Table([[logo_img, Paragraph(f"<b>{company_name}</b>", name_style)]], colWidths=[1.0*inch, doc.width - 1.0*inch], hAlign='LEFT')
+                t.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,0), (1,0), "CENTER"), ("LINEBELOW", (0,0), (-1,-1), 2, teal_line), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0)]))
+                return [t]
+            return [Paragraph(f"<b>{company_name}</b>", name_style),
+                    Table([['']], colWidths=[doc.width], hAlign='LEFT', style=[('LINEBELOW', (0,0), (-1,-1), 2, teal_line)])]
+
+        story.extend(make_job_header())
     else:
         address_text = ""
         for line in co.get('address', '').split('\n'):
@@ -28105,11 +28115,15 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
     company_identifier = meta.get('company_name', '') or meta.get('client_name', '')
     client_email = ""
     client_address = ""
+    client_phone = ""
+    client_fax = ""
     if company_identifier:
         try:
             client_data = data_get(f"/clients/{company_identifier}") or {}
             client_email = client_data.get("email", "")
             client_address = client_data.get("address", "")
+            client_phone = (client_data.get("phone", "") or "").strip()
+            client_fax = (client_data.get("fax", "") or "").strip()
         except Exception:
             pass
 
@@ -28122,6 +28136,10 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
         for line in client_address.split('\n'):
             if line.strip():
                 bill_to_lines.append(line.strip())
+    if client_phone:
+        bill_to_lines.append(client_phone)
+    if client_fax:
+        bill_to_lines.append(client_fax)
     bill_to_text = "<br/>".join(bill_to_lines) if bill_to_lines else ""
 
     invoice_info = f"Invoice Number: {meta.get('invoice_number','')}<br/>Date: {meta.get('invoice_date','')}<br/>Due Date: {meta.get('due_date','')}"
@@ -28129,7 +28147,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
         [Paragraph("<b>Invoice:</b>", styles['Left10']), Paragraph("<b>Bill To:</b>", styles['Left10'])],
         [Paragraph(invoice_info, styles['Left9']), Paragraph(bill_to_text, styles['Left9']) if bill_to_text else Paragraph("", styles['Left9'])],
     ]
-    header_table = Table(header_data, colWidths=[doc.width * 0.5, doc.width * 0.5])
+    header_table = Table(header_data, colWidths=[doc.width * 0.5, doc.width * 0.5], hAlign='LEFT')
     header_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 2), ('BOTTOMPADDING', (0,0), (-1,-1), 2)]))
     story.append(header_table)
     story.append(Spacer(1, 8*mm))
@@ -28644,8 +28662,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
             ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0),
             ("ALIGN", (0,0), (-1,-1), "LEFT"),
         ]))
-        story.append(title_table)
-        story.append(Spacer(1, 0.5*mm))
+        pay_block = [title_table, Spacer(1, 0.5*mm)]
 
         pay_warning_table = Table([
             [Paragraph("<b>A 50% DOWN PAYMENT IS REQUIRED TO INITIATE</b>", ParagraphStyle("piwarning", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=colors.red, alignment=1))]
@@ -28656,7 +28673,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
             ("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
             ("TOPPADDING", (0,0), (-1,-1), 1*mm), ("BOTTOMPADDING", (0,0), (-1,-1), 1*mm),
         ]))
-        story.append(pay_warning_table)
+        pay_block.append(pay_warning_table)
 
         qr_path = Path(__file__).parent / "static" / "venmo.png"
         qr_image = None
@@ -28690,10 +28707,42 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
 
         payment_table = Table([[left_section, right_section]], colWidths=[available_width * 0.60, available_width * 0.40], hAlign='LEFT')
         payment_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "TOP"), ("ALIGN", (0,0), (-1,-1), "CENTER"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("BOX", (0,0), (-1,-1), 1, colors.black), ("INNERGRID", (0,0), (-1,-1), 0.5, colors.black)]))
-        story.append(payment_table)
+        pay_block.append(payment_table)
+        # Keep the whole Payment Information block on one page
+        story.append(KeepTogether(pay_block))
+
+        # Closing thank-you line after Payment Information — only when it fits
+        # on the same (last) page; otherwise it is dropped, never pushed to a new page.
+        from reportlab.platypus.flowables import Flowable as _Flowable
+
+        class _IfFits(_Flowable):
+            GAP = 4*mm
+
+            def __init__(self, inner):
+                super().__init__()
+                self.inner = inner
+                self._fits = False
+            def wrap(self, aw, ah):
+                _, h = self.inner.wrap(aw, ah)
+                h += self.GAP
+                self._fits = h <= ah
+                if self._fits:
+                    self.width, self.height = aw, h
+                else:
+                    self.width = self.height = 0
+                return self.width, self.height
+            def draw(self):
+                if self._fits:
+                    self.inner.drawOn(self.canv, 0, 0)  # drawn at the bottom; GAP sits above
+
+        if 'mabs' in company_name.lower():
+            closing_text = "Thank you for your business! Best regards, MABS Engineering LLC"
+        else:
+            closing_text = co.get('default_terms', 'Thank you for your business!') or "Thank you for your business!"
+        if closing_note:
+            story.append(_IfFits(Paragraph(closing_text.replace(chr(10), '<br/>'), styles['Left10'])))
     else:
-        story.append(Paragraph("PAYMENT OPTIONS", styles['LeftBold12']))
-        story.append(Spacer(1, 3*mm))
+        pay_block = [Paragraph("PAYMENT OPTIONS", styles['LeftBold12']), Spacer(1, 3*mm)]
 
         InvLabel = ParagraphStyle("InvLabel", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, leading=12)
         InvValue = ParagraphStyle("InvValue", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.black, leading=11, leftIndent=3, spaceAfter=3)
@@ -28732,7 +28781,8 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
 
         payment_table = Table([[left_section, right_section]], colWidths=[doc.width * 0.55, doc.width * 0.40])
         payment_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('BOX', (0,0), (-1,-1), 1, colors.black), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.black)]))
-        story.append(payment_table)
+        pay_block.append(payment_table)
+        story.append(KeepTogether(pay_block))
 
         story.append(Spacer(1, 3*mm))
         default_terms = co.get('default_terms', 'Thank you for your business! Best regards, MABS Engineering LLC')
@@ -28759,7 +28809,26 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
             if is_paid:
                 add_paid_watermark(canvas_obj, doc_obj)
             _pdf_job_style_footer(canvas_obj, doc_obj, co)
-        doc.build(story, onFirstPage=page_decorations, onLaterPages=page_decorations)
+        # Repeat the logo/company header at the top of every continuation page
+        from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame, NextPageTemplate
+        hdr_h = sum(f.wrap(doc.width, A4[1])[1] for f in make_job_header()) + 2*mm
+
+        def later_decorations(canvas_obj, doc_obj):
+            page_decorations(canvas_obj, doc_obj)
+            y = A4[1] - doc.topMargin
+            for f in make_job_header():
+                _, h = f.wrap(doc.width, A4[1])
+                y -= h
+                f.drawOn(canvas_obj, doc.leftMargin, y)
+
+        frame_h = A4[1] - doc.topMargin - doc.bottomMargin
+        bdoc = BaseDocTemplate(buf, pagesize=A4, leftMargin=doc.leftMargin, rightMargin=doc.rightMargin,
+                               topMargin=doc.topMargin, bottomMargin=doc.bottomMargin)
+        bdoc.addPageTemplates([
+            PageTemplate(id='First', frames=[Frame(doc.leftMargin, doc.bottomMargin, doc.width, frame_h, id='f1')], onPage=page_decorations),
+            PageTemplate(id='Later', frames=[Frame(doc.leftMargin, doc.bottomMargin, doc.width, frame_h - hdr_h, id='f2')], onPage=later_decorations),
+        ])
+        bdoc.build([NextPageTemplate('Later')] + story)
     elif is_paid:
         doc.build(story, onFirstPage=add_paid_watermark, onLaterPages=add_paid_watermark)
     else:
@@ -28905,11 +28974,15 @@ def _generate_invoice_summary_pdf_bytes(invoice_ids: list, data_get=None):
     company_identifier = first_meta.get('company_name', '') or first_meta.get('client_name', '')
     client_email = ""
     client_address = ""
+    client_phone = ""
+    client_fax = ""
     if company_identifier:
         try:
             client_data = data_get(f"/clients/{company_identifier}") or {}
             client_email = client_data.get("email", "")
             client_address = client_data.get("address", "")
+            client_phone = (client_data.get("phone", "") or "").strip()
+            client_fax = (client_data.get("fax", "") or "").strip()
         except Exception:
             pass
 
@@ -28920,6 +28993,10 @@ def _generate_invoice_summary_pdf_bytes(invoice_ids: list, data_get=None):
         for line in client_address.split('\n'):
             if line.strip():
                 bill_to_lines.append(line.strip())
+    if client_phone:
+        bill_to_lines.append(client_phone)
+    if client_fax:
+        bill_to_lines.append(client_fax)
 
     elems.append(Paragraph("<b>Bill To:</b>", left10b))
     if bill_to_lines:
