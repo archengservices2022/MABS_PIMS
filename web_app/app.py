@@ -2432,6 +2432,7 @@ def dashboard():
         )
     _prev_year = str(int(cur_year) - 1)
     _carryover_projs = [p for p in proj_list if isinstance(p, dict)
+                         and p.get("status") != "Cancelled"
                          and _project_in_date_range(p, f"{_prev_year}-01-01", f"{_prev_year}-12-31")]
     carryover_count = len(_carryover_projs)
     carryover_value = sum(
@@ -28171,7 +28172,12 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
     if isinstance(line_items_to_display, list):
         line_items_to_display = sorted(line_items_to_display, key=lambda x: x.get("project_number", ""))
 
+    # Invoice-level meta CO number only applies to single-item invoices; on
+    # multi-item invoices each line item carries its own co_number.
+    _meta_co_number = "" if len(line_items_to_display) > 1 else meta.get("co_number", "").strip()
+
     for idx, item in enumerate(line_items_to_display):
+        item_co_fresh_num = ""
         qty_val = _safe_float(item.get("quantity", 1))
         qty = str(int(qty_val)) if qty_val == int(qty_val) else str(qty_val)
         unit_price_val = _safe_float(item.get('unit_price', 0))
@@ -28248,7 +28254,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
                                     if co_fresh_num or co_fresh_powo:
                                         # Store in meta for later use (will be picked up by display_co_number logic)
                                         if co_fresh_num:
-                                            meta["co_number_firebase"] = co_fresh_num
+                                            item_co_fresh_num = co_fresh_num
                                         if co_fresh_powo:
                                             co_po_wo_from_stage = co_fresh_powo
                                         log.debug(f"[PDF_CO_FIREBASE] Fetched fresh CO: num={co_fresh_num}, powo={co_fresh_powo}")
@@ -28281,7 +28287,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
                                                 break
 
                         # If invoice has a CO number in meta, use that to find the CO's PO
-                        invoice_co_number = meta.get("co_number", "")
+                        invoice_co_number = (item.get("co_number") or "").strip() or _meta_co_number
                         if invoice_co_number and not co_po_wo_from_stage:
                             for _co in _normalise_list(pdata.get("change_orders")):
                                 if isinstance(_co, dict):
@@ -28306,7 +28312,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
         display_co_number = ""
 
         # First, check if we fetched fresh CO number from firebase_id, else use meta's CO number
-        invoice_co_num = meta.get("co_number_firebase", "").strip() or meta.get("co_number", "").strip()
+        invoice_co_num = item_co_fresh_num or (item.get("co_number") or "").strip() or _meta_co_number
 
         # For multi-project invoices, also check line item description for CO#
         # Description format could be "Testing2 — MABS-202608002_CO-1" or just "CO-1"
@@ -28463,7 +28469,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
             log.debug(f"[PDF_CO_DEBUG] Setting project_cell - Project: {project_number}, CO: {co_part}")
 
         # Determine if this is a CO stage
-        is_co_stage = bool(display_co_number or meta.get("co_number", "").strip())
+        is_co_stage = bool(display_co_number or _meta_co_number or (item.get("co_number") or "").strip())
         description_display = ""
         # Determine which PO to use
         po_to_use = ""
@@ -28510,7 +28516,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str, job_style_header: bool = False,
 
             # If still empty, try from invoice meta co_number in all projects
             if not po_to_use:
-                invoice_co_num = meta.get("co_number", "").strip()
+                invoice_co_num = (item.get("co_number") or "").strip() or _meta_co_number
                 if invoice_co_num:
                     # Search all projects
                     try:
