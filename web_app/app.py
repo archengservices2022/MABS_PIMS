@@ -20196,6 +20196,7 @@ def _build_employee_profile_data(uid):
     # Joined = hire date; account creation is tracked separately.
     joined_date     = (hire_date or "")[:10]
     account_created = (user.get("created_at") or "")[:10]
+    account_created_ts = user.get("created_at") or ""   # full UTC timestamp, shown in the viewer's local time
     is_terminated  = user.get("employee_status") == "Terminated"
     terminated_at  = (user.get("terminated_at") or "")[:10] if is_terminated else ""
     termination_reason = user.get("termination_reason", "") if is_terminated else ""
@@ -20457,6 +20458,7 @@ def _build_employee_profile_data(uid):
         "hire_date": hire_date,
         "joined_date": joined_date,
         "account_created": account_created,
+        "account_created_ts": account_created_ts,
         "terminated_at": terminated_at,
         "termination_reason": termination_reason,
         "phone": phone,

@@ -99,7 +99,7 @@
         <span class="prof-meta"><i class="bi bi-calendar3"></i> Joined {{ joined_date | format_date }}</span>
         {% endif %}
         {% if account_created %}
-        <span class="prof-meta"><i class="bi bi-person-plus"></i> Profile Created {{ account_created | format_date }}</span>
+        <span class="prof-meta"><i class="bi bi-person-plus"></i> Profile Created <span class="js-local-date" data-ts="{{ account_created_ts }}">{{ account_created | format_date }}</span></span>
         {% endif %}
         {% if terminated_at %}
         <span class="prof-meta" style="color:#B91C1C;"><i class="bi bi-calendar-x"></i> Terminated {{ terminated_at | format_date }}</span>
@@ -651,5 +651,14 @@ function reactivateEmployee(uid, name) {
 }
 </script>
 {% endif %}
+
+<script>
+// Show the profile-created time in the viewer's local timezone, e.g. "Oct 9, 2026"
+document.querySelectorAll('.js-local-date').forEach(function (el) {
+  var d = new Date(el.dataset.ts);
+  if (!el.dataset.ts || isNaN(d)) return;
+  el.textContent = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+});
+</script>
 
 {% endblock %}
