@@ -24100,7 +24100,17 @@ def settings():
                     _perm_reqs.append(_rd)
         _perm_reqs.sort(key=lambda x: x.get("requested_at", ""), reverse=True)
     active_tab = request.args.get("tab", "company")
+    # Users this person has an approved (unused) delete request for
+    _approved_user_deletes = set()
+    _me = session.get("user_uid", "")
+    _all_reqs = fb_get("/permission_requests") or {}
+    if isinstance(_all_reqs, dict):
+        for _r in _all_reqs.values():
+            if (isinstance(_r, dict) and _r.get("requested_by_uid") == _me
+                    and _r.get("entity_type") == "user" and _r.get("status") == "approved"):
+                _approved_user_deletes.add(_r.get("entity_id"))
     return render_template("settings.html", users=all_users, settings=settings_data,
+                           approved_user_deletes=_approved_user_deletes,
                            role_pages=ROLE_PAGES, all_pages=ALL_PAGES, page_labels=PAGE_LABELS,
                            activity_summary=_act_summary,
                            act_max_open=_act_max_open, act_max_oper=_act_max_oper,
@@ -24947,6 +24957,13 @@ def user_delete(uid):
     if uid == session.get("user_uid"):
         flash("You cannot delete your own account.", "danger")
         return redirect(url_for("settings") + "?tab=users")
+    _role = normalize_role(session.get("user_role", ""))
+    _perm = None
+    if _role != "admin":
+        _perm = _has_approved_delete_request(session.get("user_uid", ""), "user", uid)
+        if not _perm:
+            flash("You need admin approval to delete this user. Use the 'Request Delete' button.", "danger")
+            return redirect(url_for("settings") + "?tab=users")
     try:
         if FIREBASE_AVAILABLE:
             from firebase_admin import auth as fb_auth
@@ -24955,6 +24972,8 @@ def user_delete(uid):
             except Exception:
                 pass
         fb_delete(f"/users/{uid}")
+        if _perm:
+            fb_update(f"/permission_requests/{_perm['firebase_id']}", {"status": "completed"})
         flash("User deleted.", "success")
     except Exception as exc:
         flash(f"Error: {exc}", "danger")
