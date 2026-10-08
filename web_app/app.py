@@ -22968,7 +22968,6 @@ def update_own_profile():
 @role_required("settings")
 def user_details_update(uid):
     """Update employee profile fields (title, region, rates, display_name) from Settings or Directory."""
-    _is_admin = normalize_role(session.get("user_role", "")) == "admin"
     data = request.get_json() or {}
     updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
 
@@ -22996,8 +22995,7 @@ def user_details_update(uid):
     for field in ("hourly_rate", "monthly_salary", "commission_rate"):
         if field in data:
             updates[field] = _safe_float(data[field])
-    # Only admins may change roles (prevents privilege escalation by other Settings users)
-    if "role" in data and _is_admin:
+    if "role" in data:
         allowed_roles = {"sales", "projects", "finance", "engineer", "admin", "administration", "accountant"}
         r = str(data["role"]).strip().lower()
         if r in allowed_roles:
