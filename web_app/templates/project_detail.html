@@ -1186,7 +1186,7 @@
         <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2 text-teal"></i>New Change Order</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <form method="POST" action="{{ url_for('co_new', project_id=project.firebase_id) }}">
+      <form method="POST" id="newCOForm" action="{{ url_for('co_new', project_id=project.firebase_id) }}">
         <input type="hidden" name="page" class="form-page-input" value="1">
         <div class="modal-body">
           <div class="row g-3 mb-3">
@@ -1210,6 +1210,7 @@
           <div class="mb-3">
             <label class="form-label fw-600">PO / WO Number <span class="text-danger">*</span></label>
             <input type="text" name="po_wo_number" class="form-control" placeholder="Enter PO or WO number" required autocomplete="off">
+            <div class="text-danger small mt-1 d-none" id="newCOPoDup"><i class="bi bi-exclamation-triangle-fill me-1"></i>This PO/WO number already exists. Enter a different one.</div>
             <div class="form-text">Must be unique — different from the project PO/WO and all other change orders.</div>
           </div>
           <div class="mb-3">
@@ -2844,5 +2845,36 @@ function toggleCommModal() {
     </div>
   </div>
 </div>
+
+<script>
+// New Change Order: on duplicate PO/WO, clear only that field and warn (keep everything else).
+(function () {
+  var form = document.getElementById('newCOForm');
+  if (!form) return;
+  var po = form.querySelector('input[name="po_wo_number"]');
+  var warn = document.getElementById('newCOPoDup');
+  po.addEventListener('input', function () { warn.classList.add('d-none'); po.classList.remove('is-invalid'); });
+  form.addEventListener('submit', function (e) {
+    if (form.dataset.poChecked === '1') return;
+    e.preventDefault();
+    var url = "{{ url_for('co_check_powo', project_id=project.firebase_id) }}" +
+              '?po_wo_number=' + encodeURIComponent(po.value.trim());
+    fetch(url, {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.duplicate) {
+          po.value = '';
+          po.classList.add('is-invalid');
+          warn.classList.remove('d-none');
+          po.focus();
+        } else {
+          form.dataset.poChecked = '1';
+          form.submit();
+        }
+      })
+      .catch(function () { form.dataset.poChecked = '1'; form.submit(); });
+  });
+})();
+</script>
 
 {% endblock %}

@@ -4839,6 +4839,25 @@ def project_detail(project_id):
 
 # ── Change Order Routes ───────────────────────────────────────────────────────
 
+@app.route("/projects/<project_id>/change-orders/check-powo")
+@role_required("projects")
+def co_check_powo(project_id):
+    """Pre-submit duplicate check for the New Change Order dialog."""
+    po = request.args.get("po_wo_number", "").strip()
+    if not po:
+        return jsonify({"duplicate": False})
+    all_projects = fb_get("/projects") or {}
+    if isinstance(all_projects, dict):
+        for pdata in all_projects.values():
+            if not isinstance(pdata, dict):
+                continue
+            if (pdata.get("po_wo_number", "") or "").strip() == po:
+                return jsonify({"duplicate": True})
+            for xco in _normalise_list(pdata.get("change_orders")):
+                if isinstance(xco, dict) and (xco.get("po_wo_number", "") or "").strip() == po:
+                    return jsonify({"duplicate": True})
+    return jsonify({"duplicate": False})
+
 @app.route("/projects/<project_id>/change-orders/new", methods=["POST"])
 @role_required("projects")
 def co_new(project_id):
