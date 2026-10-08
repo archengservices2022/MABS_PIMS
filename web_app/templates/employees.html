@@ -1964,8 +1964,9 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <label class="form-label small fw-semibold">Employment Status</label>
               <select name="employee_status" id="empEditStatus" class="form-select form-select-sm">
                 <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
+                <option value="Terminated">Terminated</option>
               </select>
+              <div class="form-text" style="font-size:11px;">Choosing <b>Terminated</b> opens the termination form (date, reason, notes). Login access is disabled once confirmed.</div>
             </div>
             <div class="col-sm-6">
               <label class="form-label small fw-semibold">Department</label>
@@ -3203,12 +3204,32 @@ window.openEmpEdit = function(btn) {
   document.getElementById('empEditForm').action = '/employees/' + uid + '/update';
   document.getElementById('empEditAvatar').textContent = (name || 'U')[0].toUpperCase();
   document.getElementById('empEditName').textContent   = name || 'Employee';
-  document.getElementById('empEditStatus').value   = btn.dataset.empStatus   || 'Active';
+  document.getElementById('empEditStatus').value   = 'Active';
+  document.getElementById('empEditStatus').dataset.uid  = uid;
+  document.getElementById('empEditStatus').dataset.name = name || 'Employee';
   document.getElementById('empEditDept').value     = btn.dataset.empDept     || '';
   document.getElementById('empEditHireDate').value = btn.dataset.empHire     || '';
   document.getElementById('empEditRate').value     = parseFloat(btn.dataset.empRate) || '';
   new bootstrap.Modal(document.getElementById('empEditModal')).show();
 };
+
+// Selecting "Terminated" in the edit modal hands off to the termination form
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('empEditStatus');
+  if (!sel) return;
+  sel.addEventListener('change', () => {
+    if (sel.value !== 'Terminated') return;
+    bootstrap.Modal.getInstance(document.getElementById('empEditModal'))?.hide();
+    openTerminateModal(sel.dataset.uid, sel.dataset.name);
+    sel.value = 'Active';
+  });
+  // Deep link from Settings: /employees?terminate=<uid>
+  const tuid = new URLSearchParams(location.search).get('terminate');
+  if (tuid) {
+    const b = document.querySelector(`[data-emp-uid="${tuid}"]`);
+    openTerminateModal(tuid, b ? b.dataset.empName : 'Employee');
+  }
+});
 
 // Directory tab: edit modal (PATCH API)
 window.openDirEdit = function(uid, title, region, rate, salary) {

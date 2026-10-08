@@ -95,8 +95,17 @@
         {% if emp_id %}
         <span class="prof-meta"><i class="bi bi-person-badge"></i> {{ emp_id }}</span>
         {% endif %}
-        {% if hire_date %}
-        <span class="prof-meta"><i class="bi bi-calendar3"></i> Joined {{ hire_date | format_date }}</span>
+        {% if joined_date %}
+        <span class="prof-meta"><i class="bi bi-calendar3"></i> Joined {{ joined_date | format_date }}</span>
+        {% endif %}
+        {% if account_created %}
+        <span class="prof-meta"><i class="bi bi-person-plus"></i> Profile Created {{ account_created | format_date }}</span>
+        {% endif %}
+        {% if terminated_at %}
+        <span class="prof-meta" style="color:#B91C1C;"><i class="bi bi-calendar-x"></i> Terminated {{ terminated_at | format_date }}</span>
+        {% endif %}
+        {% if termination_reason %}
+        <span class="prof-meta" style="color:#B91C1C;"><i class="bi bi-chat-left-text"></i> Reason: {{ termination_reason }}</span>
         {% endif %}
         {% if tenure_label %}
         <span class="prof-meta"><i class="bi bi-clock-history"></i> Tenure {{ tenure_label }}</span>
@@ -143,7 +152,7 @@
   <a class="kpi-card" href="{{ url_for('employees') }}">
     <div class="kpi-label">Tenure</div>
     <div class="kpi-value">{{ tenure_label or '—' }}</div>
-    {% if hire_date %}<div class="kpi-sub">Since {{ hire_date | format_date }}</div>{% endif %}
+    {% if joined_date %}<div class="kpi-sub">{{ 'Joined' if terminated_at else 'Since' }} {{ joined_date | format_date }}{% if terminated_at %} · Ended {{ terminated_at | format_date }}{% endif %}</div>{% endif %}
   </a>
   <a class="kpi-card" href="{{ url_for('payroll') }}?employee={{ name | urlencode }}">
     <div class="kpi-label">Total Salary</div>

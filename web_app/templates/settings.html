@@ -516,17 +516,11 @@
                   </td>
                   <!-- Status (clickable toggle) -->
                   <td class="text-center">
-                    <form method="POST" action="{{ url_for('user_toggle', uid=u.firebase_uid) }}" class="d-inline">
-                      <button type="submit" class="btn btn-xs border-0 p-0"
-                              title="{{ 'Deactivate' if _active else 'Activate' }}"
-                              style="background:none;">
-                        {% if _active %}
-                        <span class="badge bg-success" style="font-size:11px;cursor:pointer;">Active</span>
-                        {% else %}
-                        <span class="badge bg-secondary" style="font-size:11px;cursor:pointer;">Inactive</span>
-                        {% endif %}
-                      </button>
-                    </form>
+                    {% if _active %}
+                    <span class="badge bg-success" style="font-size:11px;">Active</span>
+                    {% else %}
+                    <span class="badge bg-danger" style="font-size:11px;">Terminated</span>
+                    {% endif %}
                   </td>
                   <!-- Actions -->
                   <td class="text-end">
@@ -973,7 +967,7 @@
             <label class="form-label fw-semibold" style="font-size:12px;">Status</label>
             <select id="editStatus" class="form-select form-select-sm">
               <option value="true">Active</option>
-              <option value="false">Inactive</option>
+              <option value="false">Terminated</option>
             </select>
           </div>
         </div>
@@ -1080,7 +1074,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (hourlyRate) hourlyRate.value = parseFloat(d.rate) > 0 ? parseFloat(d.rate) : '';
         if (monthlySalary) monthlySalary.value = parseFloat(d.salary) > 0 ? parseFloat(d.salary) : '';
         if (roleEl) roleEl.value = (d.role || 'sales').toLowerCase();
-        if (status) status.value = d.active || 'true';
+        if (status) {
+          status.value = d.active || 'true';
+          status.disabled = d.active === 'false';  // already terminated; reactivate from Employees
+        }
         var role = (d.role || '').toLowerCase();
         if (employeeType) employeeType.value = d.employeeType || '';
         if (commissionRate) commissionRate.value = parseFloat(d.commissionRate) > 0 ? parseFloat(d.commissionRate) : '';
@@ -1183,6 +1180,13 @@ async function saveUserDetails() {
   if (!uid) { msg.innerHTML = '<span class="text-danger">Error: User ID missing</span>'; return; }
   if (!saveBtn || saveBtn.disabled) return;
 
+  var statusEl = document.getElementById('editStatus');
+  if (statusEl.value === 'false' && !statusEl.disabled) {
+    // Termination needs a date and reason; hand off to the Employees termination form
+    window.location.href = '/employees?terminate=' + encodeURIComponent(uid);
+    return;
+  }
+
   var body   = {
     username:        document.getElementById('editUsername').value.trim(),
     role:            role,
@@ -1192,7 +1196,6 @@ async function saveUserDetails() {
     monthly_salary:  parseFloat(document.getElementById('editMonthlySalary').value)  || 0,
     employee_type:   role === 'admin' ? '' : document.getElementById('editEmployeeType').value,
     commission_rate: parseFloat(document.getElementById('editCommissionRate').value) || 0,
-    active:          document.getElementById('editStatus').value === 'true',
   };
 
   saveBtn.disabled = true;

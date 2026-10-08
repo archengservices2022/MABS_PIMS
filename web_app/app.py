@@ -20174,11 +20174,18 @@ def _build_employee_profile_data(uid):
     year_str = str(now.year)
 
     # ── Tenure ────────────────────────────────────────────────────────────────
+    # Joined = hire date; account creation is tracked separately.
+    joined_date     = (hire_date or "")[:10]
+    account_created = (user.get("created_at") or "")[:10]
+    is_terminated  = user.get("employee_status") == "Terminated"
+    terminated_at  = (user.get("terminated_at") or "")[:10] if is_terminated else ""
+    termination_reason = user.get("termination_reason", "") if is_terminated else ""
     tenure_label = ""
-    if hire_date:
+    if joined_date:
         try:
-            hd = datetime.strptime(hire_date[:10], "%Y-%m-%d")
-            delta = now.date() - hd.date()
+            hd = datetime.strptime(joined_date, "%Y-%m-%d")
+            end = datetime.strptime(terminated_at, "%Y-%m-%d").date() if terminated_at else now.date()
+            delta = end - hd.date()
             years  = delta.days // 365
             months = (delta.days % 365) // 30
             if years > 0:
@@ -20429,6 +20436,10 @@ def _build_employee_profile_data(uid):
         "dept": dept,
         "title": title,
         "hire_date": hire_date,
+        "joined_date": joined_date,
+        "account_created": account_created,
+        "terminated_at": terminated_at,
+        "termination_reason": termination_reason,
         "phone": phone,
         "region": region,
         "emp_id": emp_id,
@@ -22886,9 +22897,13 @@ def employee_update(uid):
         "hourly_rate":     _safe_float(request.form.get("hourly_rate", 0)),
         "department":      request.form.get("department", "").strip(),
         "hire_date":       request.form.get("hire_date", "").strip(),
-        "employee_status": request.form.get("employee_status", "Active"),
         "updated_at":      datetime.now(timezone.utc).isoformat(),
     }
+    # Status changes go through the terminate/reactivate endpoints, never a plain edit
+    if request.form.get("employee_status") == "Active":
+        profile = fb_get(f"/users/{uid}") or {}
+        if profile.get("employee_status", "Active") != "Terminated":
+            updates["employee_status"] = "Active"
     if request.form.get("title") is not None:
         updates["title"] = request.form.get("title", "").strip()
     if request.form.get("region") is not None:
@@ -23002,8 +23017,7 @@ def user_details_update(uid):
             updates["role"] = r
             # Auto-reset custom_pages to role default when role changes
             updates["custom_pages"] = None
-    if "active" in data:
-        updates["active"] = bool(data["active"])
+    # "active" is intentionally ignored: use /api/employee/<uid>/terminate or /reactivate
 
     fb_update(f"/users/{uid}", updates)
     cache_bust("all_users")
@@ -24933,12 +24947,9 @@ def user_new():
 @app.route("/settings/user/<uid>/toggle", methods=["POST"])
 @role_required("settings")
 def user_toggle(uid):
-    profile = fb_get(f"/users/{uid}") or {}
-    current = profile.get("active", True)
-    fb_update(f"/users/{uid}", {"active": not current,
-                                "updated_at": datetime.now(timezone.utc).isoformat()})
-    flash("User status updated.", "success")
-    return redirect(url_for("settings") + "?tab=users")
+    # Deactivation is replaced by formal termination (date + reason + audit trail)
+    flash("To deactivate an employee, use Terminate on the Employees page.", "warning")
+    return redirect(url_for("employees") + f"?terminate={uid}")
 
 @app.route("/settings/user/<uid>/role", methods=["POST"])
 @role_required("settings")
