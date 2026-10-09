@@ -10903,6 +10903,8 @@ def _auto_generate_monthly_salaries() -> int:
         monthly = _safe_float(u.get("monthly_salary", 0))
         if monthly <= 0:
             continue
+        if u.get("active", True) is False or u.get("employee_status") == "Terminated":
+            continue
         name = (u.get("username") or "").strip()
         if not name or name.lower() in existing:
             continue
