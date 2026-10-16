@@ -4428,8 +4428,9 @@ def project_detail(project_id):
             if stage.get("status") == "Not Invoiced":
                 stage["status"] = "Pending Invoice"
 
-        # Recalculate payment stage statuses based on actual paid amounts from invoices
-        # First, build a map of invoices by stage (supporting multi-project invoices)
+        # Recalculate payment stage statuses based on actual invoice links.
+        # Support current metadata, legacy line-item fields, and string indexes
+        # so an invoice remains associated with its stage across older formats.
         raw_inv = fb_get("/invoices") or {}
         stage_invoices = {}
         if isinstance(raw_inv, dict):
@@ -4437,36 +4438,51 @@ def project_detail(project_id):
                 if not isinstance(inv, dict):
                     continue
                 inv_meta = inv.get("meta", {}) or {}
-
-                # Check if this project is linked to the invoice (supports multi-project)
-                linked_projects = _invoice_linked_projects(inv)
-                if proj_num not in linked_projects:
+                if str(inv_meta.get("status", "")).strip().lower() == "cancelled":
+                    continue
+                if proj_num not in _invoice_linked_projects(inv):
                     continue
 
-                # For multi-project invoices, find ALL stage indices for this project
-                # A single project can appear multiple times with different stages
-                lp_list = inv_meta.get("linked_projects") or []
-                stage_indices = []
+                inv.setdefault("firebase_id", iid)
+                stage_indices = set()
+                stage_names = set()
 
-                if isinstance(lp_list, list):
-                    for lp in lp_list:
-                        if isinstance(lp, dict) and lp.get("project_number") == proj_num:
-                            # Found a linked_project entry for this project
-                            stage_idx = lp.get("payment_stage_index", -1)
-                            if stage_idx >= 0:
-                                stage_indices.append(stage_idx)
+                def _add_invoice_stage(record):
+                    if not isinstance(record, dict):
+                        return
+                    record_project = (record.get("project_number") or inv_meta.get("project_number") or "").strip()
+                    if record_project != proj_num:
+                        return
+                    raw_index = record.get("payment_stage_index", record.get("stage_index"))
+                    try:
+                        parsed_index = int(raw_index)
+                    except (TypeError, ValueError):
+                        parsed_index = None
+                    if parsed_index is not None and 0 <= parsed_index < len(data["payment_stages"]):
+                        stage_indices.add(parsed_index)
+                    for name_key in ("stage_name", "payment_stage"):
+                        stage_name = str(record.get(name_key) or "").strip().casefold()
+                        if stage_name:
+                            stage_names.add(stage_name)
 
-                # Fallback to old single-project format if no linked_projects found
-                if not stage_indices:
-                    stage_idx = inv_meta.get("payment_stage_index", -1)
-                    if stage_idx >= 0:
-                        stage_indices.append(stage_idx)
+                for linked in inv_meta.get("linked_projects") or []:
+                    _add_invoice_stage(linked)
+                for line_item in inv.get("line_items") or []:
+                    _add_invoice_stage(line_item)
+                _add_invoice_stage(inv_meta)
 
-                # Add invoice to stage_invoices for EACH stage it covers
+                # Older records sometimes kept only a stage label. Use it only
+                # when it identifies exactly one stage on this project.
+                if not stage_indices and stage_names:
+                    name_matches = [
+                        idx for idx, stage in enumerate(data["payment_stages"])
+                        if str(stage.get("name") or "").strip().casefold() in stage_names
+                    ]
+                    if len(name_matches) == 1:
+                        stage_indices.add(name_matches[0])
+
                 for stage_idx in stage_indices:
-                    if stage_idx not in stage_invoices:
-                        stage_invoices[stage_idx] = []
-                    stage_invoices[stage_idx].append(inv)
+                    stage_invoices.setdefault(stage_idx, []).append(inv)
 
         today_str = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
         for idx, stage in enumerate(data["payment_stages"]):
@@ -4511,6 +4527,22 @@ def project_detail(project_id):
                     if not invoice_id:
                         invoice_id = inv.get("firebase_id", "")
                         invoice_number = inv_meta.get("invoice_number", "")
+
+            if idx in stage_invoices and stage.get("status") in (None, "", "Pending Invoice", "Not Invoiced"):
+                stage["status"] = "Invoiced"
+                if invoice_id:
+                    stage["invoice_id"] = invoice_id
+                if invoice_number:
+                    stage["invoice_number"] = invoice_number
+                if invoice_id:
+                    try:
+                        fb_update(f"/projects/{project_id}/payment_stages/{idx}", {
+                            "status": "Invoiced",
+                            "invoice_id": invoice_id,
+                            "invoice_number": invoice_number,
+                        })
+                    except Exception:
+                        log.exception("Failed to repair invoice link for project %s stage %s", proj_num, idx)
 
             is_overdue = bool(due_date) and due_date < today_str
 
@@ -5919,6 +5951,7 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
         "unit_price":  str(amount),
         "amount":      str(amount),
         "project_number": proj_num,
+        "payment_stage_index": stage_idx,
         "stage_index": stage_idx,
         "stage_name": stage_name,
         "co_number": co_number,
@@ -5953,6 +5986,7 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
             "unit_price":  str(co_amt),
             "amount":      str(co_amt),
             "project_number": proj_num,
+            "payment_stage_index": co_idx,
             "stage_name": co_stage_name,
             "co_number": co_stage_co_number,
             "co_firebase_id": co_stage_co_firebase_id,
@@ -6004,11 +6038,41 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
     if co_number_to_save:
         invoice_data["meta"]["co_number"] = co_number_to_save
     iid = fb_push("/invoices", invoice_data)
+    if not iid:
+        return None, "Invoice could not be saved. The project stages were not changed."
     stage_status = "Paid" if mark_paid else "Invoiced"
-    _mark_project_stage(proj_num, stage_idx, stage_status, invoice_id=iid, amount=amount)
+    selected_stage_indices = [stage_idx] + [co_idx for co_idx, _ in co_pending]
+    original_stage_snapshots = {
+        idx: dict(stages[idx]) for idx in selected_stage_indices
+        if 0 <= idx < len(stages) and isinstance(stages[idx], dict)
+    }
+    linked_stage_indices = []
+    if not _mark_project_stage(proj_num, stage_idx, stage_status, invoice_id=iid,
+                               invoice_number=inv_num, amount=amount, project_id=project_id):
+        try:
+            fb_delete(f"/invoices/{iid}")
+        except Exception:
+            log.exception("Could not remove unlinked stage invoice %s", iid)
+        return None, "Invoice was not linked because its project stage could not be updated. Please try again."
+    linked_stage_indices.append(stage_idx)
     for co_idx, co_stage in co_pending:
         co_amt = _safe_float(co_stage.get("amount", 0))
-        _mark_project_stage(proj_num, co_idx, stage_status, invoice_id=iid, amount=co_amt)
+        if not _mark_project_stage(proj_num, co_idx, stage_status, invoice_id=iid,
+                                   invoice_number=inv_num, amount=co_amt, project_id=project_id):
+            # Restore every stage already changed by this invoice if any CO
+            # write fails, then remove the invoice so it cannot be left orphaned.
+            for changed_idx in linked_stage_indices:
+                try:
+                    fb_update(f"/projects/{project_id}/payment_stages/{changed_idx}",
+                              original_stage_snapshots.get(changed_idx, {}))
+                except Exception:
+                    log.exception("Could not restore project %s stage %s after invoice-link failure", project_id, changed_idx)
+            try:
+                fb_delete(f"/invoices/{iid}")
+            except Exception:
+                log.exception("Could not remove partially linked stage invoice %s", iid)
+            return None, "Invoice was not linked because a change-order stage could not be updated. Please try again."
+        linked_stage_indices.append(co_idx)
     if project.get("status", "Not Started") == "Not Started":
         fb_update(f"/projects/{project_id}", {"status": "In Progress"})
     if mark_paid:
@@ -7340,70 +7404,70 @@ def invoice_new():
                         break
 
         if stage_idx_raw != "" and not _from_load_modal:
-            data["meta"]["payment_stage_index"] = int(stage_idx_raw)
+            try:
+                stage_idx_value = int(stage_idx_raw)
+            except (TypeError, ValueError):
+                flash("The selected payment stage is invalid. Please select the stage again.", "danger")
+                return redirect(url_for("invoice_new"))
+            data["meta"]["payment_stage_index"] = stage_idx_value
             data["meta"]["payment_stage"]       = stage_name
+
+        # Build links from the project/stage selections on each invoice line.
+        # The URL stage is only a default for its own project and must not be
+        # applied blindly to a different project selected on the form.
+        invoice_stage_links = {}
+        for line_item in data.get("line_items", []) or []:
+            if not isinstance(line_item, dict):
+                continue
+            line_project = (line_item.get("project_number") or project_number or "").strip()
+            if not line_project:
+                continue
+            line_stage = line_item.get("payment_stage_index")
+            if line_stage is None and not _from_load_modal and stage_idx_raw != "" and line_project == project_number:
+                line_stage = int(stage_idx_raw)
+                line_item["payment_stage_index"] = line_stage
+                line_item["stage_name"] = stage_name
+            try:
+                line_stage = int(line_stage) if line_stage is not None else None
+            except (TypeError, ValueError):
+                flash(f"The selected payment stage for {line_project} is invalid.", "danger")
+                return redirect(url_for("invoice_new"))
+            if line_stage is not None:
+                _, linked_project = _find_project_by_number(line_project)
+                linked_stages = linked_project.get("payment_stages", []) if linked_project else []
+                if not isinstance(linked_stages, list) or not (0 <= line_stage < len(linked_stages)):
+                    flash(f"Payment stage {line_stage + 1} does not exist for project {line_project}.", "danger")
+                    return redirect(url_for("invoice_new"))
+            invoice_stage_links.setdefault(line_project, set()).add(line_stage)
+
+        # A single project can contribute several stages to one invoice. Keep
+        # each pair, and omit a no-stage placeholder if that project has stages.
+        linked_project_rows = []
+        for pn in sorted(invoice_stage_links, key=lambda number: _project_number_sort_key({"project_number": number})):
+            stage_indices = invoice_stage_links[pn]
+            if stage_indices == {None}:
+                linked_project_rows.append({"project_number": pn, "payment_stage_index": None})
+            else:
+                linked_project_rows.extend(
+                    {"project_number": pn, "payment_stage_index": stage_index}
+                    for stage_index in sorted(index for index in stage_indices if index is not None)
+                )
+        data["meta"]["linked_projects"] = linked_project_rows
 
         inv_id = fb_push("/invoices", data)
         invoice_number = data["meta"].get("invoice_number", "")
 
-        # Mark stages as invoiced
-        if is_single_project:
-            # Single project with single stage - use only the subtotal (without tax)
-            # Payment stages should show only the project amount, not including tax
-            invoice_subtotal = _safe_float(data["meta"].get("subtotal", 0))
-            _mark_project_stage(data["meta"].get("project_number", ""),
-                                int(stage_idx_raw), "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=invoice_subtotal)
-        else:
-            # Multiple projects - check if line items have stage indices
-            item_projects = request.form.getlist("item_project[]")
-            item_stage_indices = request.form.getlist("item_stage_index[]")
-
-            # Store linked projects info for multi-project invoice detection
-            linked_projects = []
-
-            # Mark each stage from line items - use project's actual line item amount (without tax)
-            # Ensure we have matching lengths by padding stage_indices if needed
-            while len(item_stage_indices) < len(item_projects):
-                item_stage_indices.append("")
-
-            line_items = data.get("line_items", []) or []
-
-
-            for i, proj_num in enumerate(item_projects):
-                if not proj_num or not proj_num.strip():
-                    continue
-                proj_num = proj_num.strip()
-
-                # Get the stage index for this project
-                stage_idx_str = item_stage_indices[i].strip() if i < len(item_stage_indices) and item_stage_indices[i] else ""
-
-                # Mark as invoiced if we have a stage index, otherwise skip this project
-                if stage_idx_str:
-                    try:
-                        stage_idx = int(stage_idx_str)
-                        # DO NOT pass 'amount' - stage amount should never change based on invoice line items
-                        # The stage amount is fixed in the project; invoice line items may be partial
-                        _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=inv_id, invoice_number=invoice_number)
-                        linked_projects.append({"project_number": proj_num, "payment_stage_index": stage_idx})
-                    except (ValueError, TypeError) as e:
-                        pass
-
-            # Update invoice metadata with linked projects for multi-project invoices
-            # SORT by project number (extract last digits, sort numerically) so 005 comes before 006
-            if linked_projects:
-                linked_projects.sort(key=_project_number_sort_key)
-                fb_update(f"/invoices/{inv_id}", {"meta/linked_projects": linked_projects})
+        # Mark the exact selected stages; keep configured stage amounts intact.
+        for linked_project, linked_stage in (
+            (row["project_number"], row["payment_stage_index"])
+            for row in linked_project_rows
+        ):
+            if linked_stage is not None:
+                _mark_project_stage(linked_project, linked_stage, "Invoiced",
+                                    invoice_id=inv_id, invoice_number=invoice_number)
 
         # Auto-advance project status: Not Started → In Progress when first invoice created
-        proj_nums_to_update = set()
-        if stage_idx_raw != "":
-            pn = data["meta"].get("project_number", "")
-            if pn:
-                proj_nums_to_update.add(pn)
-        else:
-            for pn in request.form.getlist("item_project[]"):
-                if pn:
-                    proj_nums_to_update.add(pn)
+        proj_nums_to_update = set(invoice_stage_links)
         if proj_nums_to_update:
             all_proj = fb_get("/projects") or {}
             for pid, pdata in (all_proj.items() if isinstance(all_proj, dict) else []):
@@ -25488,30 +25552,51 @@ def _find_project_by_number(project_number: str):
                 return pid, pdata
     return None, None
 
-def _mark_project_stage(project_number: str, stage_index: int, status: str, invoice_id: str = None, invoice_number: str = None, amount: float = None, amount_paid: float = None) -> None:
+def _mark_project_stage(project_number: str, stage_index: int, status: str, invoice_id: str = None, invoice_number: str = None, amount: float = None, amount_paid: float = None, project_id: str = None) -> bool:
     """Update one stage's status (and optionally its linked invoice id/number/amount/amount_paid) within a project's payment plan."""
-    pid, pdata = _find_project_by_number(project_number)
-    if not pid:
-        return
+    if project_id:
+        pid = project_id
+        pdata = fb_get(f"/projects/{pid}") or {}
+    else:
+        pid, pdata = _find_project_by_number(project_number)
+    if not pid or not isinstance(pdata, dict):
+        return False
     stages = pdata.get("payment_stages") or []
     if not (0 <= stage_index < len(stages)) or not isinstance(stages[stage_index], dict):
-        return
+        return False
     stages[stage_index]["status"] = status
+    stage_updates = {"status": status}
     if invoice_id is not None:
         stages[stage_index]["invoice_id"] = invoice_id
+        stage_updates["invoice_id"] = invoice_id
     if invoice_number is not None:
         stages[stage_index]["invoice_number"] = invoice_number
+        stage_updates["invoice_number"] = invoice_number
     if amount is not None:
         stages[stage_index]["amount"] = amount
+        stage_updates["amount"] = amount
     if amount_paid is not None:
         stages[stage_index]["amount_paid"] = str(amount_paid)
+        stage_updates["amount_paid"] = str(amount_paid)
     # When reverting to "Pending Invoice", clear only the display field
     # PRESERVE invoice_id for restoration - needed when invoice is restored
     if status == "Pending Invoice":
         # stages[stage_index].pop("invoice_id", None)  # KEEP THIS - needed for restoration
         stages[stage_index].pop("invoice_number", None)
+        stage_updates["invoice_number"] = None
 
-    proj_updates = {"payment_stages": stages, "updated_at": datetime.now(timezone.utc).isoformat()}
+    # Update just this stage node. Replacing the entire payment_stages array
+    # from a potentially stale read can erase another invoice's concurrent
+    # stage update.
+    try:
+        stage_saved = fb_update(f"/projects/{pid}/payment_stages/{stage_index}", stage_updates)
+    except Exception:
+        log.exception("Failed to update project %s stage %s", pid, stage_index)
+        return False
+    if not stage_saved:
+        return False
+
+    proj_updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
 
     # Auto-update project status whenever a stage gets invoiced and $0 collected.
     # Re-evaluates every time (not just the first stage) so the status advances from
@@ -25524,7 +25609,13 @@ def _mark_project_stage(project_number: str, stage_index: int, status: str, invo
         if proj_paid == 0 and proj_status not in _LOCKED_ST:
             proj_updates["status"] = _compute_project_invoice_status(pdata) or "Fully Invoiced_Not paid"
 
-    fb_update(f"/projects/{pid}", proj_updates)
+    try:
+        fb_update(f"/projects/{pid}", proj_updates)
+    except Exception:
+        # The stage link is already persisted. A project-level status refresh
+        # failure must not turn a successful invoice-stage link into a failure.
+        log.exception("Failed to refresh project status for %s", pid)
+    return True
 
 def _calculate_invoice_status(inv_data: dict) -> str:
     """Calculate invoice status based on amount_paid vs total.
@@ -31391,7 +31482,7 @@ def reset_stage_status(project_id, stage_idx):
         project = fb_get(f"/projects/{project_id}") or {}
         stages = project.get("payment_stages", [])
 
-        if stage_idx >= len(stages) or not isinstance(stages[stage_idx], dict):
+        if stage_idx < 0 or stage_idx >= len(stages) or not isinstance(stages[stage_idx], dict):
             return {"success": False, "error": "Invalid stage index"}, 400
 
         stage = stages[stage_idx]
@@ -31416,7 +31507,7 @@ def quick_invoice_stage(project_id, stage_idx):
         stages = project.get("payment_stages", [])
 
         # Validate stage
-        if stage_idx >= len(stages) or not isinstance(stages[stage_idx], dict):
+        if stage_idx < 0 or stage_idx >= len(stages) or not isinstance(stages[stage_idx], dict):
             return {"success": False, "error": "Invalid stage index"}, 400
 
         stage = stages[stage_idx]
@@ -31458,6 +31549,7 @@ def quick_invoice_stage(project_id, stage_idx):
             "quantity": "1",
             "unit_price": str(stage_amount),
             "amount": str(stage_amount),
+            "payment_stage_index": stage_idx,
             "stage_name": stage_name,
             "co_number": co_number,
             "co_firebase_id": co_firebase_id,
@@ -31505,10 +31597,27 @@ def quick_invoice_stage(project_id, stage_idx):
 
         # Create invoice
         invoice_id = fb_push("/invoices", invoice_data)
+        if not invoice_id:
+            return {"success": False, "error": "Invoice could not be saved. The project stage was not changed."}, 500
         invoice_number = invoice_data["meta"].get("invoice_number", "")
 
-        # Mark stage as invoiced
-        _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=invoice_id, invoice_number=invoice_number, amount=stage_amount)
+        # Update the exact Firebase project selected by the button. The shared
+        # writer updates only this stage node and reports a failed stage write.
+        try:
+            stage_saved = _mark_project_stage(
+                proj_num, stage_idx, "Invoiced", invoice_id=invoice_id,
+                invoice_number=invoice_number, amount=stage_amount,
+                project_id=project_id,
+            )
+        except Exception:
+            log.exception("Quick invoice %s stage write failed for project %s stage %s", invoice_id, project_id, stage_idx)
+            stage_saved = False
+        if not stage_saved:
+            try:
+                fb_delete(f"/invoices/{invoice_id}")
+            except Exception:
+                log.exception("Could not remove unlinked quick invoice %s", invoice_id)
+            return {"success": False, "error": "Invoice was not linked because the project stage could not be updated. Please try again."}, 500
 
         return {"success": True, "invoice_id": invoice_id, "invoice_number": invoice_number}, 200
     except Exception as e:
