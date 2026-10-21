@@ -85,7 +85,7 @@ document.querySelector('form').addEventListener('submit', function(e) {
   if (btn) {
     if (btn.dataset.busy === '1') { e.preventDefault(); return false; }
     btn.dataset.busy = '1';
-    btn.classList.add('disabled');
+    btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
   }
 });
@@ -93,7 +93,7 @@ document.querySelector('form').addEventListener('submit', function(e) {
 window.addEventListener('pageshow', function(ev) {
   const btn = document.querySelector('form button[type="submit"]');
   if (ev.persisted && btn) {
-    btn.dataset.busy = '0'; btn.classList.remove('disabled');
+    btn.dataset.busy = '0'; btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Save Client';
   }
 });

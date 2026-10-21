@@ -10638,11 +10638,9 @@ def _clients_cache_patch(table, set_key=None, record=None, drop_key=None):
     if drop_key:
         table.pop(drop_key, None)
     if set_key and record is not None:
-        merged = dict(table.get(set_key) or {})
-        merged.update(record)
-        if not record.get("tags"):
-            merged.pop("tags", None)
-        table[set_key] = merged
+        # Client form saves are full snapshots. Merging here resurrected any
+        # fields intentionally cleared by the user from the old cached record.
+        table[set_key] = dict(record)
     _cache_set("fbnode:/clients", table, _FB_CACHE_TTL)
 
 
@@ -10695,7 +10693,10 @@ def client_new():
             "tags": tags,
         }
 
-        _clients_before = fb_get_fresh("/clients") or {}
+        # A single-record lookup avoids downloading the full client table on
+        # ordinary creates. We fetch the table only when the optional duplicate
+        # checks have something to compare against.
+        _clients_before = fb_get("/clients") or {}
 
         # Check for duplicate company name (case-insensitive)
         for existing_id, existing_data in _clients_before.items():
@@ -10742,7 +10743,8 @@ def client_new():
             "updated_at":   datetime.now(timezone.utc).isoformat(),
         }
         try:
-            fb_update(f"/clients/{primary_id}", data)
+            if not fb_update(f"/clients/{primary_id}", data):
+                raise RuntimeError("Firebase client write was not applied")
             _clients_cache_patch(_clients_before, _clients_key(primary_id), data)
         except Exception:
             log.exception("Client save failed for company_name=%r client_name=%r", company_name, client_name)
@@ -10755,7 +10757,9 @@ def client_new():
 @app.route("/clients/<company_name>/edit", methods=["GET", "POST"])
 @role_required("clients")
 def client_edit(company_name):
-    _all_clients = fb_get_fresh("/clients") or {}
+    # The edit page already has a stable record key. Use the short-lived client
+    # cache for duplicate checks so saving does not force a full-table download.
+    _all_clients = fb_get("/clients") or {}
     data = _all_clients.get(_clients_key(company_name)) or {}
     # Get the ACTUAL company name from database (in case it's different)
     original_company_name = data.get("company_name", company_name)
@@ -10843,12 +10847,23 @@ def client_edit(company_name):
             "tags":         tags,
             "updated_at":   datetime.now(timezone.utc).isoformat(),
         }
-        # If primary ID changed, delete old entry
+        # Write the replacement first. If Firebase rejects it, keep the original
+        # record intact so a rename cannot lose client information. Firebase
+        # update() treats empty strings as explicit clears, and this is a full
+        # form snapshot so removed values are not retained.
+        try:
+            if not fb_update(f"/clients/{new_primary_id}", updated):
+                raise RuntimeError("Firebase client write was not applied")
+        except Exception:
+            log.exception("Client update failed for company_name=%r", new_primary_id)
+            flash("Could not save this client. Please try again.", "danger")
+            return render_template("client_form.html", client=form_data, is_new=False)
+
         if new_primary_id != original_company_name:
-            fb_delete(f"/clients/{original_company_name}")
-            _clients_cache_patch(_all_clients, drop_key=_clients_key(original_company_name))
+            if not fb_delete(f"/clients/{original_company_name}"):
+                log.error("Saved renamed client %r but could not remove old key %r", new_primary_id, original_company_name)
+                flash("Client was saved, but the old company entry could not be removed. Please contact an administrator.", "warning")
             _all_clients.pop(_clients_key(original_company_name), None)
-        fb_update(f"/clients/{new_primary_id}", updated)
         _clients_cache_patch(_all_clients, _clients_key(new_primary_id), updated)
 
         # Sync all related invoices, quotes, and projects with new company name
