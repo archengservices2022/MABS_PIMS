@@ -10086,7 +10086,9 @@ def _no_store_client_pages(resp):
 @app.route("/clients")
 @role_required("clients")
 def clients():
-    raw = fb_get("/clients") or {}
+    # Client edits must appear immediately even when the next request lands on
+    # another app worker with its own (still warm) process cache.
+    raw = fb_get_fresh("/clients") or {}
     items = []
     if isinstance(raw, dict):
         for company_name, cdata in raw.items():
@@ -10696,7 +10698,7 @@ def client_new():
         # A single-record lookup avoids downloading the full client table on
         # ordinary creates. We fetch the table only when the optional duplicate
         # checks have something to compare against.
-        _clients_before = fb_get("/clients") or {}
+        _clients_before = fb_get_fresh("/clients") or {}
 
         # Check for duplicate company name (case-insensitive)
         for existing_id, existing_data in _clients_before.items():
@@ -10757,9 +10759,9 @@ def client_new():
 @app.route("/clients/<company_name>/edit", methods=["GET", "POST"])
 @role_required("clients")
 def client_edit(company_name):
-    # The edit page already has a stable record key. Use the short-lived client
-    # cache for duplicate checks so saving does not force a full-table download.
-    _all_clients = fb_get("/clients") or {}
+    # The client table is small, and a fresh snapshot prevents a save on one
+    # worker from overwriting or hiding a recent update made on another worker.
+    _all_clients = fb_get_fresh("/clients") or {}
     data = _all_clients.get(_clients_key(company_name)) or {}
     # Get the ACTUAL company name from database (in case it's different)
     original_company_name = data.get("company_name", company_name)
