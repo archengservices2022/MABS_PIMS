@@ -615,10 +615,21 @@ def role_required(page_key):
     return decorator
 
 # ── Firebase helpers ──────────────────────────────────────────────────────────
+_FB_BAD_KEY_CHARS = re.compile(r"[.\[\]?#$]")
+
+def _fb_norm_path(path: str) -> str:
+    # Clients are keyed by company name, which can contain characters Firebase
+    # rejects in a key (e.g. "BC Greenhouse Builders Ltd."). Replace them so
+    # saving/looking up such a client doesn't raise and 500.
+    if path.startswith("/clients/") and len(path) > len("/clients/"):
+        head, sep, tail = path[len("/clients/"):].partition("/")
+        return "/clients/" + _FB_BAD_KEY_CHARS.sub("_", head) + sep + tail
+    return path
+
 def fb_ref(path: str):
     if not FIREBASE_AVAILABLE:
         return None
-    return db.reference(path)
+    return db.reference(_fb_norm_path(path))
 
 # ── Write guard ─────────────────────────────────────────────────────────────
 # Safety net for local/dev machines that happen to hold a production service
@@ -696,6 +707,7 @@ def _dbg(*args, **kwargs):
         print(*args, **kwargs)
 
 def fb_get(path: str):
+    path = _fb_norm_path(path)
     ref = fb_ref(path)
     if not ref:
         return None
@@ -10632,7 +10644,12 @@ def client_new():
             "tags":         tags,
             "updated_at":   datetime.now(timezone.utc).isoformat(),
         }
-        fb_update(f"/clients/{primary_id}", data)
+        try:
+            fb_update(f"/clients/{primary_id}", data)
+        except Exception:
+            log.exception("Client save failed for company_name=%r client_name=%r", company_name, client_name)
+            flash("Could not save this client. Please check the name for unusual characters (e.g. '/') and try again.", "danger")
+            return render_template("client_form.html", client=form_data, is_new=True)
         flash("Client saved.", "success")
         return redirect(url_for("clients", tab="all-clients"))
     return render_template("client_form.html", client=None, is_new=True)
