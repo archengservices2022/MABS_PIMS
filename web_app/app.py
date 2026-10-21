@@ -716,8 +716,12 @@ def fb_get(path: str):
         cached, hit = _cache_get(ck)
         if hit:
             return _fb_fast_copy(cached)
+        gen = _BUST_GEN.get(ck, 0)
         val = ref.get()
-        _cache_set(ck, val, _FB_CACHE_TTL)
+        # Don't cache if a write busted this node while we were fetching (the value we
+        # hold may predate that write and would otherwise be served as fresh for TTL).
+        if _BUST_GEN.get(ck, 0) == gen:
+            _cache_set(ck, val, _FB_CACHE_TTL)
         return _fb_fast_copy(val)
     # Sub-path read (e.g. /clients/ABC): if the whole parent table is already
     # cached, walk into it instead of a separate round trip. Pure fallback —
@@ -733,6 +737,20 @@ def fb_get(path: str):
                     break
             return _fb_fast_copy(node)
     return ref.get()
+
+def fb_get_fresh(path: str):
+    """Read straight from Firebase, bypassing the read cache, then refresh the cache.
+    Used where acting on stale data would be wrong (e.g. loading a record to edit)."""
+    path = _fb_norm_path(path)
+    ref = fb_ref(path)
+    if not ref:
+        return None
+    ck = _fb_cache_key(path)
+    gen = _BUST_GEN.get(ck, 0) if ck else 0
+    val = ref.get()
+    if ck and _BUST_GEN.get(ck, 0) == gen:
+        _cache_set(ck, val, _FB_CACHE_TTL)
+    return _fb_fast_copy(val)
 
 def fb_push(path: str, data: dict) -> Optional[str]:
     if _fb_write_blocked("push", path):
@@ -10057,6 +10075,14 @@ def invoicing_export_pdf():
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 # ── Routes: Clients ───────────────────────────────────────────────────────────
+@app.after_request
+def _no_store_client_pages(resp):
+    # Client pages must always show the latest data (also on Back/Forward)
+    if request.path.startswith("/clients") and resp.mimetype == "text/html":
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+    return resp
+
 @app.route("/clients")
 @role_required("clients")
 def clients():
@@ -10669,8 +10695,10 @@ def client_new():
             "tags": tags,
         }
 
+        _clients_before = fb_get_fresh("/clients") or {}
+
         # Check for duplicate company name (case-insensitive)
-        for existing_id, existing_data in (fb_get("/clients") or {}).items():
+        for existing_id, existing_data in _clients_before.items():
             if isinstance(existing_data, dict) and _client_name_key(existing_data.get("company_name") or existing_id) == _client_name_key(company_name):
                 flash(f"A client with the company name '{company_name}' already exists. This company information is already created.", "danger")
                 form_data["company_name" if has_explicit_company else "client_name"] = ""
@@ -10678,7 +10706,7 @@ def client_new():
 
         # Check for duplicate email
         if email:
-            all_clients = fb_get("/clients") or {}
+            all_clients = _clients_before
             for existing_id, existing_data in all_clients.items():
                 if isinstance(existing_data, dict) and existing_data.get("email", "").strip().lower() == email.lower():
                     flash(f"Email address '{email}' is already in use by another client.", "danger")
@@ -10687,7 +10715,7 @@ def client_new():
 
         # Check for duplicate phone
         if phone:
-            all_clients = fb_get("/clients") or {}
+            all_clients = _clients_before
             for existing_id, existing_data in all_clients.items():
                 if isinstance(existing_data, dict) and existing_data.get("phone", "").strip() == phone:
                     flash(f"Phone number '{phone}' is already in use by another client.", "danger")
@@ -10714,7 +10742,6 @@ def client_new():
             "updated_at":   datetime.now(timezone.utc).isoformat(),
         }
         try:
-            _clients_before = fb_get("/clients") or {}
             fb_update(f"/clients/{primary_id}", data)
             _clients_cache_patch(_clients_before, _clients_key(primary_id), data)
         except Exception:
@@ -10728,7 +10755,7 @@ def client_new():
 @app.route("/clients/<company_name>/edit", methods=["GET", "POST"])
 @role_required("clients")
 def client_edit(company_name):
-    _all_clients = fb_get("/clients") or {}
+    _all_clients = fb_get_fresh("/clients") or {}
     data = _all_clients.get(_clients_key(company_name)) or {}
     # Get the ACTUAL company name from database (in case it's different)
     original_company_name = data.get("company_name", company_name)
