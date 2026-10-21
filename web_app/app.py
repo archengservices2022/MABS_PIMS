@@ -10563,6 +10563,28 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                     fb_update(f"/activity_sessions/{session_id}", session_data)
 
 
+def _clients_cache_patch(table, set_key=None, record=None, drop_key=None):
+    """Put the /clients table we already hold in memory, plus the just-saved change,
+    back into the read cache (fb_update busts it), so the next page load doesn't have
+    to re-download the whole table."""
+    if _FB_CACHE_TTL <= 0 or not isinstance(table, dict):
+        return
+    table = dict(table)
+    if drop_key:
+        table.pop(drop_key, None)
+    if set_key and record is not None:
+        merged = dict(table.get(set_key) or {})
+        merged.update(record)
+        if not record.get("tags"):
+            merged.pop("tags", None)
+        table[set_key] = merged
+    _cache_set("fbnode:/clients", table, _FB_CACHE_TTL)
+
+
+def _clients_key(name) -> str:
+    return _fb_norm_path("/clients/" + name).split("/")[2]
+
+
 def _client_name_key(name) -> str:
     """Comparable form of a client/company name: case-insensitive, extra spaces ignored."""
     return " ".join(str(name or "").split()).lower()
@@ -10653,7 +10675,9 @@ def client_new():
             "updated_at":   datetime.now(timezone.utc).isoformat(),
         }
         try:
+            _clients_before = fb_get("/clients") or {}
             fb_update(f"/clients/{primary_id}", data)
+            _clients_cache_patch(_clients_before, _clients_key(primary_id), data)
         except Exception:
             log.exception("Client save failed for company_name=%r client_name=%r", company_name, client_name)
             flash("Could not save this client. Please check the name for unusual characters (e.g. '/') and try again.", "danger")
@@ -10665,7 +10689,8 @@ def client_new():
 @app.route("/clients/<company_name>/edit", methods=["GET", "POST"])
 @role_required("clients")
 def client_edit(company_name):
-    data = fb_get(f"/clients/{company_name}") or {}
+    _all_clients = fb_get("/clients") or {}
+    data = _all_clients.get(_clients_key(company_name)) or {}
     # Get the ACTUAL company name from database (in case it's different)
     original_company_name = data.get("company_name", company_name)
     if request.method == "POST":
@@ -10706,7 +10731,7 @@ def client_edit(company_name):
         }
 
         # Check for duplicate company name (excluding current client)
-        for existing_id, existing_data in (fb_get("/clients") or {}).items():
+        for existing_id, existing_data in _all_clients.items():
             if existing_id != _fb_norm_path("/clients/" + original_company_name).split("/")[2] and isinstance(existing_data, dict) \
                     and _client_name_key(existing_data.get("company_name") or existing_id) == _client_name_key(company_name):
                 flash(f"A client with the company name '{company_name}' already exists. This company information is already created.", "danger")
@@ -10715,7 +10740,7 @@ def client_edit(company_name):
 
         # Check for duplicate email (excluding current client)
         if email:
-            all_clients = fb_get("/clients") or {}
+            all_clients = _all_clients
             for existing_id, existing_data in all_clients.items():
                 if existing_id != _fb_norm_path("/clients/" + original_company_name).split("/")[2] and isinstance(existing_data, dict):
                     if existing_data.get("email", "").strip().lower() == email.lower():
@@ -10725,7 +10750,7 @@ def client_edit(company_name):
 
         # Check for duplicate phone (excluding current client)
         if phone:
-            all_clients = fb_get("/clients") or {}
+            all_clients = _all_clients
             for existing_id, existing_data in all_clients.items():
                 if existing_id != _fb_norm_path("/clients/" + original_company_name).split("/")[2] and isinstance(existing_data, dict):
                     if existing_data.get("phone", "").strip() == phone:
@@ -10755,7 +10780,10 @@ def client_edit(company_name):
         # If primary ID changed, delete old entry
         if new_primary_id != original_company_name:
             fb_delete(f"/clients/{original_company_name}")
+            _clients_cache_patch(_all_clients, drop_key=_clients_key(original_company_name))
+            _all_clients.pop(_clients_key(original_company_name), None)
         fb_update(f"/clients/{new_primary_id}", updated)
+        _clients_cache_patch(_all_clients, _clients_key(new_primary_id), updated)
 
         # Sync all related invoices, quotes, and projects with new company name
         if (new_primary_id != original_company_name or new_client_name != (data.get("client_name") or "")
