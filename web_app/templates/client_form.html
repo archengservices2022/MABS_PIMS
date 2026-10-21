@@ -80,6 +80,22 @@ document.querySelector('form').addEventListener('submit', function(e) {
     alert('Please enter either Company Name or Client Name.');
     return false;
   }
+  // Prevent double-clicks from sending the save twice while it is in progress
+  const btn = this.querySelector('button[type="submit"]');
+  if (btn) {
+    if (btn.dataset.busy === '1') { e.preventDefault(); return false; }
+    btn.dataset.busy = '1';
+    btn.classList.add('disabled');
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+  }
+});
+// Restore the button if the page is shown again from the back/forward cache
+window.addEventListener('pageshow', function(ev) {
+  const btn = document.querySelector('form button[type="submit"]');
+  if (ev.persisted && btn) {
+    btn.dataset.busy = '0'; btn.classList.remove('disabled');
+    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Save Client';
+  }
 });
 </script>
 {% endblock %}

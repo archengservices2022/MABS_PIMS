@@ -763,6 +763,20 @@ def fb_update(path: str, data: dict) -> bool:
     _fb_cache_bust_path(path)
     return True
 
+def fb_multi_update(updates: dict) -> bool:
+    """Apply many {relative/path: value} writes atomically in one round trip."""
+    if not updates or _fb_write_blocked("multi-update", "/"):
+        return False
+    ref = fb_ref("/")
+    if not ref:
+        return False
+    items = list(updates.items())
+    for i in range(0, len(items), 400):
+        ref.update(dict(items[i:i + 400]))
+    for top in {k.split("/", 1)[0] for k in updates}:
+        _fb_cache_bust_path("/" + top)
+    return True
+
 def fb_delete(path: str) -> bool:
     if _fb_write_blocked("delete", path):
         return False
@@ -10058,59 +10072,41 @@ def _sync_client_changes(old_company_name, new_company_name, new_client_name):
         return
 
 
-    # Update invoices by client_id
+    # Collect only the fields that actually differ and write them in ONE multi-path
+    # update (a single round trip), instead of rewriting every record one by one.
+    updates = {}
+
+    def _queue(prefix, rec, holder, legacy_match):
+        """Queue field changes for one record; holder is the dict carrying the fields."""
+        sub = (prefix + "/meta") if holder is not rec else prefix
+        if holder.get("client_id") == client_id:
+            pass
+        elif not holder.get("client_id") and legacy_match:
+            updates[sub + "/client_id"] = client_id
+        else:
+            return
+        if holder.get("company_name") != new_company_name:
+            updates[sub + "/company_name"] = new_company_name
+        if holder.get("client_name") != new_client_name:
+            updates[sub + "/client_name"] = new_client_name
+
     invoices = fb_get("/invoices") or {}
     if isinstance(invoices, dict):
         for inv_id, inv_data in invoices.items():
-            if isinstance(inv_data, dict):
-                meta = inv_data.get("meta", {})
-                if isinstance(meta, dict):
-                    # Match by client_id OR by legacy name matching (and add client_id to legacy records)
-                    if meta.get("client_id") == client_id:
-                        meta["company_name"] = new_company_name
-                        meta["client_name"] = new_client_name
-                        inv_data["meta"] = meta
-                        fb_update(f"/invoices/{inv_id}", inv_data)
-                    elif not meta.get("client_id") and (meta.get("company_name", "") == old_company_name or meta.get("client_name", "") == old_company_name):
-                        meta["client_id"] = client_id
-                        meta["company_name"] = new_company_name
-                        meta["client_name"] = new_client_name
-                        inv_data["meta"] = meta
-                        fb_update(f"/invoices/{inv_id}", inv_data)
+            meta = inv_data.get("meta") if isinstance(inv_data, dict) else None
+            if isinstance(meta, dict):
+                _queue(f"invoices/{inv_id}", inv_data, meta,
+                       old_company_name in (meta.get("company_name", ""), meta.get("client_name", "")))
 
-    # Update quotes by client_id (stored in /job_forms)
-    quotes = fb_get("/job_forms") or {}
-    if isinstance(quotes, dict):
-        for quote_id, quote_data in quotes.items():
-            if isinstance(quote_data, dict):
-                quote_cid = quote_data.get("client_id", "")
-                quote_company = quote_data.get("company_name", "")
-                # Match by client_id OR by legacy name matching (and add client_id to legacy records)
-                if quote_data.get("client_id") == client_id:
-                    quote_data["company_name"] = new_company_name
-                    quote_data["client_name"] = new_client_name
-                    fb_update(f"/job_forms/{quote_id}", quote_data)
-                elif not quote_data.get("client_id") and (quote_data.get("company_name", "") == old_company_name or quote_data.get("client_name", "") == old_company_name):
-                    quote_data["client_id"] = client_id
-                    quote_data["company_name"] = new_company_name
-                    quote_data["client_name"] = new_client_name
-                    fb_update(f"/job_forms/{quote_id}", quote_data)
+    for node in ("job_forms", "projects"):
+        recs = fb_get(f"/{node}") or {}
+        if isinstance(recs, dict):
+            for rec_id, rec in recs.items():
+                if isinstance(rec, dict):
+                    _queue(f"{node}/{rec_id}", rec, rec,
+                           old_company_name in (rec.get("company_name", ""), rec.get("client_name", "")))
 
-    # Update projects by client_id
-    projects = fb_get("/projects") or {}
-    if isinstance(projects, dict):
-        for proj_id, proj_data in projects.items():
-            if isinstance(proj_data, dict):
-                # Match by client_id OR by legacy name matching (and add client_id to legacy records)
-                if proj_data.get("client_id") == client_id:
-                    proj_data["company_name"] = new_company_name
-                    proj_data["client_name"] = new_client_name
-                    fb_update(f"/projects/{proj_id}", proj_data)
-                elif not proj_data.get("client_id") and (proj_data.get("company_name", "") == old_company_name or proj_data.get("client_name", "") == old_company_name):
-                    proj_data["client_id"] = client_id
-                    proj_data["company_name"] = new_company_name
-                    proj_data["client_name"] = new_client_name
-                    fb_update(f"/projects/{proj_id}", proj_data)
+    fb_multi_update(updates)
 
 def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_name):
     """Legacy fallback: Sync client changes by name matching (for records without client_id)."""
@@ -10762,7 +10758,9 @@ def client_edit(company_name):
         fb_update(f"/clients/{new_primary_id}", updated)
 
         # Sync all related invoices, quotes, and projects with new company name
-        _sync_client_changes(original_company_name, new_primary_id, new_client_name)
+        if (new_primary_id != original_company_name or new_client_name != (data.get("client_name") or "")
+                or not data.get("client_id")):
+            _sync_client_changes(original_company_name, new_primary_id, new_client_name)
 
         flash("Client updated.", "success")
         return redirect(url_for("clients"))
