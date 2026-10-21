@@ -1743,9 +1743,17 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         <i class="bi bi-people me-1" style="color:#0D9488;"></i>All Employees
         <span class="text-muted fw-normal small ms-1">({{ active_users|length }})</span>
       </h6>
-      <a href="{{ url_for('settings') }}?tab=users" class="btn btn-xs btn-outline-secondary">
-        <i class="bi bi-person-plus me-1"></i>Add Employee
-      </a>
+      <div class="d-flex align-items-center gap-2 ms-auto">
+        <div class="position-relative">
+          <i class="bi bi-search position-absolute" style="left:9px;top:50%;transform:translateY(-50%);font-size:11px;color:#94a3b8;pointer-events:none;"></i>
+          <input type="search" id="empTeamSearch" autocomplete="off"
+                 placeholder="Search employees…" aria-label="Search employees"
+                 style="width:210px;height:28px;font-size:12px;padding:0 10px 0 26px;border:1px solid #e2e8f0;border-radius:14px;background:#f8fafc;outline:none;">
+        </div>
+        <a href="{{ url_for('settings') }}?tab=users" class="btn btn-xs btn-outline-secondary">
+          <i class="bi bi-person-plus me-1"></i>Add Employee
+        </a>
+      </div>
     </div>
     <div class="table-responsive">
       <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
@@ -1756,7 +1764,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <th class="text-end">Action</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="empTeamBody">
         {% for u in active_users %}
         {% set open_entry = open_entries_by_uid.get(u.firebase_uid) %}
         <tr>
@@ -1821,9 +1829,36 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           </td>
         </tr>
         {% endfor %}
+        <tr id="empTeamNoMatch" style="display:none;">
+          <td colspan="10" class="text-center text-muted py-3" style="font-size:12px;">No employees match your search.</td>
+        </tr>
         </tbody>
       </table>
     </div>
+    <script>
+    (function () {
+      var input = document.getElementById('empTeamSearch');
+      var body  = document.getElementById('empTeamBody');
+      if (!input || !body) return;
+      var rows = Array.prototype.slice.call(body.querySelectorAll('tr:not(#empTeamNoMatch)'));
+      // Searchable text = Employee (name + email), Title, Region, Role, Status, Department
+      var haystacks = rows.map(function (r) {
+        var c = r.children, t = [];
+        [0, 1, 2, 3, 4, 5].forEach(function (i) { if (c[i]) t.push(c[i].textContent); });
+        return t.join(' ').replace(/\s+/g, ' ').toLowerCase();
+      });
+      var none = document.getElementById('empTeamNoMatch');
+      input.addEventListener('input', function () {
+        var q = input.value.trim().toLowerCase(), shown = 0;
+        rows.forEach(function (r, i) {
+          var ok = !q || haystacks[i].indexOf(q) !== -1;
+          r.style.display = ok ? '' : 'none';
+          if (ok) shown++;
+        });
+        none.style.display = (shown === 0) ? '' : 'none';
+      });
+    })();
+    </script>
   </div>
 
   {% if terminated_users %}
