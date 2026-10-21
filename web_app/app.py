@@ -10567,6 +10567,11 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                     fb_update(f"/activity_sessions/{session_id}", session_data)
 
 
+def _client_name_key(name) -> str:
+    """Comparable form of a client/company name: case-insensitive, extra spaces ignored."""
+    return " ".join(str(name or "").split()).lower()
+
+
 @app.route("/clients/new", methods=["GET", "POST"])
 @role_required("clients")
 def client_new():
@@ -10606,6 +10611,13 @@ def client_new():
             "notes": notes,
             "tags": tags,
         }
+
+        # Check for duplicate company name (case-insensitive)
+        for existing_id, existing_data in (fb_get("/clients") or {}).items():
+            if isinstance(existing_data, dict) and _client_name_key(existing_data.get("company_name") or existing_id) == _client_name_key(company_name):
+                flash(f"A client with the company name '{company_name}' already exists. This company information is already created.", "danger")
+                form_data["company_name" if has_explicit_company else "client_name"] = ""
+                return render_template("client_form.html", client=form_data, is_new=True)
 
         # Check for duplicate email
         if email:
@@ -10696,6 +10708,14 @@ def client_edit(company_name):
             "notes": notes,
             "tags": tags,
         }
+
+        # Check for duplicate company name (excluding current client)
+        for existing_id, existing_data in (fb_get("/clients") or {}).items():
+            if existing_id != original_company_name and isinstance(existing_data, dict) \
+                    and _client_name_key(existing_data.get("company_name") or existing_id) == _client_name_key(company_name):
+                flash(f"A client with the company name '{company_name}' already exists. This company information is already created.", "danger")
+                form_data["company_name" if has_explicit_company else "client_name"] = ""
+                return render_template("client_form.html", client=form_data, is_new=False)
 
         # Check for duplicate email (excluding current client)
         if email:
