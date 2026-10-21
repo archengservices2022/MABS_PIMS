@@ -1341,6 +1341,7 @@ def _sync_employee_name_in_advance_finances(employee_id: str, old_name: str, new
 
 # ── In-memory TTL cache (avoids repeated Firebase reads on every page load) ───
 import time as _time
+import threading
 _CACHE: Dict[str, dict] = {}
 
 def _cache_get(key: str):
@@ -1352,9 +1353,47 @@ def _cache_get(key: str):
 def _cache_set(key: str, val, ttl: int):
     _CACHE[key] = {"val": val, "exp": _time.monotonic() + ttl}
 
+_STALE: Dict[str, object] = {}       # last good value per key, served while a refresh runs
+_SWR_RUNNING: set = set()
+_BUST_GEN: Dict[str, int] = {}      # bumped on every cache_bust so in-flight refreshes can tell they are outdated
+
 def cache_bust(*keys: str):
     for k in keys:
         _CACHE.pop(k, None)
+        _STALE.pop(k, None)
+        _BUST_GEN[k] = _BUST_GEN.get(k, 0) + 1
+
+def _swr_load(key: str, ttl: int, fetch):
+    """Cached load that never makes a page wait on a refresh once it has data.
+
+    Fresh cache -> return it. Expired but we hold the last value -> return that
+    immediately and refresh in a background thread. Nothing yet -> fetch inline.
+    An explicit cache_bust() drops the stale copy too, so clock in/out etc. stay exact.
+    """
+    cached, hit = _cache_get(key)
+    if hit:
+        return cached
+    if key in _STALE:
+        if key not in _SWR_RUNNING:
+            _SWR_RUNNING.add(key)
+            gen = _BUST_GEN.get(key, 0)
+            def _refresh():
+                try:
+                    val = fetch()
+                    if val is not None and _BUST_GEN.get(key, 0) == gen:
+                        _cache_set(key, val, ttl)
+                        _STALE[key] = val
+                except Exception:
+                    log.exception("Background refresh of %s failed", key)
+                finally:
+                    _SWR_RUNNING.discard(key)
+            threading.Thread(target=_refresh, daemon=True).start()
+        return _STALE[key]
+    val = fetch()
+    if val is not None:
+        _cache_set(key, val, ttl)
+        _STALE[key] = val
+    return val if val is not None else []
 
 def load_settings() -> dict:
     cached, hit = _cache_get("settings")
@@ -26838,20 +26877,17 @@ def _load_sales_people() -> List[dict]:
     return sorted(people, key=lambda x: str(x.get("name", "")).lower())
 
 def _load_projects_list() -> List[dict]:
-    cached, hit = _cache_get("projects_list")
-    if hit:
-        return cached
-    raw = fb_get("/projects") or {}
-    if isinstance(raw, dict):
+    def _fetch():
+        raw = fb_get("/projects") or {}
+        if not isinstance(raw, dict):
+            return []
         items = []
         for pid, pdata in raw.items():
             if pdata and isinstance(pdata, dict):
                 pdata["firebase_id"] = pid
                 items.append(pdata)
-        result = sorted(items, key=_project_number_sort_key, reverse=True)
-        _cache_set("projects_list", result, 30)  # 30-second TTL
-        return result
-    return []
+        return sorted(items, key=_project_number_sort_key, reverse=True)
+    return _swr_load("projects_list", 30, _fetch)
 
 def _load_all_users() -> List[dict]:
     cached, hit = _cache_get("all_users")
@@ -26924,20 +26960,17 @@ def _activity_usage_summary() -> List[dict]:
     return sorted(by_employee.values(), key=lambda x: x["week_open"], reverse=True)
 
 def _load_time_entries() -> List[dict]:
-    cached, hit = _cache_get("time_entries")
-    if hit:
-        return cached
-    raw = fb_get("/time_entries") or {}
-    if isinstance(raw, dict):
+    def _fetch():
+        raw = fb_get("/time_entries") or {}
+        if not isinstance(raw, dict):
+            return []
         items = []
         for tid, tdata in raw.items():
             if tdata and isinstance(tdata, dict):
                 tdata["firebase_id"] = tid
                 items.append(tdata)
-        result = sorted(items, key=lambda x: x.get("clock_in", ""), reverse=True)
-        _cache_set("time_entries", result, 45)  # busted on clock in/out
-        return result
-    return []
+        return sorted(items, key=lambda x: x.get("clock_in", ""), reverse=True)
+    return _swr_load("time_entries", 45, _fetch)  # busted on clock in/out
 
 def _load_time_off_requests() -> List[dict]:
     raw = fb_get("/time_off_requests") or {}
