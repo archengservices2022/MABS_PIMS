@@ -8992,7 +8992,7 @@ def invoice_send_reminder(invoice_id):
                 if not isinstance(cd, dict):
                     continue
                 # Client name is the Firebase key; company is a separate field
-                if ckey.strip() == client_name or cd.get("company", "").strip() == client_name:
+                if ckey.strip() == client_name or (cd.get("company_name") or "").strip() == client_name or cd.get("company", "").strip() == client_name:
                     client_email = cd.get("email", "").strip()
                     break
         if not client_email:
@@ -10012,8 +10012,8 @@ def clients():
     if isinstance(raw, dict):
         for company_name, cdata in raw.items():
             if cdata and isinstance(cdata, dict):
-                # Ensure company_name is set from the Firebase key (primary identifier)
-                cdata["company_name"] = company_name
+                # Show the name exactly as entered; fall back to the Firebase key only for legacy records
+                cdata["company_name"] = cdata.get("company_name") or company_name
                 items.append(cdata)
     items.sort(key=lambda x: x.get("client_name", "").lower())
     search = request.args.get("q", "").strip().lower()
@@ -10711,7 +10711,7 @@ def client_edit(company_name):
 
         # Check for duplicate company name (excluding current client)
         for existing_id, existing_data in (fb_get("/clients") or {}).items():
-            if existing_id != original_company_name and isinstance(existing_data, dict) \
+            if existing_id != _fb_norm_path("/clients/" + original_company_name).split("/")[2] and isinstance(existing_data, dict) \
                     and _client_name_key(existing_data.get("company_name") or existing_id) == _client_name_key(company_name):
                 flash(f"A client with the company name '{company_name}' already exists. This company information is already created.", "danger")
                 form_data["company_name" if has_explicit_company else "client_name"] = ""
@@ -10721,7 +10721,7 @@ def client_edit(company_name):
         if email:
             all_clients = fb_get("/clients") or {}
             for existing_id, existing_data in all_clients.items():
-                if existing_id != original_company_name and isinstance(existing_data, dict):
+                if existing_id != _fb_norm_path("/clients/" + original_company_name).split("/")[2] and isinstance(existing_data, dict):
                     if existing_data.get("email", "").strip().lower() == email.lower():
                         flash(f"Email address '{email}' is already in use by another client.", "danger")
                         form_data["email"] = ""
@@ -10731,7 +10731,7 @@ def client_edit(company_name):
         if phone:
             all_clients = fb_get("/clients") or {}
             for existing_id, existing_data in all_clients.items():
-                if existing_id != original_company_name and isinstance(existing_data, dict):
+                if existing_id != _fb_norm_path("/clients/" + original_company_name).split("/")[2] and isinstance(existing_data, dict):
                     if existing_data.get("phone", "").strip() == phone:
                         flash(f"Phone number '{phone}' is already in use by another client.", "danger")
                         form_data["phone"] = ""
@@ -26695,7 +26695,7 @@ def _send_project_completion_email(project_number: str, project_data: dict) -> N
         client_email = ""
         if isinstance(raw_clients, dict):
             for ckey, cd in raw_clients.items():
-                if isinstance(cd, dict) and (ckey.strip() == client_name or cd.get("company", "").strip() == client_name):
+                if isinstance(cd, dict) and (ckey.strip() == client_name or (cd.get("company_name") or "").strip() == client_name or cd.get("company", "").strip() == client_name):
                     client_email = cd.get("email", "")
                     break
         if not client_email:
@@ -26767,7 +26767,7 @@ def _project_has_overdue_stage(payment_stages, raw_inv: dict, project: dict = No
 def _load_clients() -> List[str]:
     raw = fb_get("/clients") or {}
     if isinstance(raw, dict):
-        return sorted(raw.keys())
+        return sorted(((v.get("company_name") if isinstance(v, dict) else None) or k) for k, v in raw.items())
     return []
 
 def _load_sales_people() -> List[dict]:
@@ -31150,7 +31150,7 @@ def _send_overdue_reminder_email(invoice_id: str, invoice: dict):
     client_email = ""
     if isinstance(raw_clients, dict):
         for ckey, cd in raw_clients.items():
-            if isinstance(cd, dict) and (ckey.strip() == client_name or cd.get("company", "").strip() == client_name):
+            if isinstance(cd, dict) and (ckey.strip() == client_name or (cd.get("company_name") or "").strip() == client_name or cd.get("company", "").strip() == client_name):
                 client_email = cd.get("email", "")
                 break
     if not client_email:
