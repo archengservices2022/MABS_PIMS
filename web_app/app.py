@@ -4992,11 +4992,8 @@ def co_new(project_id):
         flash("CO Number is required.", "danger")
         return _redirect_project_detail(project_id, "#tab-change-orders")
 
-    # Validate PO/WO required and unique across all projects and their COs
-    if not co_po_wo:
-        flash("PO/WO number is required for Change Orders.", "danger")
-        return _redirect_project_detail(project_id, "#tab-change-orders")
-    all_projects = fb_get("/projects") or {}
+    # PO/WO is optional; when given it must be unique across all projects and their COs
+    all_projects = (fb_get("/projects") or {}) if co_po_wo else {}
     if isinstance(all_projects, dict):
         for pid, pdata in all_projects.items():
             if not isinstance(pdata, dict):
@@ -5175,7 +5172,7 @@ def co_update_amount(project_id, co_idx):
         existing = co.get("created_at", "")
         time_part = existing[10:] if len(existing) > 10 else "T00:00:00+00:00"
         co_updates["created_at"] = co_date + time_part
-    if new_po_wo:
+    if request.form.get("po_wo_number") is not None:  # optional: saving it blank clears it
         co_updates["po_wo_number"] = new_po_wo
     new_shipping = request.form.get("shipping_address", None)
     if new_shipping is not None:

@@ -1208,10 +1208,10 @@
             <input type="text" name="title" class="form-control" placeholder="e.g. Additional MEP Calculations">
           </div>
           <div class="mb-3">
-            <label class="form-label fw-600">PO / WO Number <span class="text-danger">*</span></label>
-            <input type="text" name="po_wo_number" class="form-control" placeholder="Enter PO or WO number" required autocomplete="off">
+            <label class="form-label fw-600">PO / WO Number <span class="text-muted fw-normal">(optional)</span></label>
+            <input type="text" name="po_wo_number" class="form-control" placeholder="Enter PO or WO number" autocomplete="off">
             <div class="text-danger small mt-1 d-none" id="newCOPoDup"><i class="bi bi-exclamation-triangle-fill me-1"></i>This PO/WO number already exists. Enter a different one.</div>
-            <div class="form-text">Must be unique — different from the project PO/WO and all other change orders.</div>
+            <div class="form-text">If entered, must be unique — different from the project PO/WO and all other change orders.</div>
           </div>
           <div class="mb-3">
             <label class="form-label fw-600">Shipping Address</label>
@@ -2855,7 +2855,7 @@ function toggleCommModal() {
   var warn = document.getElementById('newCOPoDup');
   po.addEventListener('input', function () { warn.classList.add('d-none'); po.classList.remove('is-invalid'); });
   form.addEventListener('submit', function (e) {
-    if (form.dataset.poChecked === '1') return;
+    if (form.dataset.poChecked === '1' || !po.value.trim()) return;
     e.preventDefault();
     var url = "{{ url_for('co_check_powo', project_id=project.firebase_id) }}" +
               '?po_wo_number=' + encodeURIComponent(po.value.trim());
