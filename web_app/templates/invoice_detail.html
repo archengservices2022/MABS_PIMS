@@ -255,7 +255,8 @@
                   {%- set display_stage = item.get('display_stage_name', '') -%}
                   {%- if co_num -%}
                     {%- set co_label = co_num.split(' – ')[0].strip() if ' – ' in co_num else co_num -%}
-                    <div style="color:#64748B; word-break:break-word;">{{ co_label }}</div>
+                    {%- set co_stage = item|co_plan_label -%}
+                    <div style="color:#64748B; word-break:break-word;">{{ co_label }}{% if co_stage %} · {{ co_stage }}{% endif %}</div>
                   {%- elif display_stage -%}
                     {%- set display_stage_clean = display_stage.split(' – ')[0].strip() if ' – ' in display_stage else display_stage -%}
                     <div style="color:#64748B; word-break:break-word;">{{ display_stage_clean }}</div>

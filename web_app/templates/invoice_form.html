@@ -385,8 +385,10 @@ const editingInvoiceId = {{ invoice_id|default('')|tojson }};
 
 function stageIdentityKeys(info) {
   const keys = [];
+  // A stage is its own identity: one CO with a payment plan has several stages that can share an invoice
   if (info.stageIdx !== undefined && info.stageIdx !== null && info.stageIdx !== '') {
     keys.push('stage:' + Number(info.stageIdx));
+    return keys;
   }
   if (info.coFirebaseId) keys.push('co-id:' + info.coFirebaseId);
   if (info.coNumber) keys.push('co-number:' + info.coNumber);

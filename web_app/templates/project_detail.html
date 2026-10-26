@@ -398,7 +398,7 @@
                 {% set stage_name = s.get('name','') %}
                 {# If this is a change order stage, display only the CO number #}
                 {% if s.get('co_number') %}
-                  {% set display_stage_name = s.get('co_number') %}
+                  {% set display_stage_name = s.get('co_number') ~ (' · ' ~ s.get('co_stage_label') if s.get('co_stage_label') else '') %}
                 {% elif 'CO' in stage_name and ' – ' in stage_name %}
                   {# For legacy stages, extract CO number (before the dash) #}
                   {% set co_part = stage_name.split(' – ')[0].strip() %}
@@ -483,6 +483,23 @@
                     {% endif %}
                   </td>
                 </tr>
+                {% endfor %}
+                {# Payments of COs not approved yet: shown so the whole plan is visible, but they only become
+                   real (invoiceable) stages when the CO is approved #}
+                {% for co in change_orders %}
+                  {% set co_stages = co_plan_stages[loop.index0] if co_plan_stages and loop.index0 < co_plan_stages|length else [] %}
+                  {% if co is mapping and co.get('status') != 'Rejected' and co_stages and co_stages[0].planned %}
+                  {% for pst in co_stages %}
+                <tr class="co-planned-stage" title="Becomes a payment stage when {{ co.get('co_number','the CO') }} is approved">
+                  <td>{{ co.get('co_number','CO') }}{{ ' · ' ~ pst.label if co_stages|length > 1 }}</td>
+                  <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(pst.amount) }}</td>
+                  <td><span class="badge bg-light text-secondary border">Planned · {{ co.get('status') or 'Draft' }}</span></td>
+                  <td class="text-end"><span class="text-muted">-</span></td>
+                  <td><span class="text-muted">-</span></td>
+                  <td class="text-center"><span class="text-muted small">Awaiting approval</span></td>
+                </tr>
+                  {% endfor %}
+                  {% endif %}
                 {% endfor %}
               </tbody>
             </table>
@@ -878,7 +895,7 @@
   <!-- ?? Change Orders Tab ?????????????????????????????????????????????????? -->
   <div class="tab-pane fade" id="tab-change-orders">
     <div class="row g-3">
-      <div class="col-lg-8">
+      <div class="col-12">
 
         <!-- Summary bar -->
         {% if change_orders %}
@@ -921,6 +938,7 @@
                   <th>CO #</th>
                   <th>Title</th>
                   <th class="text-end">Amount</th>
+                  <th>Payment Plan</th>
                   <th>Status</th>
                   <th>Date</th>
                   {% if can_manage_projects %}<th></th>{% endif %}
@@ -929,67 +947,48 @@
               <tbody>
                 {% for co in change_orders %}
                 {% set co_idx = loop.index0 %}
+                {% set co_down = co.get('down_payment_percent', 0)|float %}
+                {% set co_inst = co.get('installment_count', 1)|int %}
+                {# Locked once any of this CO's payment stages is invoiced #}
+                {% set co_lock = namespace(billed=false, count=0) %}
+                {% for s in (project.get('payment_stages') or []) %}
+                  {% if s is mapping and ((co.get('firebase_id') and s.get('co_firebase_id') == co.get('firebase_id')) or
+                                          (not s.get('co_firebase_id') and co.get('co_number') and s.get('co_number') == co.get('co_number'))) %}
+                    {% set co_lock.count = co_lock.count + 1 %}
+                    {% if (s.get('status') or 'Pending Invoice') != 'Pending Invoice' %}{% set co_lock.billed = true %}{% endif %}
+                  {% endif %}
+                {% endfor %}
                 <tr>
-                  <td class="fw-600 text-teal" style="min-width:120px;">
-                    {% if can_manage_projects %}
-                    <input type="text" name="new_co_number" form="coAmountForm{{ co_idx }}"
-                           value="{{ co.get('co_number','') }}"
-                           class="form-control form-control-sm fw-600 mb-1 w-100"
-                           placeholder="CO #">
-                    <input type="text" name="po_wo_number" form="coAmountForm{{ co_idx }}"
-                           value="{{ co.get('po_wo_number','') }}"
-                           class="form-control form-control-sm w-100"
-                           placeholder="PO/WO #">
-                    {% else %}
+                  <td class="fw-600 text-teal" style="min-width:110px;">
                     {{ co.get('co_number','—') }}
-                    {% if co.get('po_wo_number') %}
-                    <div class="text-muted small fw-400">{{ co.get('po_wo_number') }}</div>
-                    {% endif %}
-                    {% endif %}
+                    <div class="text-muted small fw-normal">{{ co.get('po_wo_number') or 'No PO/WO' }}</div>
                   </td>
                   <td style="min-width:200px;">
-                    {% if can_manage_projects %}
-                    <input type="text" name="title" form="coAmountForm{{ co_idx }}"
-                           value="{{ co.get('title','') }}"
-                           class="form-control form-control-sm fw-500 mb-1 w-100" placeholder="Title">
-                    <input type="text" name="description" form="coAmountForm{{ co_idx }}"
-                           value="{{ co.get('description','') }}"
-                           class="form-control form-control-sm w-100" style="font-size:0.82em;"
-                           placeholder="Description (optional)">
-                    {% else %}
-                    <div class="fw-500">{{ co.get('title','—') }}</div>
+                    <div class="fw-500">{{ co.get('title') or '—' }}</div>
                     {% if co.get('description') %}
                     <div class="text-muted small">{{ co.get('description') }}</div>
                     {% endif %}
-                    {% endif %}
-                    {% if can_manage_projects %}
-                    <div class="mt-1">
-                      <span class="text-muted small co-addr-display" id="addrDisplay{{ co_idx }}">
-                        <i class="bi bi-geo-alt"></i>
-                        {{ co.get('shipping_address') or 'Add shipping address' }}
-                        <button type="button" class="btn btn-link btn-sm p-0 ms-1" style="font-size:11px;"
-                                onclick="toggleCoAddr({{ co_idx }})" title="Edit shipping address">
-                          <i class="bi bi-pencil"></i>
-                        </button>
-                      </span>
-                      <textarea name="shipping_address" form="coAmountForm{{ co_idx }}"
-                                class="form-control form-control-sm mt-1 d-none"
-                                id="addrEdit{{ co_idx }}" rows="2"
-                                placeholder="Shipping address for this CO">{{ co.get('shipping_address','') }}</textarea>
-                    </div>
-                    {% elif co.get('shipping_address') %}
+                    {% if co.get('shipping_address') %}
                     <div class="text-muted small mt-1"><i class="bi bi-geo-alt me-1"></i>{{ co.get('shipping_address') }}</div>
                     {% endif %}
                   </td>
-                  <td class="text-end fw-600">
-                    {% if can_manage_projects %}
-                    <form id="coAmountForm{{ co_idx }}" method="POST" action="{{ url_for('co_update_amount', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline-flex align-items-center justify-content-end gap-1">
-                      <span class="text-muted">{{ currency_symbol }}</span>
-                      <input type="number" name="amount" min="0" step="0.01" value="{{ '%.2f'|format(co.get('amount',0)|float) }}" class="form-control form-control-sm text-end" style="width:110px;">
-                      <input type="hidden" name="co_firebase_id" value="{{ co.get('firebase_id','') }}">
-                    </form>
-                    {% else %}
-                    {{ currency_symbol }}{{ "{:,.0f}".format(co.get('amount',0)|float) }}
+                  <td class="text-end fw-600 text-nowrap">{{ currency_symbol }}{{ "{:,.2f}".format(co.get('amount',0)|float) }}</td>
+                  <td style="min-width:170px;">
+                    <div class="d-flex align-items-center gap-1">
+                      <span class="co-plan-pill {{ 'co-plan-split' if (co_down > 0 or co_inst > 1) }}">
+                        <i class="bi {{ 'bi-calendar2-week' if (co_down > 0 or co_inst > 1) else 'bi-cash' }}"></i>
+                        {% if co_down > 0 %}{{ co_down|int }}% down{% if co_inst > 1 %} · {{ co_inst }} installments{% else %} · final{% endif %}
+                        {% elif co_inst > 1 %}{{ co_inst }} installments
+                        {% else %}Single payment{% endif %}
+                      </span>
+                      {% if co_lock.billed %}
+                      <i class="bi bi-lock-fill text-muted small" title="Plan locked: part of this CO is already invoiced. Uninvoiced payment amounts can still be edited below."></i>
+                      {% endif %}
+                    </div>
+                    {% if co_lock.count > 1 %}
+                    <div class="text-muted mt-1" style="font-size:11px;">{{ co_lock.count }} stages in Payment Plan</div>
+                    {% elif co.get('status') not in ('Approved', 'Invoiced', 'Paid') and (co_down > 0 or co_inst > 1) %}
+                    <div class="text-muted mt-1" style="font-size:11px;">Stages added on approval</div>
                     {% endif %}
                   </td>
                   <td>
@@ -1003,20 +1002,20 @@
                     <span class="badge bg-secondary">Draft</span>
                     {% endif %}
                   </td>
-                  <td>
-                    {% if can_manage_projects %}
-                    <input type="date" name="co_date" form="coAmountForm{{ co_idx }}"
-                           value="{{ co.get('created_at','')[:10] }}"
-                           class="form-control form-control-sm" style="width:130px;">
-                    {% else %}
-                    <span class="text-muted small">{{ co.get('created_at','')[:10] | format_date }}</span>
-                    {% endif %}
-                  </td>
+                  <td><span class="text-muted small text-nowrap">{{ co.get('created_at','')[:10] | format_date }}</span></td>
                   {% if can_manage_projects %}
                   <td>
                     <div class="d-flex align-items-center flex-wrap gap-1">
-                    <button type="submit" form="coAmountForm{{ co_idx }}" class="btn btn-xs btn-outline-primary" title="Save CO amount">
-                      <i class="bi bi-floppy"></i>
+                    <button type="button" class="btn btn-xs btn-outline-primary" title="Edit change order"
+                            data-action="{{ url_for('co_update_amount', project_id=project.firebase_id, co_idx=co_idx) }}"
+                            data-co='{{ {"firebase_id": co.get("firebase_id",""), "co_number": co.get("co_number",""),
+                                         "po_wo_number": co.get("po_wo_number",""), "title": co.get("title",""),
+                                         "description": co.get("description",""), "shipping_address": co.get("shipping_address",""),
+                                         "amount": co.get("amount",0)|float, "date": co.get("created_at","")[:10],
+                                         "down": co_down|int, "installments": co_inst,
+                                         "plan_locked": co_lock.billed, "amount_locked": co_lock.billed and co_lock.count > 1}|tojson }}'
+                            onclick="openEditCo(this)">
+                      <i class="bi bi-pencil"></i> Edit
                     </button>
                     {% if co.get('status') == 'Draft' %}
                     <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}">
@@ -1065,6 +1064,65 @@
                   </td>
                   {% endif %}
                 </tr>
+                {# This CO's payments — like the project's Payment Plan, one line per stage #}
+                {% set co_stages = co_plan_stages[co_idx] if co_plan_stages and co_idx < co_plan_stages|length else [] %}
+                {% if co_stages %}
+                <tr class="co-stages-row">
+                  <td colspan="{{ 7 if can_manage_projects else 6 }}">
+                    <div class="co-stages">
+                      <div class="co-stages-head">
+                        <i class="bi bi-list-check me-1"></i>{{ co.get('co_number','CO') }} payment plan
+                        <span class="text-muted fw-normal">· {{ co_stages|length }} payment{{ 's' if co_stages|length != 1 }}</span>
+                        {% if co_stages[0].planned %}
+                        <span class="text-muted fw-normal">· added to the Payment Plan when approved</span>
+                        {% elif can_manage_projects and co_stages|selectattr('editable')|list %}
+                        <span class="text-muted fw-normal">· uninvoiced amounts can be edited; invoiced ones are locked</span>
+                        {% endif %}
+                      </div>
+                      <table class="co-stages-table">
+                        {% for st in co_stages %}
+                        <tr>
+                          <td class="text-muted" style="width:28px;">{{ loop.index }}</td>
+                          <td>{{ st.label }}</td>
+                          <td class="text-end fw-semibold">
+                            {% if can_manage_projects and st.editable %}
+                            {# Not invoiced yet: amount can still be changed #}
+                            <form method="POST" action="{{ url_for('co_stage_amount', project_id=project.firebase_id, co_idx=co_idx) }}"
+                                  class="d-inline-flex align-items-center justify-content-end gap-1 m-0">
+                              <input type="hidden" name="stage_index" value="{{ st.stage_index }}">
+                              <input type="hidden" name="co_firebase_id" value="{{ co.get('firebase_id','') }}">
+                              <span class="text-muted">{{ currency_symbol }}</span>
+                              <input type="number" name="amount" min="0.01" step="0.01" value="{{ '%.2f'|format(st.amount) }}"
+                                     class="form-control form-control-sm text-end" style="width:100px;"
+                                     oninput="this.nextElementSibling.classList.remove('d-none')">
+                              <button type="submit" class="btn btn-xs btn-primary d-none" title="Save this payment">
+                                <i class="bi bi-check-lg"></i>
+                              </button>
+                            </form>
+                            {% else %}
+                            {{ currency_symbol }}{{ "{:,.2f}".format(st.amount) }}
+                            {% if not st.planned and not st.editable %}<i class="bi bi-lock-fill text-muted ms-1" style="font-size:10px;" title="Invoiced — locked"></i>{% endif %}
+                            {% endif %}
+                          </td>
+                          <td>
+                            {% if st.planned %}
+                            <span class="badge bg-light text-secondary border">Planned</span>
+                            {% else %}
+                            <span class="badge status-{{ {'Pending Invoice':'not-started','Invoiced':'invoiced','Partially Paid':'partial','Paid':'paid','Overdue':'overdue'}.get(st.status, st.status|lower|replace(' ','-')) }}">{{ st.status }}</span>
+                            {% endif %}
+                          </td>
+                          <td>
+                            {% if st.invoice_id %}
+                            <a href="{{ url_for('invoice_detail', invoice_id=st.invoice_id) }}" class="text-decoration-none">{{ st.invoice_number or 'View invoice' }}</a>
+                            {% endif %}
+                          </td>
+                        </tr>
+                        {% endfor %}
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+                {% endif %}
                 {% endfor %}
               </tbody>
               {% if co_approved_total > 0 %}
@@ -1072,7 +1130,7 @@
                 <tr class="table-light fw-bold">
                   <td colspan="2">Approved Total</td>
                   <td class="text-end text-success">{{ currency_symbol }}{{ "{:,.0f}".format(co_approved_total) }}</td>
-                  <td colspan="{{ 3 if can_manage_projects else 2 }}"></td>
+                  <td colspan="{{ 4 if can_manage_projects else 3 }}"></td>
                 </tr>
               </tfoot>
               {% endif %}
@@ -1090,10 +1148,10 @@
         </div>
 
       </div>
-      <div class="col-lg-4">
+      <div class="col-12">
         <div class="card-panel">
           <h6 class="section-heading">How It Works</h6>
-          <div class="d-flex flex-column gap-2">
+          <div class="d-flex flex-column flex-lg-row gap-2 gap-lg-4">
             <div class="d-flex gap-2 align-items-start">
               <span class="badge bg-secondary mt-1">1</span>
               <span class="small text-muted">Create a Draft CO with title, description, and amount.</span>
@@ -1104,7 +1162,7 @@
             </div>
             <div class="d-flex gap-2 align-items-start">
               <span class="badge" style="background:#DCFCE7;color:#166534;margin-top:2px;">3</span>
-              <span class="small text-muted">Approve — contract value updates automatically and a new payment stage is added for invoicing.</span>
+              <span class="small text-muted">Approve — contract value updates automatically and the CO's payment stages are added for invoicing.</span>
             </div>
           </div>
         </div>
@@ -1180,7 +1238,7 @@
 
 <!-- ?? New Change Order Modal ?????????????????????????????????????????????? -->
 <div class="modal fade" id="newCOModal" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width:960px;">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2 text-teal"></i>New Change Order</h5>
@@ -1189,6 +1247,8 @@
       <form method="POST" id="newCOForm" action="{{ url_for('co_new', project_id=project.firebase_id) }}">
         <input type="hidden" name="page" class="form-page-input" value="1">
         <div class="modal-body">
+          <div class="row g-4">
+          <div class="col-lg-7">
           <div class="row g-3 mb-3">
             <div class="col-md-5">
               <label class="form-label fw-600">CO Number <span class="text-danger">*</span></label>
@@ -1196,45 +1256,259 @@
             </div>
             <div class="col-md-4">
               <label class="form-label fw-600">Amount ($) <span class="text-danger">*</span></label>
-              <input type="number" name="amount" class="form-control" step="0.01" min="0" placeholder="0.00" required>
+              <input type="number" name="amount" id="newCoAmount" class="form-control" step="0.01" min="0" placeholder="0.00" required
+                     oninput="updateCoPlanPreview()">
             </div>
             <div class="col-md-3">
               <label class="form-label fw-600">Date</label>
               <input type="date" name="co_date" class="form-control" value="{{ today_date }}">
             </div>
           </div>
-          <div class="mb-3">
-            <label class="form-label fw-600">Title</label>
-            <input type="text" name="title" class="form-control" placeholder="e.g. Additional MEP Calculations">
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-600">Title</label>
+              <input type="text" name="title" class="form-control" placeholder="e.g. Additional MEP Calculations">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-600">PO / WO Number <span class="text-muted fw-normal">(optional)</span></label>
+              <input type="text" name="po_wo_number" class="form-control" placeholder="Enter PO or WO number" autocomplete="off">
+              <div class="text-danger small mt-1 d-none" id="newCOPoDup"><i class="bi bi-exclamation-triangle-fill me-1"></i>This PO/WO number already exists. Enter a different one.</div>
+              <div class="form-text">If entered, it must be unique.</div>
+            </div>
           </div>
-          <div class="mb-3">
-            <label class="form-label fw-600">PO / WO Number <span class="text-muted fw-normal">(optional)</span></label>
-            <input type="text" name="po_wo_number" class="form-control" placeholder="Enter PO or WO number" autocomplete="off">
-            <div class="text-danger small mt-1 d-none" id="newCOPoDup"><i class="bi bi-exclamation-triangle-fill me-1"></i>This PO/WO number already exists. Enter a different one.</div>
-            <div class="form-text">If entered, must be unique — different from the project PO/WO and all other change orders.</div>
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-600">Shipping Address</label>
+              <textarea name="shipping_address" class="form-control" rows="3"
+                        placeholder="Shipping address for this change order"></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-600">Description</label>
+              <textarea name="description" class="form-control" rows="3"
+                        placeholder="Describe the additional scope of work"></textarea>
+            </div>
           </div>
-          <div class="mb-3">
-            <label class="form-label fw-600">Shipping Address</label>
-            <textarea name="shipping_address" class="form-control" rows="2"
-                      placeholder="Shipping address for this change order"></textarea>
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-600">Description</label>
-            <textarea name="description" class="form-control" rows="2"
-                      placeholder="Describe the additional scope of work"></textarea>
-          </div>
-          <div class="mb-3">
+          <div class="mb-0">
             <label class="form-label fw-600">Notes</label>
             <input type="text" name="notes" class="form-control" placeholder="Internal notes">
           </div>
+          </div>
+          <div class="col-lg-5 d-flex flex-column gap-3">
+          <div class="co-plan-section">
+            <div class="co-plan-head"><i class="bi bi-calendar2-week me-1"></i>Payment Plan
+              <span class="text-muted fw-normal">· how the client pays this change order</span></div>
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label small fw-600 mb-1">Down Payment (%)</label>
+                <input type="number" name="co_down_payment_percent" id="newCoDownPct" class="form-control form-control-sm"
+                       value="0" min="0" max="100" step="1" oninput="updateCoPlanPreview()">
+                <div class="form-text mt-0">0 = no down payment</div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-600 mb-1">Balance Installments</label>
+                <select name="co_installment_count" id="newCoInstallments" class="form-select form-select-sm" onchange="updateCoPlanPreview()">
+                  <option value="1" selected>1 — Single payment</option>
+                  {% for n in range(2, 7) %}<option value="{{ n }}">{{ n }} installments</option>{% endfor %}
+                </select>
+              </div>
+            </div>
+            <div id="newCoPlanPreview" class="co-plan-preview" style="display:none;"></div>
+          </div>
           <div class="alert alert-info py-2 small mb-0">
             <i class="bi bi-info-circle me-1"></i>
-            CO will be created as <strong>Draft</strong>. Submit it to the client, then Approve to update the contract value.
+            CO will be created as <strong>Draft</strong>. Submit it to the client, then Approve to update the contract value
+            and add its payment stages to the Payment Plan.
+          </div>
+          </div>
           </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
           <button type="submit" class="btn btn-teal"><i class="bi bi-plus-lg me-1"></i>Create Change Order</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<style>
+  .co-plan-section { border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; background:#f8fafc; }
+  .co-plan-head { font-weight:600; font-size:13px; margin-bottom:8px; color:#0f172a; }
+  .co-plan-preview { margin-top:10px; border:1px solid #99F6E4; background:#F0FDFA; border-radius:8px; overflow:hidden; font-size:12.5px; }
+  .co-plan-preview .row-item { display:flex; justify-content:space-between; padding:5px 10px; border-top:1px solid #ccfbf1; }
+  .co-plan-preview .row-item:first-of-type { border-top:0; }
+  .co-plan-preview .cap { padding:6px 10px 2px; font-size:11px; font-weight:600; color:#0f766e; text-transform:uppercase; letter-spacing:.03em; }
+  .co-plan-preview .total { font-weight:700; background:#ccfbf1; }
+  .co-plan-pill { display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:999px; font-size:11.5px;
+                  font-weight:600; background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; white-space:nowrap; }
+  .co-plan-pill.co-plan-split { background:#f0fdfa; color:#0f766e; border-color:#99f6e4; }
+  .co-plan-select { width:auto; min-width:0; font-size:12px; padding-top:2px; padding-bottom:2px; }
+  tr.co-stages-row > td { border-top:0; padding-top:0; padding-bottom:12px; }
+  tr.co-planned-stage td { color:#94a3b8; font-style:italic; background:#f8fafc; }
+  .co-stages { margin-left:12px; border-left:3px solid #99f6e4; background:#f8fafc; border-radius:0 8px 8px 0; padding:6px 10px; }
+  .co-stages-head { font-size:12px; font-weight:600; color:#0f766e; margin-bottom:4px; }
+  .co-stages-table { width:100%; max-width:620px; font-size:12px; }
+  .co-stages-table td { padding:3px 8px; border-top:1px solid #e2e8f0; }
+  .co-stages-table tr:first-child td { border-top:0; }
+</style>
+
+<script>
+// Split a CO amount the same way the server does (_compute_payment_stages)
+function coPlanRows(amount, down, n) {
+  const rows = [];
+  let remaining = amount;
+  if (down > 0) {
+    const d = Math.round(amount * down) / 100;
+    rows.push(['Down Payment (' + Math.round(down) + '%)', d]);
+    remaining = Math.round((amount - d) * 100) / 100;
+  }
+  if (n <= 1) rows.push([down > 0 ? 'Final Payment' : 'Full Payment', remaining]);
+  else {
+    const per = Math.round(remaining / n * 100) / 100;
+    let run = 0;
+    for (let i = 0; i < n; i++) {
+      const a = i < n - 1 ? per : Math.round((remaining - run) * 100) / 100;
+      run += a;
+      rows.push(['Installment ' + (i + 1) + ' of ' + n, a]);
+    }
+  }
+  return rows;
+}
+
+function renderCoPlan(box, amount, down, n, caption) {
+  if (!amount) { box.style.display = 'none'; return; }
+  const money = v => '{{ currency_symbol }}' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const rows = coPlanRows(amount, Math.min(100, Math.max(0, down)), n);
+  box.innerHTML = '<div class="cap">' + caption + '</div>' +
+    rows.map(r => '<div class="row-item"><span>' + r[0] + '</span><span>' + money(r[1]) + '</span></div>').join('') +
+    (rows.length > 1 ? '<div class="row-item total"><span>Total</span><span>' + money(amount) + '</span></div>' : '');
+  box.style.display = '';
+}
+
+// Live preview of the stages a new change order will add once approved
+function updateCoPlanPreview() {
+  renderCoPlan(document.getElementById('newCoPlanPreview'),
+    parseFloat(document.getElementById('newCoAmount').value) || 0,
+    parseFloat(document.getElementById('newCoDownPct').value) || 0,
+    parseInt(document.getElementById('newCoInstallments').value, 10) || 1,
+    'Payment stages added when approved');
+}
+
+// Edit Change Order window, filled from the row's Edit button
+function openEditCo(btn) {
+  const co = JSON.parse(btn.dataset.co);
+  const form = document.getElementById('editCoForm');
+  form.action = btn.dataset.action;
+  form.elements['co_firebase_id'].value = co.firebase_id || '';
+  form.elements['new_co_number'].value = co.co_number || '';
+  form.elements['po_wo_number'].value = co.po_wo_number || '';
+  form.elements['co_date'].value = co.date || '';
+  form.elements['title'].value = co.title || '';
+  form.elements['description'].value = co.description || '';
+  form.elements['shipping_address'].value = co.shipping_address || '';
+  form.elements['amount'].value = Number(co.amount || 0).toFixed(2);
+  form.elements['amount'].readOnly = !!co.amount_locked;
+  form.elements['co_down_payment_percent'].value = co.down || 0;
+  form.elements['co_installment_count'].value = String(co.installments || 1);
+  // Disabled plan fields aren't sent, so the server keeps the current plan
+  form.elements['co_down_payment_percent'].disabled = !!co.plan_locked;
+  form.elements['co_installment_count'].disabled = !!co.plan_locked;
+  document.getElementById('editCoTitle').textContent = co.co_number || 'Change Order';
+  document.getElementById('editCoLockNote').style.display = co.plan_locked ? '' : 'none';
+  refreshEditCoPlan();
+  new bootstrap.Modal(document.getElementById('editCOModal')).show();
+}
+
+function refreshEditCoPlan() {
+  const form = document.getElementById('editCoForm');
+  const box = document.getElementById('editCoPlanPreview');
+  if (form.elements['co_installment_count'].disabled) { box.style.display = 'none'; return; }
+  renderCoPlan(box,
+    parseFloat(form.elements['amount'].value) || 0,
+    parseFloat(form.elements['co_down_payment_percent'].value) || 0,
+    parseInt(form.elements['co_installment_count'].value, 10) || 1,
+    'Payment stages');
+}
+</script>
+
+<!-- Edit Change Order Modal -->
+<div class="modal fade" id="editCOModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil-square me-2 text-teal"></i>Edit Change Order · <span id="editCoTitle"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="editCoForm">
+        <input type="hidden" name="co_firebase_id">
+        <div class="modal-body">
+          <div class="row g-4">
+          <div class="col-lg-7">
+          <div class="row g-3 mb-3">
+            <div class="col-md-5">
+              <label class="form-label fw-600">CO Number <span class="text-danger">*</span></label>
+              <input type="text" name="new_co_number" class="form-control" autocomplete="off" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-600">Amount ({{ currency_symbol }}) <span class="text-danger">*</span></label>
+              <input type="number" name="amount" class="form-control" step="0.01" min="0" required oninput="refreshEditCoPlan()">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-600">Date</label>
+              <input type="date" name="co_date" class="form-control">
+            </div>
+          </div>
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-600">Title</label>
+              <input type="text" name="title" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-600">PO / WO Number <span class="text-muted fw-normal">(optional)</span></label>
+              <input type="text" name="po_wo_number" class="form-control" autocomplete="off" placeholder="Enter PO or WO number">
+              <div class="form-text">If entered, it must be unique.</div>
+            </div>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-600">Shipping Address</label>
+              <textarea name="shipping_address" class="form-control" rows="3"></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-600">Description</label>
+              <textarea name="description" class="form-control" rows="3"></textarea>
+            </div>
+          </div>
+          </div>
+          <div class="col-lg-5">
+          <div class="co-plan-section h-100">
+            <div class="co-plan-head"><i class="bi bi-calendar2-week me-1"></i>Payment Plan</div>
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label small fw-600 mb-1">Down Payment (%)</label>
+                <input type="number" name="co_down_payment_percent" class="form-control form-control-sm" min="0" max="100" step="1"
+                       oninput="refreshEditCoPlan()">
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-600 mb-1">Balance Installments</label>
+                <select name="co_installment_count" class="form-select form-select-sm" onchange="refreshEditCoPlan()">
+                  <option value="1">1 — Single payment</option>
+                  {% for n in range(2, 7) %}<option value="{{ n }}">{{ n }} installments</option>{% endfor %}
+                </select>
+              </div>
+            </div>
+            <div id="editCoLockNote" class="small text-muted mt-2" style="display:none;">
+              <i class="bi bi-lock-fill me-1"></i>Part of this CO is already invoiced, so its plan is locked. Edit the remaining
+              payment amounts in the CO's payment list instead.
+            </div>
+            <div id="editCoPlanPreview" class="co-plan-preview" style="display:none;"></div>
+          </div>
+          </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-teal"><i class="bi bi-check-lg me-1"></i>Save</button>
         </div>
       </form>
     </div>
@@ -2269,14 +2543,6 @@ function submitStatusOnly() {
   const modal = bootstrap.Modal.getInstance(document.getElementById('invoicePromptModal'));
   if (modal) modal.hide();
   document.getElementById('statusForm').submit();
-}
-
-function toggleCoAddr(idx) {
-  const display = document.getElementById('addrDisplay' + idx);
-  const edit    = document.getElementById('addrEdit'    + idx);
-  display.classList.toggle('d-none');
-  edit.classList.toggle('d-none');
-  if (!edit.classList.contains('d-none')) edit.focus();
 }
 
 function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl) {

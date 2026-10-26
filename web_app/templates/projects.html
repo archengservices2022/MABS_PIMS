@@ -755,7 +755,11 @@ function openLoadModal() {
             const isBlocked = stage.blocked;
             if (isBlocked) blockedCount++;
 
-            const rowBg     = isNext ? '#f0fdf4' : '#ffffff';
+            const rowBg     = stage.co_number ? '#fffbeb' : (isNext ? '#f0fdf4' : '#ffffff');
+            // Payments of a CO with its own payment plan come through as stages too
+            const coTag     = stage.co_number
+              ? '<span style="font-size:10px;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:1px 5px;font-weight:700;margin-right:4px;color:#78350f;">CO</span>'
+              : '';
             const checkId   = `stageCheck_${proj.firebase_id}_${stage.stage_idx}`;
             const statusTxt = isBlocked ? '⚠ Prior stage not yet invoiced' : 'Ready to invoice';
             const statusClr = isBlocked ? '#b45309' : '#0f766e';
@@ -771,7 +775,7 @@ function openLoadModal() {
               </td>
               <td style="padding:8px 12px;color:#1e293b;font-size:12px;">
                 <label for="${checkId}" style="cursor:pointer;margin:0;">
-                  ${stage.stage_name || '—'}
+                  ${coTag}${stage.stage_name || '—'}
                   ${isNext ? '<span style="font-size:10px;background:#dcfce7;color:#15803d;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">Next</span>' : ''}
                 </label>
               </td>

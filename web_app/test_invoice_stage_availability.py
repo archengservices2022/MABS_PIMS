@@ -15,7 +15,8 @@ class InvoiceStageAvailabilityTests(unittest.TestCase):
     def setUpClass(cls):
         tree = ast.parse(Path(__file__).with_name('app.py').read_text(encoding='utf-8'))
         names = {'_invoice_form_stage_options', '_duplicate_invoice_stage_rows',
-                 '_invoice_stage_pairs', '_compute_project_invoice_pending', '_get_next_payment_stage'}
+                 '_invoice_stage_pairs', '_compute_project_invoice_pending', '_get_next_payment_stage',
+                 '_co_stage_matches', '_is_co_stage'}
         nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
         cls.env = {'_safe_float': lambda v: float(v or 0), 'log': Mock()}
         exec(compile(ast.Module(body=nodes, type_ignores=[]), '<availability>', 'exec'), cls.env)
