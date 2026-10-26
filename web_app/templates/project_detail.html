@@ -1004,8 +1004,8 @@
                   </td>
                   <td><span class="text-muted small text-nowrap">{{ co.get('created_at','')[:10] | format_date }}</span></td>
                   {% if can_manage_projects %}
-                  <td>
-                    <div class="d-flex align-items-center flex-wrap gap-1">
+                  <td style="white-space:nowrap;">
+                    <div class="d-flex align-items-center flex-nowrap gap-1">
                     <button type="button" class="btn btn-xs btn-outline-primary" title="Edit change order"
                             data-action="{{ url_for('co_update_amount', project_id=project.firebase_id, co_idx=co_idx) }}"
                             data-co='{{ {"firebase_id": co.get("firebase_id",""), "co_number": co.get("co_number",""),

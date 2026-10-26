@@ -5679,20 +5679,12 @@ def co_pdf(project_id, co_idx):
     story.append(ship_table)
     story.append(Spacer(1, 4*mm))
 
-    # ── Scope / description ────────────────────────────────────────────────────
-    story.append(Paragraph("<b>Scope of Work</b>", b10))
-    story.append(Spacer(1, 1*mm))
-    story.append(Paragraph(co.get("title", ""), n10))
-    if co.get("description"):
-        story.append(Spacer(1, 1*mm))
-        story.append(Paragraph(co.get("description", "").replace("\n", "<br/>"), n10))
-    story.append(Spacer(1, 4*mm))
-
     # ── Amount table ──────────────────────────────────────────────────────────
     currency_sym = ci.get("currency_symbol", "$")
     amount = _safe_float(co.get("amount", 0))
     amt_table = Table([
-        [Paragraph("<b>Description</b>", b9), Paragraph("<b>Amount</b>", ps("ra", fontName="Helvetica-Bold", fontSize=9, alignment=2))],
+        [Paragraph("<font color='white'><b>Description</b></font>", b9),
+         Paragraph("<font color='white'><b>Amount</b></font>", ps("ra", fontName="Helvetica-Bold", fontSize=9, alignment=2))],
         [Paragraph(co_po_wo if co_po_wo != "—" else co.get("title","Change Order"), n9),
          Paragraph(f"{currency_sym}{amount:,.2f}", ps("rn", fontName="Helvetica", fontSize=9, alignment=2))],
         ["", ""],
@@ -5714,6 +5706,51 @@ def co_pdf(project_id, co_idx):
     ]))
     story.append(amt_table)
     story.append(Spacer(1, 4*mm))
+
+    # ── Payment plan: the CO's real stages once approved, otherwise the plan it will add on approval ──
+    project_stages = _normalise_list(project.get("payment_stages"))
+    linked = [s for i, s in enumerate(project_stages) if _co_stage_matches(s, co, co_idx)]
+    plan_rows = [(s.get("co_stage_label") or "Full Payment", _safe_float(s.get("amount", 0)),
+                  (s.get("status") or "Pending Invoice") if _stage_is_billed(s) else "Pending Invoice",
+                  s.get("invoice_number", "") if _stage_is_billed(s) else "") for s in linked]
+    if not plan_rows:
+        plan_rows = [(s.get("co_stage_label") or "Full Payment", _safe_float(s.get("amount", 0)), "Planned", "")
+                     for s in _co_payment_stages(co, co_idx)]
+    if plan_rows:
+        down = _safe_float(co.get("down_payment_percent", 0))
+        inst = int(_safe_float(co.get("installment_count", 1)) or 1)
+        plan_txt = (f"{down:g}% down payment, then {inst} installment{'s' if inst != 1 else ''}"
+                    if down > 0 else (f"{inst} installments" if inst > 1 else "Single payment"))
+        story.append(Paragraph(f"<b>Payment Plan</b> <font color='#64748B' size=9>&nbsp;·&nbsp; {plan_txt}</font>", b10))
+        story.append(Spacer(1, 1.5*mm))
+        rn = ps("prn", fontName="Helvetica", fontSize=9, leading=11, alignment=2)
+        rb = ps("prb", fontName="Helvetica-Bold", fontSize=9, leading=11, alignment=2)
+        ctr = ps("pc", fontName="Helvetica", fontSize=9, leading=11, alignment=1)
+        data = [[Paragraph("<font color='white'><b>#</b></font>", b9), Paragraph("<font color='white'><b>Payment</b></font>", b9),
+                 Paragraph("<font color='white'><b>Status</b></font>", b9), Paragraph("<font color='white'><b>Invoice</b></font>", b9),
+                 Paragraph("<font color='white'><b>Amount</b></font>", rb)]]
+        for n_, (label, amt_, status_, inv_no) in enumerate(plan_rows, 1):
+            data.append([Paragraph(str(n_), n9), Paragraph(label, n9), Paragraph(status_, n9),
+                         Paragraph(inv_no or "—", n9), Paragraph(f"{currency_sym}{amt_:,.2f}", rn)])
+        data.append([Paragraph("", n9), Paragraph("<b>Total</b>", b9), Paragraph("", n9), Paragraph("", n9),
+                     Paragraph(f"<b>{currency_sym}{sum(r[1] for r in plan_rows):,.2f}</b>", rb)])
+        plan_tbl = Table(data, colWidths=[W * 0.07, W * 0.38, W * 0.2, W * 0.17, W * 0.18], repeatRows=1)
+        plan_tbl.setStyle(TableStyle([
+            ("BACKGROUND",   (0,0), (-1,0), colors.HexColor("#0F172A")),
+            ("TEXTCOLOR",    (0,0), (-1,0), colors.white),
+            ("ROWBACKGROUNDS", (0,1), (-1,-2), [colors.white, colors.HexColor("#F8FAFC")]),
+            ("LINEBELOW",    (0,1), (-1,-2), 0.5, colors.HexColor("#E2E8F0")),
+            ("LINEABOVE",    (0,-1), (-1,-1), 0.75, colors.black),
+            ("BACKGROUND",   (0,-1), (-1,-1), colors.HexColor("#F0FDF4")),
+            ("BOX",          (0,0), (-1,-1), 0.75, colors.black),
+            ("LEFTPADDING",  (0,0), (-1,-1), 5),
+            ("RIGHTPADDING", (0,0), (-1,-1), 5),
+            ("TOPPADDING",   (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING",(0,0), (-1,-1), 4),
+            ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
+        ]))
+        story.append(plan_tbl)
+        story.append(Spacer(1, 4*mm))
 
     # ── Notes ─────────────────────────────────────────────────────────────────
     if co.get("notes"):
