@@ -5072,6 +5072,8 @@ function viewReceipt(expId) {
   var bsActiveMonths = [1,2,3,4,5,6,7,8,9,10,11,12];
   var bsRevData   = {{ annual_revenue | tojson }};
   var bsExpData   = {{ annual_expenses | tojson }};
+  // Same four components the Expenses row of the table adds up per month
+  var bsTblExpData = [{{ annual_payroll | tojson }}, {{ annual_direct_commissions | tojson }}, {{ annual_adjustments | tojson }}, {{ annual_regular_expenses | tojson }}];
   var bsSalData   = {{ monthly_salary_details | safe }};
   var bsFmt = function(n){ return CURRENCY_SYMBOL + parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
   var bsMonthNames = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -5123,10 +5125,11 @@ function viewReceipt(expId) {
       });
     }
     // Recompute totals
-    var rev = 0, exp = 0, sal = 0;
+    var rev = 0, exp = 0, sal = 0, tblExp = 0;
     bsActiveMonths.forEach(function(m) {
       rev += parseFloat(bsRevData[m] || bsRevData[String(m)] || 0);
       exp += parseFloat(bsExpData[m] || bsExpData[String(m)] || 0);
+      bsTblExpData.forEach(function(d){ tblExp += parseFloat(d[m] || d[String(m)] || 0); });
       var salArr = bsSalData[String(m)] || [];
       sal += salArr.reduce(function(s,e){ return s + parseFloat(e.amount||0); }, 0);
     });
@@ -5142,10 +5145,10 @@ function viewReceipt(expId) {
     }
     // Update table total column
     if ((el = document.getElementById('bsRevTotal'))) el.textContent = bsFmt(rev);
-    if ((el = document.getElementById('bsExpTotal'))) el.textContent = bsFmt(exp);
+    if ((el = document.getElementById('bsExpTotal'))) el.textContent = bsFmt(tblExp);
     if ((el = document.getElementById('bsNetTotal'))) {
-      el.textContent = bsFmt(net);
-      el.style.color = net >= 0 ? '#16a34a' : '#dc2626';
+      el.textContent = bsFmt(rev - tblExp);
+      el.style.color = (rev - tblExp) >= 0 ? '#16a34a' : '#dc2626';
     }
   }
   </script>
