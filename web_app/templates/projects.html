@@ -733,12 +733,7 @@ function updateLoadButton() {
   const btn = document.getElementById('loadBtn');
   if (window.selectedProjects.length > 0) {
     btn.style.display = 'block';
-    // Ticked projects that this filter/page is not showing are still selected
-    const shown = new Set();
-    document.querySelectorAll('#projectsTableBody .proj-select').forEach(cb => { if (cb.offsetParent !== null) shown.add(cb.dataset.id); });
-    const hidden = window.selectedProjects.filter(id => !shown.has(id)).length;
-    btn.innerHTML = `<i class="bi bi-upload me-1"></i>Load ${window.selectedProjects.length} Project(s) to Invoice` +
-                    (hidden ? ` <small>(${hidden} not shown by filter/page)</small>` : '');
+    btn.innerHTML = `<i class="bi bi-upload me-1"></i>Load ${window.selectedProjects.length} Project(s) to Invoice`;
     document.getElementById('clearSelBtn').style.display = '';
   } else {
     btn.style.display = 'none';
