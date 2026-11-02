@@ -192,7 +192,12 @@
           </select>
           {% endif %}
         </div>
-        <button type="button" class="btn btn-sm btn-primary" id="loadBtn" style="display:none;white-space:nowrap;padding:0.5rem 1rem;" onclick="openLoadModal()"></button>
+        <div class="d-flex align-items-center gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="clearSelBtn" style="display:none;white-space:nowrap;" onclick="clearProjectSelection()">
+            <i class="bi bi-x-lg me-1"></i>Clear selection
+          </button>
+          <button type="button" class="btn btn-sm btn-primary" id="loadBtn" style="display:none;white-space:nowrap;padding:0.5rem 1rem;" onclick="openLoadModal()"></button>
+        </div>
       </div>
       <div class="d-flex gap-2 align-items-center flex-wrap">
         <span class="text-muted small" style="min-width:75px;">Start date:</span>
@@ -726,10 +731,23 @@ function updateLoadButton() {
   const btn = document.getElementById('loadBtn');
   if (window.selectedProjects.length > 0) {
     btn.style.display = 'block';
-    btn.innerHTML = `<i class="bi bi-upload me-1"></i>Load ${window.selectedProjects.length} Project(s) to Invoice`;
+    // Ticked projects that this filter/page is not showing are still selected
+    const shown = new Set();
+    document.querySelectorAll('#projectsTableBody .proj-select').forEach(cb => { if (cb.offsetParent !== null) shown.add(cb.dataset.id); });
+    const hidden = window.selectedProjects.filter(id => !shown.has(id)).length;
+    btn.innerHTML = `<i class="bi bi-upload me-1"></i>Load ${window.selectedProjects.length} Project(s) to Invoice` +
+                    (hidden ? ` <small>(${hidden} not shown by filter/page)</small>` : '');
+    document.getElementById('clearSelBtn').style.display = '';
   } else {
     btn.style.display = 'none';
+    document.getElementById('clearSelBtn').style.display = 'none';
   }
+}
+
+function clearProjectSelection() {
+  window.selectedProjects = [];
+  document.querySelectorAll('.project-row.table-active').forEach(r => r.classList.remove('table-active'));
+  updateLoadButton();
 }
 
 function getCurrentPage() {
