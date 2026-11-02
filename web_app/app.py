@@ -19861,7 +19861,9 @@ def _compute_balance_sheet_data(start, end) -> dict:
     # Build salary data
     if isinstance(salaries_data, dict):
         for salary_id, sal_data in salaries_data.items():
-            if isinstance(sal_data, dict) and bucket(sal_data.get("date")) is not None:
+            # Only paid salaries count (same rule as the Balance Sheet page); Pending ones are left out
+            if (isinstance(sal_data, dict) and sal_data.get("salary_status", "Pending") == "Paid"
+                    and bucket(sal_data.get("date")) is not None):
                 name = sal_data.get("name") or sal_data.get("employee_name", "—")
                 amt = _safe_float(sal_data.get("amount", 0))
                 region = sal_data.get("region", "").lower()
