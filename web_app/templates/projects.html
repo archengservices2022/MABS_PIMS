@@ -693,6 +693,8 @@ function toggleProjectCheck(cb) {
 
 // Header box: tick every project visible on this page (respects search, filters and paging)
 function toggleAllProjects(on) {
+  // Unticking the header box unselects everything, including projects a filter is hiding
+  if (!on) { clearProjectSelection(); return; }
   document.querySelectorAll('#projectsTableBody .project-row').forEach(row => {
     if (row.offsetParent === null) return;  // hidden by a filter or another page
     const id = row.dataset.projectId;
