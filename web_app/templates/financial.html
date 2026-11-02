@@ -4384,15 +4384,106 @@ function viewReceipt(expId) {
       <p class="text-muted small mb-0">Revenue, expenses &amp; salaries for <strong>{{ selected_year }}</strong> &nbsp;—&nbsp; <span id="bsPeriodLabel" style="color:#0D9488;font-weight:600;">Full Year</span></p>
     </div>
     <div class="dropdown">
-      <button class="btn btn-sm btn-outline-success dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download me-1"></i>Export</button>
-      <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-        <li><h6 class="dropdown-header" style="font-size:10px;">EXPORT OPTIONS</h6></li>
-        <li><a class="dropdown-item" href="{{ url_for('export_balance_sheet', fmt='pdf') }}?year={{ selected_year }}"><i class="bi bi-file-earmark-pdf text-danger me-2"></i>PDF Report</a></li>
-        <li><a class="dropdown-item" href="{{ url_for('export_balance_sheet', fmt='excel') }}?year={{ selected_year }}"><i class="bi bi-file-earmark-excel text-success me-2"></i>Excel (.xlsx)</a></li>
-        <li><hr class="dropdown-divider my-1"></li>
-        <li><a class="dropdown-item" href="{{ url_for('export_balance_sheet', fmt='csv') }}?year={{ selected_year }}"><i class="bi bi-filetype-csv me-2" style="color:#0F766E;"></i>CSV (monthly rows)</a></li>
-      </ul>
+      <button class="btn btn-sm btn-outline-success dropdown-toggle" data-bs-toggle="dropdown" data-bs-auto-close="outside">
+        <i class="bi bi-download me-1"></i>Report Export
+      </button>
+      <div class="dropdown-menu dropdown-menu-end shadow p-3" style="width:330px;">
+        <div class="fw-bold mb-1">Report period</div>
+        <div class="text-muted mb-2" style="font-size:13px;">Any period, e.g. several years. Leave both dates empty for the whole of {{ selected_year }}.</div>
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <label class="form-label mb-1" for="bsExportFrom">From</label>
+            <input type="date" id="bsExportFrom" class="form-control form-control-sm">
+          </div>
+          <div class="col-6">
+            <label class="form-label mb-1" for="bsExportTo">To</label>
+            <input type="date" id="bsExportTo" class="form-control form-control-sm">
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-1 mb-1" id="bsRangeChips">
+          <button type="button" class="btn btn-xs btn-outline-secondary" data-range="month" onclick="setBsExportRange('month')">This month</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary" data-range="last_month" onclick="setBsExportRange('last_month')">Last month</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary" data-range="quarter" onclick="setBsExportRange('quarter')">This quarter</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary" data-range="last_quarter" onclick="setBsExportRange('last_quarter')">Last quarter</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary" data-range="ytd" onclick="setBsExportRange('ytd')">Jan 1 – today</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary" data-range="last_year" onclick="setBsExportRange('last_year')">Last year</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary" data-range="clear" onclick="setBsExportRange('clear')">Whole {{ selected_year }}</button>
+        </div>
+        <div class="text-muted mb-2" id="bsRangeNote" style="font-size:12.5px;display:none;"></div>
+        <div class="small text-danger mb-2" id="bsExportError" style="display:none;"></div>
+        <div class="fw-bold mb-1">Download as</div>
+        <div class="d-grid gap-1">
+          <button type="button" class="btn btn-sm btn-light text-start" onclick="bsExport('pdf')"><i class="bi bi-file-earmark-pdf text-danger me-2"></i>PDF Report</button>
+          <button type="button" class="btn btn-sm btn-light text-start" onclick="bsExport('excel')"><i class="bi bi-file-earmark-excel text-success me-2"></i>Excel (.xlsx)</button>
+          <button type="button" class="btn btn-sm btn-light text-start" onclick="bsExport('csv')"><i class="bi bi-filetype-csv me-2" style="color:#0F766E;"></i>CSV</button>
+        </div>
+      </div>
     </div>
+    <script>
+    // Balance Sheet "Report Export": download for the picked From/To period, or the whole selected year
+    const BS_EXPORT_URLS = {
+      pdf: "{{ url_for('export_balance_sheet', fmt='pdf') }}",
+      excel: "{{ url_for('export_balance_sheet', fmt='excel') }}",
+      csv: "{{ url_for('export_balance_sheet', fmt='csv') }}"
+    };
+    function bsIso(d) {
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    const BS_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    // Shortcut ranges from today's date: [from, to, what it covers]
+    function bsRanges() {
+      const now = new Date(), y = now.getFullYear(), m = now.getMonth(), q = Math.floor(m / 3);
+      const lq = q === 0 ? 3 : q - 1, lqy = q === 0 ? y - 1 : y;
+      return {
+        month: [new Date(y, m, 1), now, BS_MONTHS[m] + ' ' + y + ' so far'],
+        last_month: [new Date(y, m - 1, 1), new Date(y, m, 0), BS_MONTHS[(m + 11) % 12] + ' ' + (m === 0 ? y - 1 : y)],
+        quarter: [new Date(y, q * 3, 1), now, 'Q' + (q + 1) + ' ' + y + ' (' + BS_MONTHS[q * 3] + '–' + BS_MONTHS[q * 3 + 2] + ') so far'],
+        last_quarter: [new Date(lqy, lq * 3, 1), new Date(lqy, lq * 3 + 3, 0),
+                       'Q' + (lq + 1) + ' ' + lqy + ' (' + BS_MONTHS[lq * 3] + '–' + BS_MONTHS[lq * 3 + 2] + ')'],
+        ytd: [new Date(y, 0, 1), now, 'Jan 1 ' + y + ' to today'],
+        last_year: [new Date(y - 1, 0, 1), new Date(y - 1, 11, 31), 'the whole of ' + (y - 1)],
+      };
+    }
+    function setBsExportRange(kind) {
+      const from = document.getElementById('bsExportFrom'), to = document.getElementById('bsExportTo');
+      const note = document.getElementById('bsRangeNote'), r = bsRanges()[kind];
+      if (r) { from.value = bsIso(r[0]); to.value = bsIso(r[1]); }
+      else { from.value = ''; to.value = ''; }
+      let text = r ? 'Covers ' + r[2] + '.' : 'Covers the whole of {{ selected_year }} (the year picked on this page).';
+      if (kind === 'quarter' && new Date().getMonth() % 3 === 0) {
+        // First month of a quarter: nothing else in the quarter has happened yet
+        text += ' This is the first month of the quarter, so for now it shows the same as This month.';
+      }
+      note.textContent = text; note.style.display = '';
+      document.querySelectorAll('#bsRangeChips [data-range]').forEach(b => {
+        b.classList.toggle('btn-success', b.dataset.range === kind);
+        b.classList.toggle('btn-outline-secondary', b.dataset.range !== kind);
+      });
+      document.getElementById('bsExportError').style.display = 'none';
+    }
+    // Typing dates by hand: no shortcut is selected any more
+    ['bsExportFrom', 'bsExportTo'].forEach(id => document.getElementById(id).addEventListener('input', () => {
+      document.querySelectorAll('#bsRangeChips [data-range]').forEach(b => {
+        b.classList.remove('btn-success'); b.classList.add('btn-outline-secondary');
+      });
+      document.getElementById('bsRangeNote').style.display = 'none';
+    }));
+    function bsExport(fmt) {
+      const from = document.getElementById('bsExportFrom').value, to = document.getElementById('bsExportTo').value;
+      const err = document.getElementById('bsExportError');
+      const fail = msg => { err.textContent = msg; err.style.display = ''; };
+      if ((from && !to) || (!from && to)) return fail('Pick both a From and a To date, or leave both empty.');
+      if (from && to) {
+        if (to < from) return fail('The To date is before the From date.');
+        const [fy, fm] = from.split('-').map(Number), [ty, tm] = to.split('-').map(Number);
+        if ((ty - fy) * 12 + tm - fm + 1 > 144) return fail('A report can cover at most 12 years.');
+      }
+      err.style.display = 'none';
+      const params = new URLSearchParams({ year: '{{ selected_year }}' });
+      if (from && to) { params.set('date_from', from); params.set('date_to', to); }
+      window.location.href = BS_EXPORT_URLS[fmt] + '?' + params.toString();
+    }
+    </script>
   </div>
 
   <!-- Filter Bar -->
