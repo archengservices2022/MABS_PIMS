@@ -234,6 +234,10 @@
         <table class="table table-hover mb-0 align-middle" id="projectsTable">
           <thead>
             <tr>
+              <th style="width:40px;" class="text-center">
+                <input type="checkbox" class="form-check-input proj-select-all" id="projSelectAll"
+                       title="Select all projects on this page" onclick="toggleAllProjects(this.checked)">
+              </th>
               <th>Project #</th>
               <th>PO/WO #</th>
               <th>Client</th>
@@ -254,6 +258,10 @@
                 onmouseover="continueDragSelect(event, '{{ p.firebase_id }}')"
                 onclick="selectProject(event, '{{ p.firebase_id }}')"
                 style="cursor:pointer;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;">
+              <td class="text-center" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()">
+                <input type="checkbox" class="form-check-input proj-select" data-id="{{ p.firebase_id }}"
+                       title="Select to load into an invoice" onchange="toggleProjectCheck(this)">
+              </td>
               <td>
                 <a href="javascript:void(0);" onclick="event.stopPropagation(); location.href=getProjectDetailUrl('{{ p.firebase_id }}');" class="text-teal fw-bold" style="text-decoration:none;">{{ p.get('project_number','—') }}</a>
                 {% if p.get('_has_co') %}
@@ -304,7 +312,7 @@
             </tr>
             {% else %}
             <tr>
-              <td colspan="9" class="text-center text-muted py-5">
+              <td colspan="10" class="text-center text-muted py-5">
                 <i class="bi bi-kanban fs-2 d-block mb-2"></i>
                 No projects found.
               </td>
@@ -314,7 +322,7 @@
           {% if projects %}
           <tfoot>
             <tr class="fw-bold table-light border-top" style="border-top:2px solid #dee2e6!important;">
-              <td colspan="5" class="text-end text-muted small pe-3">Totals ({{ projects|length }} project{{ 's' if projects|length != 1 }})</td>
+              <td colspan="6" class="text-end text-muted small pe-3">Totals ({{ projects|length }} project{{ 's' if projects|length != 1 }})</td>
               <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(p_total_cv) }}</td>
               <td class="text-end text-success">{{ currency_symbol }}{{ "{:,.2f}".format(p_total_paid) }}</td>
               <td class="text-end text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(p_outstanding) }}</td>
@@ -661,7 +669,52 @@ function selectProject(event, projectId) {
   updateLoadButton();
 }
 
+// Tick boxes: same selection as clicking rows, but one tick per project (no Ctrl needed)
+function toggleProjectCheck(cb) {
+  const id = cb.dataset.id;
+  const row = cb.closest('.project-row');
+  if (cb.checked) {
+    if (!window.selectedProjects.includes(id)) window.selectedProjects.push(id);
+  } else {
+    window.selectedProjects = window.selectedProjects.filter(x => x !== id);
+  }
+  row.classList.toggle('table-active', cb.checked);
+  lastSelectedRow = row;
+  updateLoadButton();
+}
+
+// Header box: tick every project visible on this page (respects search, filters and paging)
+function toggleAllProjects(on) {
+  document.querySelectorAll('#projectsTableBody .project-row').forEach(row => {
+    if (row.offsetParent === null) return;  // hidden by a filter or another page
+    const id = row.dataset.projectId;
+    row.classList.toggle('table-active', on);
+    if (on && !window.selectedProjects.includes(id)) window.selectedProjects.push(id);
+    if (!on) window.selectedProjects = window.selectedProjects.filter(x => x !== id);
+  });
+  updateLoadButton();
+}
+
+// Paging or searching changes which rows are visible: refresh the header box
+document.addEventListener('click', e => { if (e.target.closest('[onclick*="_pagerGo"]')) setTimeout(syncProjectChecks, 0); });
+document.addEventListener('input', e => { if (e.target.closest('#projectsTable, .card-panel, form')) setTimeout(syncProjectChecks, 50); });
+
+function syncProjectChecks() {
+  const visible = [];
+  document.querySelectorAll('#projectsTableBody .proj-select').forEach(cb => {
+    cb.checked = window.selectedProjects.includes(cb.dataset.id);
+    if (cb.offsetParent !== null) visible.push(cb);
+  });
+  const all = document.getElementById('projSelectAll');
+  if (all) {
+    const ticked = visible.filter(cb => cb.checked).length;
+    all.checked = visible.length > 0 && ticked === visible.length;
+    all.indeterminate = ticked > 0 && ticked < visible.length;
+  }
+}
+
 function updateLoadButton() {
+  syncProjectChecks();
   const btn = document.getElementById('loadBtn');
   if (window.selectedProjects.length > 0) {
     btn.style.display = 'block';
