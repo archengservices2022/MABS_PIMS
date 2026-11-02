@@ -574,7 +574,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Shift+Click and Shift+Drag multi-select
 let lastSelectedRow = null;
-window.selectedProjects = [];
+// Filters reload the page, so the ticked projects are kept in sessionStorage and restored here
+const SEL_KEY = 'projectsSelectedForInvoice';
+try { window.selectedProjects = JSON.parse(sessionStorage.getItem(SEL_KEY) || '[]') || []; }
+catch (e) { window.selectedProjects = []; }
 let dragStartRow = null;
 let isDragging = false;
 
@@ -703,6 +706,7 @@ function syncProjectChecks() {
   const visible = [];
   document.querySelectorAll('#projectsTableBody .proj-select').forEach(cb => {
     cb.checked = window.selectedProjects.includes(cb.dataset.id);
+    cb.closest('.project-row').classList.toggle('table-active', cb.checked);
     if (cb.offsetParent !== null) visible.push(cb);
   });
   const all = document.getElementById('projSelectAll');
@@ -713,7 +717,11 @@ function syncProjectChecks() {
   }
 }
 
+// After a filter reload: show the restored selection and the Load button
+document.addEventListener('DOMContentLoaded', () => setTimeout(updateLoadButton, 0));
+
 function updateLoadButton() {
+  try { sessionStorage.setItem(SEL_KEY, JSON.stringify(window.selectedProjects)); } catch (e) {}
   syncProjectChecks();
   const btn = document.getElementById('loadBtn');
   if (window.selectedProjects.length > 0) {
@@ -946,6 +954,7 @@ function loadToInvoice() {
   }
 
   params.append('projects', projectsToLoad.join(','));
+  try { sessionStorage.removeItem(SEL_KEY); } catch (e) {}
   window.location.href = `{{ url_for('invoice_new') }}?${params.toString()}`;
 }
 
