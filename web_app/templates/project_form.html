@@ -1337,14 +1337,10 @@ function initPaymentStagesData() {
       dpInput.value = originalDownPct;
     }
 
-    // Also update stage name with correct percentage if this is a down payment stage
-    if (originalDownPct > 0) {
+    // Refresh the percentage in the name only when the first stored stage really is a down
+    // payment; a project whose first stage is "Final/Full Payment" must keep that name.
+    if (originalDownPct > 0 && /down payment/i.test(stageAmountsData[0].name)) {
       stageAmountsData[0].name = `Down Payment (${originalDownPct}%)`;
-      console.log('Updated stage name to:', stageAmountsData[0].name);
-    }
-
-    // Update the DOM display of the first payment stage name
-    if (originalDownPct > 0) {
       const firstStageNameEl = document.querySelector('.payment-stage:first-child .fw-600');
       if (firstStageNameEl) {
         firstStageNameEl.textContent = `Down Payment (${originalDownPct}%)`;

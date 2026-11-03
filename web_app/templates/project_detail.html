@@ -457,7 +457,7 @@
                   </td>
                   <td><span class="badge status-{{ status_class.get(st, st|lower|replace(' ','-')) }}">{{ st }}</span></td>
                   <td class="text-end">{% set paid_amount = s.get('amount_paid', 0)|float %}{% if paid_amount > 0 %}{{ currency_symbol }}{{ "{:,.2f}".format(paid_amount) }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
-                  <td>{% if inv_id %}<a href="{{ url_for('invoice_detail', invoice_id=inv_id) }}" class="text-decoration-none" title="View invoice">{{ inv_num or inv_data.get('number') or '' }}</a>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                  <td>{% if inv_id and st != 'Pending Invoice' %}<a href="{{ url_for('invoice_detail', invoice_id=inv_id) }}" class="text-decoration-none" title="View invoice">{{ inv_num or inv_data.get('number') or '' }}</a>{% else %}<span class="text-muted">-</span>{% endif %}</td>
                   <td class="text-center">
                     {% if st == 'Pending Invoice' %}
                     <button type="button" class="btn btn-xs btn-outline-teal" onclick="quickInvoiceStage({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ project.firebase_id }}')"
@@ -2298,7 +2298,10 @@ function updateInvoicedStage() {
   .catch(e => alert('? Error: ' + e.message));
 }
 
+let _quickInvoiceBusy = false;
 function quickInvoiceStage(idx, stageName, amount, projectId) {
+  if (_quickInvoiceBusy) return;  // ignore double-clicks while the first request is running
+  _quickInvoiceBusy = true;
   fetch(`/api/projects/${projectId}/stage/${idx}/invoice`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2312,10 +2315,11 @@ function quickInvoiceStage(idx, stageName, amount, projectId) {
       console.log('[quickInvoiceStage] Invoice created:', data.invoice_id, 'Redirecting to invoice detail...');
       window.location.href = `/invoicing/${data.invoice_id}`;
     } else {
+      _quickInvoiceBusy = false;
       alert('? Error: ' + (data.error || 'Could not create invoice'));
     }
   })
-  .catch(e => alert('? Error: ' + e.message));
+  .catch(e => { _quickInvoiceBusy = false; alert('? Error: ' + e.message); });
 }
 
 // ?? Permission Modal Handler ????????????????????????????????????????????

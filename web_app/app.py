@@ -351,6 +351,32 @@ def _stage_is_billed(stage: dict) -> bool:
     return isinstance(stage, dict) and stage.get("status", "Pending Invoice") != "Pending Invoice"
 
 
+def _rebalance_unbilled_stages(stages: list, base_cv: float) -> list:
+    """Make the base stages add up to base_cv by changing only the unbilled ones.
+
+    Billed base stages and CO stages are left exactly as they are; with no unbilled base stage
+    left the list is returned unchanged. The unbilled stages keep their relative proportions
+    (equal split if they were all zero) and the last one absorbs the rounding remainder."""
+    base = [s for s in stages if isinstance(s, dict) and not _is_co_stage(s)]
+    open_stages = [s for s in base if not _stage_is_billed(s)]
+    if not open_stages:
+        return stages
+    billed_total = sum(_safe_float(s.get("amount", 0)) for s in base if _stage_is_billed(s))
+    target = max(0.0, round(base_cv - billed_total, 2))
+    old_total = sum(_safe_float(s.get("amount", 0)) for s in open_stages)
+    running = 0.0
+    for i, s in enumerate(open_stages):
+        if i == len(open_stages) - 1:
+            amt = round(target - running, 2)
+        elif old_total > 0:
+            amt = round(target * _safe_float(s.get("amount", 0)) / old_total, 2)
+        else:
+            amt = round(target / len(open_stages), 2)
+        s["amount"] = amt
+        running += amt
+    return stages
+
+
 def _sync_co_amounts_from_stages(stages: list, cos: list) -> None:
     """Set each change order's amount to the total of its payment stages (a CO with a payment plan has several)."""
     for idx, co in enumerate(cos):
@@ -5809,6 +5835,22 @@ def project_edit(project_id):
         updated["installment_mode"]           = mode
         updated["custom_installment_amounts"] = custom_amounts or []
 
+        # Once any base stage is billed the plan's structure is frozen: the stages already exist
+        # (and one is linked to an invoice), so editing must never rebuild them from the
+        # down-payment % / installment fields. A rebuild keyed by position would hand the
+        # invoice link of the Down Payment to whatever stage came out first (e.g. a single
+        # full-amount "Final Payment"). Only the amounts of unbilled stages may change.
+        plan_locked = any(_stage_is_billed(s) for s in (data.get("payment_stages") or [])
+                          if isinstance(s, dict) and not _is_co_stage(s))
+        if plan_locked:
+            down_pct = _safe_float(data.get("down_payment_percent", 0))
+            installments = max(1, int(_safe_float(data.get("installment_count", 1)) or 1))
+            updated["down_payment_percent"]       = down_pct
+            updated["installment_count"]          = installments
+            updated["installment_mode"]           = data.get("installment_mode", "equal")
+            updated["custom_installment_amounts"] = data.get("custom_installment_amounts", [])
+            custom_amounts = updated["custom_installment_amounts"] or None
+
         # Handle updated stage amounts from contract value auto-adjustment
         updated_stage_amounts_json = request.form.get("updated_stage_amounts", "")
         amounts_updated = False
@@ -5845,7 +5887,18 @@ def project_edit(project_id):
                 try:
                     import json
                     custom_stage_amounts = json.loads(custom_stage_amounts_json)
-                    if custom_stage_amounts:  # Only process if list is not empty
+                    if custom_stage_amounts and plan_locked:
+                        # Frozen plan: apply typed amounts to unbilled base stages by position only
+                        existing_stages = data.get("payment_stages") or []
+                        base_idx = [i for i, s in enumerate(existing_stages)
+                                    if isinstance(s, dict) and not _is_co_stage(s)]
+                        for pos, amount_data in enumerate(custom_stage_amounts):
+                            if pos < len(base_idx) and isinstance(amount_data, dict) \
+                                    and not _stage_is_billed(existing_stages[base_idx[pos]]):
+                                existing_stages[base_idx[pos]]["amount"] = _safe_float(amount_data.get("amount", 0))
+                        updated["payment_stages"] = existing_stages
+                        amounts_updated = True
+                    elif custom_stage_amounts:  # Only process if list is not empty
                         existing_stages = data.get("payment_stages") or []
                         # Isolate CO stages — the frontend never sends these, so we must preserve them manually
                         co_stages = [s for s in existing_stages if _is_co_stage(s)]
@@ -5903,6 +5956,12 @@ def project_edit(project_id):
             elif existing_stages and not payment_plan_changed and not contract_value_changed:
                 # Payment plan structure and contract value unchanged — preserve all stages as-is
                 updated["payment_stages"] = existing_stages
+            elif plan_locked:
+                # Contract value changed on a billed plan: keep every stage (billed ones untouched)
+                # and spread the difference over the unbilled base stages only.
+                co_total = sum(_safe_float(s.get("amount", 0)) for s in existing_stages if _is_co_stage(s))
+                base_cv  = max(0.0, _safe_float(updated["contract_value"]) - co_total)
+                updated["payment_stages"] = _rebalance_unbilled_stages(existing_stages, base_cv)
             else:
                 # Recalculate base stages only; separate out and re-append any CO stages so they
                 # are never wiped when the user edits installment count or down-payment %
@@ -8430,14 +8489,21 @@ def _find_payment_index_by_ref(payment_list, payment_ref):
 def invoice_detail(invoice_id):
     data = fb_get(f"/invoices/{invoice_id}")
     if not data:
-        abort(404)
+        # Straight after an invoice is created the read can come back empty (a cached
+        # table that predates the write); confirm against Firebase before giving a 404.
+        data = fb_get_fresh(f"/invoices/{invoice_id}")
+    if not data:
+        # Deleted (or never saved) invoice, e.g. an old bookmark/link: send the user to the list
+        # with a message instead of a bare 404 page.
+        flash("That invoice no longer exists. It may have been deleted.", "warning")
+        return redirect(url_for("invoicing"))
     data["firebase_id"] = invoice_id
 
     # Repair payment_log if needed (add missing stage_index values)
+    payment_log_before = _fb_fast_copy(data.get("payment_log", []))
     data = _repair_payment_log_stage_index(data)
 
     # Save repaired data back to Firebase if it was modified
-    payment_log_before = fb_get(f"/invoices/{invoice_id}").get("payment_log", []) if fb_get(f"/invoices/{invoice_id}") else []
     if data.get("payment_log") != payment_log_before:
         log.info(f"[REPAIR_PAYMENT_LOG] Saving repaired payment_log for invoice {invoice_id}")
         fb_update(f"/invoices/{invoice_id}", {"payment_log": data.get("payment_log", [])})
@@ -8461,8 +8527,8 @@ def invoice_detail(invoice_id):
     if not isinstance(payment_log, list):
         payment_log = []
 
+    raw_proj = fb_get("/projects") or {}  # read once; reused below (each read can refetch the whole table)
     if proj_num or all_proj_nums:
-        raw_proj = fb_get("/projects") or {}
         for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
             if not isinstance(pdata, dict):
                 continue
@@ -8480,7 +8546,6 @@ def invoice_detail(invoice_id):
 
     # Build payment history with one row per stage/line_item
     # This ensures the display matches the Invoice Details table order
-    raw_proj = fb_get("/projects") or {}
     enriched_payment_log = []
 
     # Iterate through payment_log directly - this is the source of truth for actual payments

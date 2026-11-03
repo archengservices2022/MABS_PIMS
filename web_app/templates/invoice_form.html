@@ -1130,5 +1130,21 @@ function appendStageRow(projectNumber, info) {
   enhanceProjectSelect(row.querySelector('select[name="item_project[]"]'));
   refreshInvoiceProjectChoices();
 }
+
+// One click = one invoice: a double-click (or a slow save followed by a second click) must not
+// post the form twice, or the second POST lands on "already invoiced"/"number exists" errors.
+document.getElementById('invoiceForm')?.addEventListener('submit', function (e) {
+  if (this.dataset.submitting === '1') { e.preventDefault(); return; }
+  this.dataset.submitting = '1';
+  this.querySelectorAll('button[type="submit"]').forEach(b => { b.disabled = true; });
+});
+// Coming back with the Back button restores the page with the button still disabled
+window.addEventListener('pageshow', function (ev) {
+  const f = document.getElementById('invoiceForm');
+  if (f && ev.persisted) {
+    f.dataset.submitting = '';
+    f.querySelectorAll('button[type="submit"]').forEach(b => { b.disabled = false; });
+  }
+});
 </script>
 {% endblock %}
