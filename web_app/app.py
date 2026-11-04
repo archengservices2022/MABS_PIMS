@@ -18638,6 +18638,25 @@ def expense_delete(exp_id):
     # Always delete from balance_sheet_expenses
     fb_delete(f"/balance_sheet_expenses/{exp_id}")
 
+    # The last expense of a statement import takes the saved statement file with it
+    batch = bs_data.get("import_batch")
+    if batch:
+        try:
+            if fb_get(f"/statement_imports/{batch}/expense_ids"):
+                fb_delete(f"/statement_imports/{batch}/expense_ids/{exp_id}")
+                if not fb_get(f"/statement_imports/{batch}/expense_ids"):
+                    fb_delete(f"/statement_files/{batch}")
+                    fb_delete(f"/statement_imports/{batch}")
+                    _STATEMENT_CACHE.pop(batch, None)
+            elif batch in (fb_get_shallow("/statement_files") or {}):
+                # Imports made before the per-import list existed: check the table once
+                still_used = any(isinstance(e, dict) and e.get("import_batch") == batch
+                                 for e in (fb_get("/balance_sheet_expenses") or {}).values())
+                if not still_used:
+                    fb_delete(f"/statement_files/{batch}")
+        except Exception as e:  # tidying the file must never make the delete itself fail
+            log.warning(f"Statement file cleanup for {batch} failed: {e}")
+
     # Only delete from /expenses if it's an employee expense
     if is_emp_expense:
         fb_delete(f"/expenses/{exp_id}")
@@ -19129,12 +19148,15 @@ def remove_expense_receipt(exp_id):
 
     try:
         # Remove from /balance_sheet_expenses
-        fb_update(f"/balance_sheet_expenses/{exp_id}", {
+        unlink = {
             "receipt_base64": "",
             "receipt_filename": "",
             "receipt_type": "",
             "has_receipt": False
-        })
+        }
+        if (fb_get(f"/balance_sheet_expenses/{exp_id}") or {}).get("has_statement_file"):
+            unlink["has_statement_file"] = False  # the statement stays with the rest of its import
+        fb_update(f"/balance_sheet_expenses/{exp_id}", unlink)
 
         # Remove from /expense_receipts (primary storage location)
         fb_delete(f"/expense_receipts/{exp_id}")
@@ -19283,7 +19305,10 @@ def expense_edit(exp_id):
                     }), 403
 
                 # Delete receipt from all locations
-                fb_update(f"/balance_sheet_expenses/{exp_id}", {"receipt_base64": None, "receipt_filename": None, "receipt_type": None, "has_receipt": False})
+                cleared = {"receipt_base64": None, "receipt_filename": None, "receipt_type": None, "has_receipt": False}
+                if (fb_get(f"/balance_sheet_expenses/{exp_id}") or {}).get("has_statement_file"):
+                    cleared["has_statement_file"] = False  # unlink the bank statement; the rest of its import keeps it
+                fb_update(f"/balance_sheet_expenses/{exp_id}", cleared)
                 fb_update(f"/expenses/{exp_id}", {"receipt_base64": None, "receipt_filename": None, "receipt_type": None, "has_receipt": False})
                 fb_delete(f"/expense_receipts/{exp_id}")
 
@@ -19605,6 +19630,18 @@ def get_expense_data(exp_id):
 @role_required("financial")
 def get_expense_receipt(exp_id):
     """Retrieve receipt from Firebase - stored separately in /expense_receipts"""
+    # Imported expenses: the saved statement is their receipt, unless a receipt was attached to the row itself
+    exp_rec = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
+    if isinstance(exp_rec, dict) and exp_rec.get("has_statement_file") and exp_rec.get("import_batch") \
+            and not exp_rec.get("receipt_base64"):
+        stmt = _statement_file_cached(exp_rec["import_batch"])
+        if stmt.get("file_base64"):
+            return jsonify({
+                "success": True,
+                "receipt": stmt["file_base64"],
+                "fileType": stmt.get("content_type") or "application/octet-stream",
+                "filename": stmt.get("filename") or exp_rec.get("import_file") or "statement",
+            })
     # First try /expense_receipts (primary storage location for all receipts)
     receipt_data = fb_get(f"/expense_receipts/{exp_id}") or {}
     if isinstance(receipt_data, dict) and receipt_data.get('receipt_base64'):
@@ -32879,6 +32916,1202 @@ def api_timesheets_export():
         )
 
 # ── Entry point ───────────────────────────────────────────────────────────────
+# ── Expense type / category choices ────────────────────────────────────────────
+_DEFAULT_EXPENSE_TYPES = [
+    "O & M (Operations & Maintenance)",
+    "Capital Expenses",
+    "Other Expenses",
+]
+_DEFAULT_CATEGORIES_BY_TYPE = {
+    "O & M (Operations & Maintenance)": [
+        "Facilities & Utilities",
+        "Office & Admin Overhead",
+        "Engineering Software & IT",
+        "Salaries, Labor & Related Costs",
+        "Professional Services",
+        "Insurance & Compliance",
+        "Travel, Site Visits & Vehicles",
+        "Marketing & Business Development",
+        "Training, Licensure & Development",
+        "Safety & Field Supplies",
+        "Miscellaneous O & M",
+    ],
+    "Capital Expenses": [
+        "Computer & Office Equipment",
+        "Field & Inspection Equipment",
+        "Furniture & Fixtures",
+        "Vehicles",
+        "Software (Capitalized)",
+        "Leasehold Improvements",
+        "Accumulated Depreciation",
+    ],
+    "Other Expenses": [
+        "Salary/Bonuses",
+        "Tax Expenses/Tax Deductions",
+        "Medical/Benefits",
+        "Meals & Entertainment",
+        "Donations",
+        "Bank Charges",
+        "Contingency Funds",
+        "Unexpected Costs",
+    ],
+}
+
+
+def _expense_type_options():
+    """Return (expense_types, categories_by_type) from Settings, falling back to the defaults."""
+    custom = fb_get("/custom_categories") or {}
+    types = custom.get("expense_type") if isinstance(custom.get("expense_type"), list) else []
+    cats = custom.get("Categories") if isinstance(custom.get("Categories"), dict) else {}
+    return (types or list(_DEFAULT_EXPENSE_TYPES)), (cats or dict(_DEFAULT_CATEGORIES_BY_TYPE))
+
+
+def _ai_structured(content, schema: dict, effort: str = "low", max_tokens: int = 16000) -> dict:
+    """Run one Claude call whose reply must match `schema` and return the parsed JSON.
+
+    Raises RuntimeError with a message fit to show the user."""
+    client = _get_ai_client()
+    if not client:
+        raise RuntimeError("No Anthropic API key configured. Add it in Settings → AI.")
+    # Streaming keeps long replies (a busy month's statement) clear of HTTP timeouts
+    try:
+        with client.beta.messages.stream(
+            model="claude-opus-5-5",
+            max_tokens=max_tokens,
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
+            messages=[{"role": "user", "content": content}],
+        ) as stream:
+            resp = stream.get_final_message()
+    except _anthropic.AuthenticationError:
+        raise RuntimeError("The Anthropic API key was rejected. Check the key in Settings → AI or ANTHROPIC_API_KEY.")
+    except _anthropic.RateLimitError:
+        raise RuntimeError("The AI is busy right now (rate limit). Wait a minute and try again.")
+    except _anthropic.APIStatusError as e:
+        if "credit balance" in str(e).lower():
+            raise RuntimeError("Your Anthropic account is out of credit. Add credits at console.anthropic.com → Billing, then try again.")
+        raise RuntimeError(f"The AI service returned an error ({e.status_code}). Try again shortly.")
+    except _anthropic.APIConnectionError:
+        raise RuntimeError("Couldn't reach the AI service. Check the internet connection and try again.")
+    if resp.stop_reason == "refusal":
+        raise RuntimeError("The AI declined to read this document.")
+    if resp.stop_reason == "max_tokens":
+        raise RuntimeError("This statement is too long to read in one go. Upload a shorter date range.")
+    text = next((b.text for b in resp.content if b.type == "text"), "")
+    return json.loads(text)
+
+
+# ── Bank statement import ──────────────────────────────────────────────────────
+_MONTHS = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], start=1)}
+
+
+def _parse_statement_date(value, day_first: bool = True) -> str:
+    """Return YYYY-MM-DD for the date formats banks commonly export, or '' if unreadable."""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d")
+    if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+        return f"{value.year:04d}-{value.month:02d}-{value.day:02d}"
+    t = str(value or "").strip()
+    y = mo = d = None
+    if m := re.match(r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})", t):
+        y, mo, d = int(m[1]), int(m[2]), int(m[3])
+    elif m := re.match(r"^(\d{1,2})[-/. ]([A-Za-z]{3,9})[-/., ]+(\d{2,4})", t):
+        d, mo, y = int(m[1]), _MONTHS.get(m[2][:3].lower()), int(m[3])
+    elif m := re.match(r"^([A-Za-z]{3,9})[ .-](\d{1,2}),?[ .-](\d{2,4})", t):
+        mo, d, y = _MONTHS.get(m[1][:3].lower()), int(m[2]), int(m[3])
+    elif m := re.match(r"^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})", t):
+        a, b, y = int(m[1]), int(m[2]), int(m[3])
+        d, mo = (a, b) if day_first else (b, a)
+    if not (y and mo and d):
+        return ""
+    if y < 100:
+        y += 2000
+    try:
+        return datetime(y, mo, d).strftime("%Y-%m-%d")
+    except ValueError:
+        return ""
+
+
+def _parse_statement_amount(value):
+    """Return (amount, hint) where amount is a positive float or None and hint is
+    'debit', 'credit' or 'negative' when the cell itself says which way the money went."""
+    if value is None or value == "":
+        return None, None
+    if isinstance(value, (int, float)):
+        return (abs(float(value)) or None), ("negative" if value < 0 else None)
+    t = str(value).strip()
+    hint = None
+    if re.search(r"\bdr\.?$", t, re.I):
+        hint = "debit"
+    elif re.search(r"\bcr\.?$", t, re.I):
+        hint = "credit"
+    elif t.startswith("-") or t.endswith("-") or (t.startswith("(") and t.endswith(")")):
+        hint = "negative"
+    digits = re.sub(r"[^\d.]", "", t)
+    try:
+        amount = float(digits)
+    except ValueError:
+        return None, None
+    return (amount or None), hint
+
+
+def _find_statement_columns(header_row):
+    """Map the statement's header cells to the columns we need; None if this isn't a header row."""
+    cols = {}
+    for i, cell in enumerate(header_row):
+        h = re.sub(r"[^a-z/ ]", " ", str(cell or "").lower()).strip()
+        words = set(h.replace("/", " ").split())
+        if not h or "balance" in words:
+            continue
+        if ("date" in words or "dt" in words) and "date" not in cols:
+            cols["date"] = i
+        elif ("date" in words or "dt" in words) and words & {"txn", "transaction", "tran", "posting"}:
+            cols["date"] = i  # prefer the transaction date over a value date
+        elif ("date" in words or "dt" in words):
+            continue  # a second date column such as Value Date
+        elif words & {"narration", "description", "particulars", "details", "remarks", "memo", "payee"}:
+            cols.setdefault("description", i)
+        elif h in {"type", "dr/cr", "cr/dr", "debit/credit", "txn type", "transaction type"}:
+            cols.setdefault("type", i)
+        elif words & {"withdrawal", "withdrawals", "debit", "debits", "dr"} or "money out" in h or "paid out" in h:
+            cols.setdefault("debit", i)
+        elif words & {"deposit", "deposits", "credit", "credits", "cr"} or "money in" in h or "paid in" in h:
+            cols.setdefault("credit", i)
+        elif "amount" in words or "amt" in words:
+            cols.setdefault("amount", i)
+    if "date" in cols and ("debit" in cols or "amount" in cols):
+        return cols
+    return None
+
+
+def _read_statement_table(filename: str, raw: bytes):
+    """Return the statement's rows (lists of cells) from a CSV or .xlsx file."""
+    import io as _io
+    name = filename.lower()
+    if name.endswith(".xlsx") or name.endswith(".xlsm"):
+        from openpyxl import load_workbook
+        ws = load_workbook(_io.BytesIO(raw), read_only=True, data_only=True).active
+        return [list(r) for r in ws.iter_rows(values_only=True)]
+    if name.endswith(".xls"):
+        raise ValueError("Old .xls files aren't supported. Open it in Excel and save as .xlsx or CSV.")
+    import csv
+    text = None
+    for enc in ("utf-8-sig", "cp1252"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        raise ValueError("Couldn't read this file as text. Upload a CSV, Excel (.xlsx) or PDF statement.")
+    try:
+        dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+    return list(csv.reader(_io.StringIO(text), dialect))
+
+
+def _statement_rows_from_table(table):
+    """Turn a CSV/Excel table into transactions, keeping only money going out."""
+    cols, body = None, []
+    for idx, row in enumerate(table[:40]):
+        cols = _find_statement_columns(row)
+        if cols:
+            body = table[idx + 1:]
+            break
+    if not cols:
+        raise ValueError("Couldn't find the date and amount columns. Check that the file has a header row "
+                         "like Date / Narration / Withdrawal / Deposit.")
+
+    def cell(r, key):
+        return r[cols[key]] if key in cols and cols[key] < len(r) else None
+
+    # Indian banks write 03/04/2026 for 3 April; switch only if a date proves month-first
+    day_first = True
+    for r in body:
+        if m := re.match(r"^\s*(\d{1,2})[-/.](\d{1,2})[-/.]", str(cell(r, "date") or "")):
+            if int(m[1]) > 12:
+                break
+            if int(m[2]) > 12:
+                day_first = False
+                break
+
+    amount_col_has_negatives = "amount" in cols and any(
+        _parse_statement_amount(cell(r, "amount"))[1] == "negative" for r in body)
+
+    rows, credits = [], 0
+    for r in body:
+        date = _parse_statement_date(cell(r, "date"), day_first)
+        if not date:
+            continue  # opening balance, totals, page footers
+        description = " ".join(str(cell(r, "description") or "").split())
+        if _BALANCE_LINE.search(description):
+            continue
+        direction = None
+        if "debit" in cols:
+            amount, _ = _parse_statement_amount(cell(r, "debit"))
+            if amount:
+                direction = "debit"
+            else:
+                amount, _ = _parse_statement_amount(cell(r, "credit"))
+                direction = "credit" if amount else None
+        else:
+            amount, hint = _parse_statement_amount(cell(r, "amount"))
+            kind = str(cell(r, "type") or "").lower()
+            if re.search(r"\b(dr|debit|withdraw)", kind) or hint == "debit":
+                direction = "debit"
+            elif re.search(r"\b(cr|credit|deposit)", kind) or hint == "credit":
+                direction = "credit"
+            elif hint == "negative":
+                direction = "debit"
+            elif amount_col_has_negatives:
+                direction = "credit"
+            elif amount:
+                direction = "unknown"
+        if not amount or not direction:
+            continue
+        if direction == "credit":
+            credits += 1
+            continue
+        rows.append({"date": date, "description": description, "amount": round(amount, 2),
+                     "direction_unknown": direction == "unknown"})
+    return rows, credits
+
+
+def _suggestion_schema(expense_types, categories_by_type, extra_props=None):
+    """JSON schema for one suggested expense; enums keep the AI to the app's own lists."""
+    all_cats = sorted({c for cats in categories_by_type.values() if isinstance(cats, list) for c in cats})
+    props = {
+        "expense_name": {"type": "string"},
+        "expense_type": {"type": "string", "enum": list(expense_types)},
+        "category": {"type": "string", "enum": all_cats} if all_cats else {"type": "string"},
+        "vendor": {"type": "string"},
+    }
+    props.update(extra_props or {})
+    return {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
+
+
+_SUGGEST_GUIDE = ("For each transaction suggest: expense_name (a short, plain description), expense_type and "
+                  "category (from the allowed lists - pick the category that belongs to the chosen type), and "
+                  "vendor (the merchant or payee name, cleaned of reference numbers; blank if unclear). "
+                  "Bank fees, charges and GST on charges go under Bank Charges.")
+
+
+def _suggest_expense_fields(rows, expense_types, categories_by_type):
+    """Fill expense_name/type/category/vendor on each row with one AI call per 150 rows."""
+    item = _suggestion_schema(expense_types, categories_by_type, {"index": {"type": "integer"}})
+    schema = {"type": "object", "properties": {"items": {"type": "array", "items": item}},
+              "required": ["items"], "additionalProperties": False}
+    type_map = json.dumps(categories_by_type, ensure_ascii=False)
+    for start in range(0, len(rows), 150):
+        chunk = rows[start:start + 150]
+        listing = "\n".join(f"{start + i} | {r['date']} | {r['amount']:.2f} | {r['description']}"
+                            for i, r in enumerate(chunk))
+        prompt = (f"These are outgoing payments from a company bank statement (index | date | amount in "
+                  f"{CURRENCY_CODE} | bank description). {_SUGGEST_GUIDE}\n"
+                  f"Categories belonging to each type: {type_map}\n"
+                  f"Return one item per transaction with its index.\n\n{listing}")
+        for s in _ai_structured(prompt, schema, effort="low").get("items", []):
+            i = s.get("index")
+            if isinstance(i, int) and 0 <= i < len(rows):
+                rows[i].update({k: s.get(k, "") for k in ("expense_name", "expense_type", "category", "vendor")})
+
+
+# Keyword rules used when AI isn't available. First match wins, so specific rules come first.
+_CATEGORY_RULES = [
+    ("Bank Charges", r"CHARGES?|CHRG|CHGS?|ANNUAL FEE|PENALTY|MIN BAL|AMC FEE|STAMP DUTY"),
+    ("Tax Expenses/Tax Deductions", r"GST PAYMENT|CBIC|GSTN|TDS|INCOME TAX|ADVANCE TAX|PROFESSIONAL TAX"),
+    ("Salary/Bonuses", r"SALARY|SAL CR|BONUS|PAYROLL|WAGES"),
+    ("Professional Services", r"CA FIRM|ASSOCIATES|CONSULT\w*|LEGAL|ADVOCATE|AUDIT\w*|CHARTERED"),
+    ("Insurance & Compliance", r"LIC|INSURANCE|PREMIUM|POLICY"),
+    ("Facilities & Utilities", r"RENT|ELECTRICITY|APSPDCL|APEPDCL|APCPDCL|TSSPDCL|TSNPDCL|BESCOM|POWER|WATER|"
+                               r"BROADBAND|FIBERNET|INTERNET|JIO|AIRTEL|BSNL|VI POSTPAID|HP GAS|INDANE|BHARAT GAS|"
+                               r"CYLINDER|MAINTENANCE|HOUSEKEEPING|CLEANING|UTILIT\w*|SPECTRUM|COMCAST|XFINITY|VERIZON|T-MOBILE"),
+    ("Engineering Software & IT", r"AUTODESK|MICROSOFT|GOOGLE|ADOBE|AWS|AMAZON WEB|ZOOM|SOFTWARE|GODADDY|HOSTINGER|"
+                                  r"BENTLEY|BLUEBEAM|SUBSCRIPTION|DROPBOX|CANVA|OPENAI|ANTHROPIC|CLAUDE|CHATGPT|GITHUB"),
+    ("Travel, Site Visits & Vehicles", r"IRCTC|OLA|UBER|RAPIDO|FUEL|PETROL|DIESEL|INDIAN OIL|IOCL|HPCL|BPCL|FASTAG|"
+                                       r"TOLL|MAKEMYTRIP|GOIBIBO|INDIGO|AIR INDIA|REDBUS|SITE VISIT|TRAVEL|PARKING|AMTRAK|AUTOMOTIVE|CAR WASH|LYFT"),
+    ("Meals & Entertainment", r"SWIGGY|ZOMATO|RESTAURANTS?|HOTEL|CAFE|LUNCH|DINNER|BREAKFAST|FOOD|DOMINOS|KFC|PANERA|STARBUCKS"),
+    ("Computer & Office Equipment", r"CROMA|RELIANCE DIGITAL|VIJAY SALES|PRINTER|LAPTOP|COMPUTER|MONITOR|DELL|LENOVO"),
+    ("Safety & Field Supplies", r"HARDWARE|TOOLS|SAFETY|HELMET|PPE"),
+    ("Medical/Benefits", r"HOSPITAL|PHARMACY|APOLLO|MEDPLUS|MEDICAL|CLINIC|DIAGNOSTIC"),
+    ("Marketing & Business Development", r"ADVERTIS\w*|FACEBOOK|META ADS|GOOGLE ADS|MARKETING|PRINTING|BANNER"),
+    ("Office & Admin Overhead", r"AMAZON|FLIPKART|STATIONERY|COURIER|DTDC|BLUEDART|DELHIVERY|INDIA POST|PANTRY|"
+                                r"BIGBASKET|BLINKIT|ZEPTO|DMART|OFFICE"),
+    ("Donations", r"DONATION|CHARITY|TRUST"),
+]
+_CATEGORY_RULES = [(cat, re.compile(rf"\b(?:{pat})\b", re.I)) for cat, pat in _CATEGORY_RULES]
+
+# Bank prefixes in front of the payee name, e.g. "UPI-", "POS 4512XXXX4421 ", "NEFT DR-", "CHQ PAID-000145-"
+_TXN_PREFIX = re.compile(r"^(?:UPI|IMPS(?:-P2A)?|NEFT(?: ?(?:DR|CR))?|RTGS(?: ?(?:DR|CR))?|ACH ?D|ECS|NACH|"
+                         r"POS Sig \d{2}/\d{2} Visa #\d+|Purchase\s+Visa #\d+\s+\d{2}-\d{2} ATM \d+\s+Seq # \d+|"
+                         r"POS(?: \d+X+\d+)?|CHQ PAID(?:-\d+)?|BIL(?:PAY)?|ATW|ATM)[-/ ]+", re.I)
+
+
+def _rule_based_suggestions(rows, categories_by_type):
+    """Fill blank expense_name/type/category/vendor from the bank description using keyword rules."""
+    type_of = {c: t for t, cats in categories_by_type.items() if isinstance(cats, list) for c in cats}
+    for r in rows:
+        desc = r.get("description", "")
+        rest = _TXN_PREFIX.sub("", desc, count=1)
+        if rest != desc:
+            # US card lines: drop merchant phone numbers, "#G1870" refs and the trailing state ("... Ca")
+            rest = re.sub(r"\b\d{3}-\d{3}-?\d{4}\b|#\w*\d\w*", " ", rest)
+            rest = re.sub(r"\s+[A-Z][a-z]\s*$", "", " ".join(rest.split()))
+        parts = [p.strip() for p in re.split(r"\s*[-/]\s*", rest) if p.strip()]
+        # Drop reference numbers and bank codes such as 428812345 or ICIC0000123
+        parts = [p for p in parts if not re.fullmatch(r"[A-Z]{4}0\w{6}|\w*\d{6,}\w*", p, re.I)]
+        vendor = parts[0].title() if rest != desc and parts else ""
+        name = " - ".join(parts[1:] if vendor and len(parts) > 1 else parts).title()
+        if not r.get("vendor"):
+            r["vendor"] = vendor
+        if not r.get("expense_name") or r.get("expense_name") == desc[:80]:
+            r["expense_name"] = (name or desc)[:80]
+        if not r.get("category"):
+            for cat, pattern in _CATEGORY_RULES:
+                if cat in type_of and pattern.search(desc):
+                    r["category"], r["expense_type"] = cat, type_of[cat]
+                    break
+        if not r.get("expense_type"):
+            r["expense_type"], r["category"] = _fallback_expense_type(categories_by_type)
+
+
+def _fallback_expense_type(categories_by_type):
+    """(type, category) for a payment nobody could classify, so it can still be imported and fixed later."""
+    if "Unexpected Costs" in (categories_by_type.get("Other Expenses") or []):
+        return "Other Expenses", "Unexpected Costs"
+    for t, cats in categories_by_type.items():
+        return t, (cats[0] if isinstance(cats, list) and cats else "")
+    return _DEFAULT_EXPENSE_TYPES[-1], ""
+
+
+_PDF_TXN_LINE = re.compile(
+    r"^\s*(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{1,2}[-/ ][A-Za-z]{3}[-/ ,]+\d{2,4}|\d{4}-\d{2}-\d{2}"
+    r"|\d{1,2}[-/]\d{1,2}(?![-/.\d]))\s+(.*)$")
+_PDF_MONEY = re.compile(r"(?<![\w.,])(?P<sign>[-+])?\s?(?P<cur>\$|৳|₹|Tk\.?\s?|BDT\s?|Rs\.?\s?|INR\s?|USD\s?)?"
+                        r"(?P<num>\d[\d,]*\.\d{2})(?!\d)(?:\s*(?P<mark>CR|DR)\b)?", re.I)
+_PDF_FULL_DATE = re.compile(r"(?<![\d/])(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?!\d)")
+_PDF_SKIP_LINE = re.compile(r"\b(page|total|statement|generated|summary|balance|period|account|customer|"
+                            r"branch|ifsc|address|signature|abbreviation|nominee|narration|particulars|"
+                            r"withdrawals?|deposits?|chq|value dt|value date|date|amount|merchant|trans|"
+                            r"purchases|payments and credits|continued)\b", re.I)
+_PDF_NOISE = re.compile(r"\b(?:APPLE|GOOGLE|SAMSUNG) PAY ENDING IN \d+\b|(?<!\S)(?=\S*\d)[A-Z0-9]{6,}(?!\S)", re.I)
+_CREDIT_HINT = re.compile(r"\b(NEFT CR|RTGS CR|IMPS CR|BY TRANSFER|BY CLG|DEPOSIT|INT\.? ?PD|INTEREST|REFUND|"
+                          r"REVERSAL|SALARY CR|CASH DEP|ACH CREDIT|DIRECT DEP\w*|MOBILE DEPOSIT|INTEREST CREDIT)\b", re.I)
+# "Opening balance", "Closing balance", "Balance B/F" lines carry a date and amount but aren't transactions
+_BALANCE_LINE = re.compile(r"^\s*(opening|closing|beginning|ending|previous|starting)\s+balance\b|"
+                           r"\bbalance\s+(b/?f|c/?f|brought|carried)\b|\b(brought|carried)\s+forward\b", re.I)
+# A statement that only says "USD" in its column headings, e.g. "Amount (USD)" or "Balance USD"
+_USD_HEADING = re.compile(r"\b(amount|balance|debit|credit|withdrawals?|deposits?)\b[^\n\d]{0,4}\(?(USD|US\$)\)?", re.I)
+# A statement in Bangladeshi Taka: "BDT"/"Taka" in the headings, or amounts written with Tk or the taka sign
+_BDT_HEADING = re.compile(r"\b(BDT|Taka)\b|৳|(?<![A-Za-z])Tk\.?\s?\d", re.I)
+_CARD_STATEMENT = re.compile(r"credit card|card ending|card number|card no\b|minimum (payment|amount) due|"
+                             r"payment due date|total amount due", re.I)
+# Dates written in words, e.g. "September 30, 2026" or "30 September 2026" (US statements give the year only so)
+_PDF_TEXT_DATE = re.compile(r"\b(?:(?P<m1>jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(?P<d1>\d{1,2})"
+                            r"\s*,?\s*(?P<y1>\d{4})|(?P<d2>\d{1,2})\s+(?P<m2>jan|feb|mar|apr|may|jun|jul|aug|sep|oct|"
+                            r"nov|dec)[a-z]*\.?,?\s+(?P<y2>\d{4}))\b", re.I)
+# Section headings that say which way the lines below them go, e.g. "Other Debits From Your Account"
+_PDF_SECTIONS = [
+    ("balance", re.compile(r"daily\s+(ledger\s+)?balance", re.I)),
+    ("checks", re.compile(r"\bchecks?\s+(paid|cleared)\b", re.I)),
+    ("debit", re.compile(r"\b(debits?|withdrawals?|payments?|fees)(\s+and\s+other\s+\w+)?\s+(from|out\s+of)\s+your\s+account\b|"
+                         r"\bwithdrawals\s+and\s+(other\s+)?(debits|subtractions)\b|\belectronic\s+withdrawals\b", re.I)),
+    ("credit", re.compile(r"\b(credits?|deposits?)(\s+and\s+other\s+\w+)?\s+(to|into)\s+your\s+account\b|"
+                          r"\bdeposits\s+and\s+(other\s+)?(credits|additions)\b", re.I)),
+]
+# Any other short heading for one direction, e.g. "ATM & DEBIT CARD WITHDRAWALS" or "Deposits and Additions".
+# Column headers ("Withdrawals  Deposits  Balance") name both or a column word, so they don't count.
+_PDF_DEBIT_HEADING = re.compile(r"\b(withdrawals?|debits?|purchases|fees|charges)\b", re.I)
+_PDF_CREDIT_HEADING = re.compile(r"\b(deposits?|credits?|additions)\b", re.I)
+_PDF_NOT_HEADING = re.compile(r"\b(date|amount|balance|description|narration|particulars|total|credit card)\b|\d", re.I)
+
+
+def _pdf_section_of(line):
+    """The section a heading line starts ("balance", "checks", "debit", "credit"), or None."""
+    for name, pattern in _PDF_SECTIONS:
+        if pattern.search(line):
+            return name
+    if len(line.split()) > 7 or _PDF_NOT_HEADING.search(line):
+        return None
+    debit, credit = bool(_PDF_DEBIT_HEADING.search(line)), bool(_PDF_CREDIT_HEADING.search(line))
+    return None if debit and credit and not re.search(r"payments? and", line, re.I) else \
+        "debit" if debit else "credit" if credit else None
+
+
+# A paid check: "1080  09-15  11,800.00" (some PDFs glue the date onto the amount: "11,800.0009-15")
+_PDF_CHECK = re.compile(r"(?<!\S)(?P<no>\d{3,7})\*?\s+(?:(?P<d1>\d{1,2}[-/]\d{1,2}(?:[-/]\d{2,4})?)\s+)?"
+                        r"\$?(?P<amt>\d[\d,]*\.\d{2})(?P<d2>\d{1,2}[-/]\d{1,2}(?:[-/]\d{2,4})?)?")
+
+
+def _open_statement_pdf(raw: bytes, password: str = ""):
+    """Open a PDF statement, unlocking it with `password` if the bank protected it."""
+    import io as _io
+    if not PYPDF_AVAILABLE:
+        raise ValueError("PDF reading isn't installed on the server (pypdf). Upload Excel or CSV instead.")
+    try:
+        reader = _PdfReader(_io.BytesIO(raw))
+    except Exception:
+        raise ValueError("This file couldn't be opened as a PDF.")
+    if reader.is_encrypted:
+        try:
+            ok = reader.decrypt(password or "")
+        except Exception as e:
+            raise ValueError(f"Couldn't unlock this PDF ({e}).")
+        if not ok:
+            raise ValueError("This PDF is password-protected. Enter the PDF password (the one your bank gave you "
+                             "for statements) and click Read Statement again." if not password else
+                             "That PDF password is wrong. Check it and try again.")
+    return reader
+
+
+def _pdf_money(match) -> dict:
+    """A money token as {value (signed), size, sign, mark, cur}; 'DR' after a balance means overdrawn."""
+    size = float(match["num"].replace(",", ""))
+    sign, mark = match["sign"] or "", (match["mark"] or "").upper()
+    cur = (match["cur"] or "").strip().upper().rstrip(".")
+    return {"size": size, "value": -size if sign == "-" or mark == "DR" else size,
+            "sign": sign, "mark": mark, "cur": cur}
+
+
+def _statement_rows_from_pdf_text(reader, warnings=None, ocr=False, totals_out=None):
+    """Read transactions from a text-based (downloaded, not scanned) PDF bank or card statement, without AI.
+
+    Each transaction line starts with a date and has its amount after the description. Bank statements
+    with a running balance are read by how the balance moves; card statements and others by the sign or
+    Cr/Dr mark on the amount. Returns (rows, credits, currency) - rows and credits are empty when the PDF
+    has no readable transaction lines (e.g. a scan); currency is "USD", "BDT", "INR" or "".
+
+    `warnings` (a list) gets a message for each section whose printed Total differs from its rows - a sign
+    of a misread amount in text recognition. With `ocr` (text read from a picture) rows whose date or amount
+    couldn't be read are kept, flagged date_unreadable / amount_unreadable, so they can be fixed by hand.
+    `totals_out` (a list) gets each printed payments Total as (total, line ids) instead of a warning, the ids
+    matching the rows' "_line", so the caller can check the Totals after correcting rows."""
+    entries, opening, full_text, section, totals = [], None, [], None, []
+    for page in reader.pages:
+        try:
+            text = page.extract_text(extraction_mode="layout") or ""
+        except Exception:
+            text = page.extract_text() or ""
+        full_text.append(text)
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            m = _PDF_TXN_LINE.match(line)
+            money = list(_PDF_MONEY.finditer(line))
+            if not m and not money and len(line.strip()) < 60:
+                section = _pdf_section_of(line) or section
+            if section == "checks" and not m:
+                checks = [c for c in _PDF_CHECK.finditer(line) if c["d1"] or c["d2"]]
+                for c in checks:
+                    entries.append({"date_raw": c["d1"] or c["d2"], "description": f"Check #{c['no']}",
+                                    "money": [_pdf_money(_PDF_MONEY.search(c["amt"]))],
+                                    "closed": True, "section": "debit", "group": "checks"})
+                if checks:
+                    continue
+            if ocr and m and not money and section in ("debit", "credit") and \
+                    re.search(r"[A-Za-z]{3}", m.group(2)) and re.search(r"\d\s*[.,]?\s*\S*\s*$", m.group(2)):
+                # A transaction line whose amount text recognition garbled ("3s .70", "0.613"): keep it to fill in
+                entries.append({"date_raw": m.group(1), "description": " ".join(m.group(2).split()[:-1]) or m.group(2).strip(),
+                                "money": [{"size": 0.0, "value": 0.0, "sign": "", "mark": "", "cur": ""}],
+                                "closed": False, "section": section, "amount_unreadable": m.group(2).split()[-1]})
+                continue
+            if not m or not money:
+                if not m and money and section in ("debit", "credit") and re.match(r"\s*total\b", line, re.I):
+                    # A section's printed Total, checked against its rows below
+                    totals.append((section, _pdf_money(money[-1])["size"], len(entries)))
+                if not m and opening is None and money and \
+                        re.search(r"opening\s+balance|balance\s+b/?f|brought forward", line, re.I):
+                    opening = _pdf_money(money[-1])["value"]
+                # A wrapped description continues on the next line with words only
+                elif not m and entries and not money and not _PDF_SKIP_LINE.search(line) \
+                        and len(line.strip()) < 90 and not entries[-1]["closed"]:
+                    extra = " ".join(_PDF_NOISE.sub(" ", line).split())
+                    if extra:
+                        entries[-1]["description"] += " " + extra
+                elif entries:
+                    entries[-1]["closed"] = True
+                continue
+            rest = m.group(2)
+            # The description is what comes before the first amount; text after the amounts is often a side panel
+            first = _PDF_MONEY.search(rest)
+            desc = rest[:first.start()] if first else rest
+            desc = re.sub(r"^\s*\d{1,2}[-/ ][A-Za-z]{3}[-/ ,]+\d{2,4}\b", " ", desc)  # value date like 13 Apr 2026
+            desc = re.sub(r"(?<!\S)(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{8,})(?!\S)", " ", desc)  # value date, ref no.
+            if _BALANCE_LINE.search(desc):
+                if opening is None and not entries and re.match(r"\s*(opening|beginning|previous|starting)|.*b/?f|.*brought", desc, re.I):
+                    opening = _pdf_money(money[-1])["value"]
+                continue
+            if section == "balance" or not desc.strip():
+                continue  # daily balance tables: a date and a balance, no transaction
+            entries.append({"date_raw": m.group(1), "description": " ".join(desc.split()),
+                            "money": [_pdf_money(x) for x in money], "closed": False, "section": section})
+    if not entries:
+        return [], 0, ""
+    doc_text = "\n".join(full_text)
+
+    # Each printed section Total should equal its rows since that section's previous Total
+    for i, e in enumerate(entries):
+        e["line"] = i
+    if warnings is not None or totals_out is not None:
+        start = {}
+        for sec, printed, end in totals:
+            span = [e for e in entries[start.get(sec, 0):end] if e.get("group", e.get("section")) == sec]
+            start[sec] = end
+            if not span or not all(len(e["money"]) == 1 for e in span):
+                continue
+            if totals_out is not None and sec == "debit":
+                totals_out.append((printed, {e["line"] for e in span}))
+            else:
+                found = round(sum(e["money"][0]["size"] for e in span), 2)
+                if warnings is not None and abs(found - printed) > 0.005:
+                    name = "deposits" if sec == "credit" else "payments"
+                    warnings.append(f"The statement's Total for {name} is {printed:,.2f}, but the {len(span)} {name} "
+                                    f"read add up to {found:,.2f}. Some rows may be misread, or under the wrong "
+                                    f"heading: compare them with the statement.")
+
+    # Indian banks write 03/04/2026 for 3 April; switch only if a date proves month-first
+    day_first = True
+    for e in entries:
+        if d := re.match(r"^(\d{1,2})[-/.](\d{1,2})", e["date_raw"]):
+            if int(d[1]) > 12:
+                break
+            if int(d[2]) > 12:
+                day_first = False
+                break
+
+    # Card statements often print dates without a year: take it from the latest full date on the statement
+    latest = None
+    # A statement can't be from a future year (text recognition can read 2026 as 2028)
+    last_year = datetime.now().year if ocr else 2099
+    for a, b, y in _PDF_FULL_DATE.findall(doc_text):
+        d, mo = (int(a), int(b)) if day_first else (int(b), int(a))
+        if 1 <= mo <= 12 and 1 <= d <= 31 and 1990 < int(y) <= last_year:
+            latest = max(latest or (0, 0), (int(y), mo))
+    if latest is None:
+        for t in _PDF_TEXT_DATE.finditer(doc_text):
+            y, mo = int(t["y1"] or t["y2"]), _MONTHS[(t["m1"] or t["m2"]).lower()[:3]]
+            if 1990 < y <= last_year:
+                latest = max(latest or (0, 0), (y, mo))
+    for e in entries:
+        raw_date = e["date_raw"]
+        if (yl := re.fullmatch(r"(\d{1,2})[-/](\d{1,2})", raw_date)) and latest:
+            d, mo = (int(yl[1]), int(yl[2])) if day_first else (int(yl[2]), int(yl[1]))
+            year = latest[0] - 1 if mo > latest[1] else latest[0]
+            try:
+                e["date"] = datetime(year, mo, d).strftime("%Y-%m-%d")
+            except ValueError:
+                e["date"] = ""
+        else:
+            e["date"] = _parse_statement_date(raw_date, day_first)
+    dated = [e for e in entries if e["date"]]
+    if len(dated) > 1 and dated[0]["date"] > dated[-1]["date"]:
+        entries.reverse()  # newest-first statements: walk the balance in date order
+        opening = None
+
+    # Use the running balance only if it really is one: most balance moves must equal the amount
+    checks = matches = 0
+    prev = opening
+    for e in entries:
+        if len(e["money"]) >= 2:
+            amt, bal = e["money"][-2]["size"], e["money"][-1]["value"]
+            if prev is not None:
+                checks += 1
+                matches += abs(abs(bal - prev) - amt) < 0.011
+            prev = bal
+    balance_mode = matches >= 1 and matches >= 0.6 * checks
+    is_card = bool(_CARD_STATEMENT.search(doc_text))
+    any_negative = any(e["money"][0]["sign"] == "-" for e in entries)
+
+    rows, credits, prev = [], 0, opening
+    for e in entries:
+        tok = e["money"][-2] if balance_mode and len(e["money"]) >= 2 else e["money"][0]
+        bal = e["money"][-1]["value"] if balance_mode and len(e["money"]) >= 2 else None
+        unknown = False
+        if tok["mark"] in ("DR", "CR"):
+            direction = "debit" if tok["mark"] == "DR" else "credit"
+        elif balance_mode and prev is not None and bal is not None and abs(bal - prev) > 0.005:
+            direction = "debit" if bal < prev else "credit"
+        elif e.get("section") in ("debit", "credit"):
+            # Under a heading like "Other Credits To Your Account" (more reliable than the card guess,
+            # which bank statements can trip in their small print)
+            direction = e["section"]
+        elif tok["sign"] == "-":
+            # On a card statement a minus is a payment or refund; on a bank statement it's money out
+            direction = "credit" if is_card else "debit"
+        elif is_card:
+            # The minus on a card payment can be faint or missing; its wording isn't
+            direction = "credit" if re.search(r"\bPAYMENT\W*(THANK ?YOU|RECEIVED)\b", e["description"], re.I) else "debit"
+        elif _CREDIT_HINT.search(e["description"]) or any_negative:
+            direction = "credit"
+        else:
+            direction, unknown = "debit", True
+        if bal is not None:
+            prev = bal
+        if (not e["date"] and not ocr) or (not tok["size"] and not e.get("amount_unreadable")):
+            continue
+        if direction == "credit":
+            credits += 1
+            continue
+        rows.append({"date": e["date"], "description": e["description"], "amount": round(tok["size"], 2),
+                     "direction_unknown": unknown})
+        if totals_out is not None:
+            rows[-1]["_line"] = e["line"]
+        if not e["date"]:
+            rows[-1]["date_unreadable"] = e["date_raw"]
+        if e.get("amount_unreadable"):
+            rows[-1]["amount_unreadable"] = e["amount_unreadable"]
+
+    curs = {x["cur"] for e in entries for x in e["money"] if x["cur"]}
+    currency = "USD" if curs & {"$", "USD"} else ("BDT" if curs & {"৳", "TK", "BDT"} else ("INR" if curs else ""))
+    if not currency and (_USD_HEADING.search(doc_text) or re.search(r"(?<![A-Za-z])\$\s?\d", doc_text)):
+        currency = "USD"
+    # No currency printed (common in pictures of statements): US-only banking words, and nothing Indian
+    if not currency and re.search(r"\b(ACH|Checks? Paid|POS Sig|Zelle|Routing Number)\b", doc_text, re.I) \
+            and not re.search(r"\b(UPI|NEFT|IMPS|RTGS|IFSC|INR|Rs\.?)\b|₹", doc_text, re.I):
+        currency = "USD"
+    return rows, credits, currency
+
+
+def _ocr_statement_pages(texts):
+    """Page objects like a PdfReader's for text read from a picture PDF in the browser (Tesseract), tidied
+    for the parser: "68 .51" -> "68.51", and the letter O read inside a number -> 0."""
+    from types import SimpleNamespace
+    pages = []
+    for text in texts if isinstance(texts, list) else []:
+        t = re.sub(r"(?<=\d) +([.,]) *(?=\d)", r"\1", str(text or ""))
+        t = re.sub(r"(?<=\d)[Oo](?=[\d.,-])|(?<=[\d.,-])[Oo](?=\d)", "0", t)
+        # A dash read as a space in a month-day date: "09 15" -> "09-15"
+        # (at the start of a line, or after a check number)
+        t = re.sub(r"(?m)^(\s*(?:\d{3,7}\s+)?)(0[1-9]|1[0-2]) ([0-3]\d)(?=\s)", r"\1\2-\3", t)
+        # Thousands dot read for a comma: "11.800.00" -> "11,800.00"
+        t = re.sub(r"(?<=\d)\.(?=\d{3}[.,]\d{2}(?!\d))", ",", t)
+        # A dropped decimal point at the end of a line: "464 27" -> "464.27"
+        t = re.sub(r"(?m)(?<=\d) (\d{2})[ |]*$", r".\1", t)
+        pages.append(SimpleNamespace(extract_text=lambda extraction_mode=None, _t=t: _t))
+    return SimpleNamespace(pages=pages)
+
+
+def _statement_rows_from_ocr(readings, warnings):
+    """Rows from one or more text-recognition readings of a picture statement (each a list of page texts).
+
+    The reading with the fewest problems (Totals not adding up, unreadable dates or amounts, lines whose
+    direction is unknown) is used. Its rows are paired by date with the other reading's: a row whose
+    partner has a different amount is flagged `recheck` (one of the two misread it), and payments only the
+    other reading found are reported."""
+    def totals_mismatch(rows, totals):
+        """Messages for printed payments Totals that the rows (as they are now) don't add up to."""
+        out = []
+        for printed, lines in totals:
+            span = [r for r in rows if r.get("_line") in lines]
+            found = round(sum(r["amount"] for r in span), 2)
+            if abs(found - printed) > 0.005:
+                out.append(f"The statement's Total for payments is {printed:,.2f}, but the {len(span)} payments read "
+                           f"add up to {found:,.2f}. An amount was probably misread: compare each amount with the "
+                           f"statement and correct it.")
+        return out
+
+    results = []
+    for n, pages in enumerate(readings):
+        totals, deposit_warnings = [], []
+        rows, credits, currency = _statement_rows_from_pdf_text(_ocr_statement_pages(pages), deposit_warnings,
+                                                                ocr=True, totals_out=totals)
+        problems = len(totals_mismatch(rows, totals)) + len(deposit_warnings) + sum(
+            1 for r in rows if r.get("date_unreadable") or r.get("amount_unreadable") or r.get("direction_unknown"))
+        results.append({"problems": problems, "rows": rows, "credits": credits, "currency": currency,
+                        "totals": totals, "deposit_warnings": deposit_warnings, "n": n})
+    if not results:
+        return [], 0, ""
+    # Lines one reading found and the other didn't count as problems for the one that missed them
+    most = max(len(x["rows"]) + x["credits"] for x in results)
+    results.sort(key=lambda x: (x["problems"] + most - len(x["rows"]) - x["credits"], -len(x["rows"]), x["n"]))
+    best = results[0]
+    rows = best["rows"]
+    if len(results) > 1 and results[1]["rows"]:
+        alt = [r for r in results[1]["rows"] if not r.get("amount_unreadable") and not r.get("direction_unknown")]
+        used = set()
+        # Same date and amount: the readings agree
+        for r in rows:
+            k = next((j for j, a in enumerate(alt) if j not in used and a["date"] == r["date"] and a["amount"] == r["amount"]), None)
+            if k is not None:
+                used.add(k)
+                r["_agreed"] = True
+        # Same date, different amount: the next unpaired row of that date in the other reading
+        differ = []
+        for r in rows:
+            if r.pop("_agreed", False) or not r["date"]:
+                continue
+            k = next((j for j, a in enumerate(alt) if j not in used and a["date"] == r["date"]), None)
+            if k is None:
+                continue
+            used.add(k)
+            r["recheck"] = True
+            if r.get("amount_unreadable"):
+                # Only the other reading could read this amount: use it, to be checked
+                r["amount"] = alt[k]["amount"]
+                del r["amount_unreadable"]
+            else:
+                differ.append(alt[k]["amount"])
+        extra = [a for j, a in enumerate(alt) if j not in used and a["date"] and
+                 not any(r["date"] == a["date"] and r.get("amount_unreadable") for r in rows)]
+        filled = sum(1 for r in rows if r.get("recheck")) - len(differ)
+        if differ:
+            warnings.append(f"A second reading of the picture gave different amounts for {len(differ)} row(s), highlighted "
+                            f"in yellow (it read " + ", ".join(f"{a:,.2f}" for a in differ[:8]) + "). "
+                            f"Compare them with the statement.")
+        if filled:
+            warnings.append(f"{filled} amount(s) could only be read once and are highlighted in yellow. Check them "
+                            f"against the statement.")
+        if extra:
+            warnings.append("A second reading also found payment(s) not in this list: " + ", ".join(
+                f"{a['amount']:,.2f} on {a['date']}" for a in extra[:8]) + ". Check the statement for any missing row.")
+    # Totals checked on the final rows (after amounts filled in from the second reading)
+    warnings[:0] = totals_mismatch(rows, best["totals"]) + best["deposit_warnings"]
+    # Rows under a printed Total that matches are confirmed. Others (e.g. checks, which have no Total) can be
+    # misread the same way in both readings, so when some rows are confirmed the rest are highlighted.
+    confirmed = set()
+    for printed, lines in best["totals"]:
+        if not totals_mismatch(rows, [(printed, lines)]):
+            confirmed |= lines
+    unconfirmed = [r for r in rows if r.get("_line") not in confirmed and not r.get("recheck")]
+    if confirmed and unconfirmed:
+        for r in unconfirmed:
+            r["recheck"] = True
+        warnings.append(f"{len(unconfirmed)} amount(s) have no statement Total to check them against (such as checks) "
+                        f"and are highlighted in yellow. Compare them with the statement.")
+    elif not best["totals"]:
+        warnings.append("This statement has no Totals to check the amounts against. Compare each amount with the statement.")
+    for r in rows:
+        r.pop("_line", None)
+    undated = sum(1 for r in rows if r.get("date_unreadable"))
+    if undated:
+        warnings.append(f"{undated} row(s) have a date that couldn't be read (outlined in red). Enter it from the statement.")
+    no_amount = sum(1 for r in rows if r.get("amount_unreadable"))
+    if no_amount:
+        warnings.append(f"{no_amount} row(s) have an amount that couldn't be read (outlined in red). Enter it from the statement.")
+    return rows, best["credits"], best["currency"]
+
+
+def _statement_rows_from_pdf(raw: bytes, expense_types, categories_by_type):
+    """Have Claude read every transaction in a PDF statement; keeps only money going out."""
+    txn = _suggestion_schema(expense_types, categories_by_type, {
+        "date": {"type": "string", "description": "YYYY-MM-DD"},
+        "description": {"type": "string"},
+        "amount": {"type": "number"},
+        "direction": {"type": "string", "enum": ["debit", "credit"]},
+    })
+    schema = {"type": "object", "properties": {"transactions": {"type": "array", "items": txn}},
+              "required": ["transactions"], "additionalProperties": False}
+    prompt = ("This is a company bank statement. List every transaction row in order. For each give the "
+              "transaction date as YYYY-MM-DD (Indian statements write day before month), the bank's "
+              "description text exactly as printed, the amount as a positive number, and direction: debit "
+              "for money going out (withdrawals) or credit for money coming in (deposits). Skip opening and "
+              "closing balance lines, totals and page headers. "
+              f"{_SUGGEST_GUIDE} Categories belonging to each type: {json.dumps(categories_by_type, ensure_ascii=False)}")
+    content = [
+        {"type": "document", "source": {"type": "base64", "media_type": "application/pdf",
+                                         "data": base64.standard_b64encode(raw).decode("ascii")}},
+        {"type": "text", "text": prompt},
+    ]
+    result = _ai_structured(content, schema, effort="medium", max_tokens=64000)
+    rows, credits = [], 0
+    for t in result.get("transactions", []):
+        amount = abs(_safe_float(t.get("amount")))
+        date = _parse_statement_date(t.get("date"))
+        if not amount or not date:
+            continue
+        if t.get("direction") == "credit":
+            credits += 1
+            continue
+        rows.append({"date": date, "description": " ".join(str(t.get("description", "")).split()),
+                     "amount": round(amount, 2), "direction_unknown": False,
+                     **{k: t.get(k, "") for k in ("expense_name", "expense_type", "category", "vendor")}})
+    return rows, credits
+
+
+def _norm_statement_desc(text) -> str:
+    """Bank description reduced to letters and digits, for matching the same line across uploads."""
+    return re.sub(r"[^A-Z0-9]", "", str(text or "").upper())[:80]
+
+
+def _statement_fp(r) -> str:
+    """Identity of a statement line: date, the amount as printed on the statement, and the description."""
+    amount = r.get("original_amount") if r.get("original_currency") else r.get("amount")
+    return f"{r.get('date', '')}|{_safe_float(amount):.2f}|{_norm_statement_desc(r.get('description'))}"
+
+
+_STATEMENT_FILE_MAX = 10 * 1024 * 1024
+
+
+@app.route("/financial/bank-statement/parse", methods=["POST"])
+@role_required("financial")
+def bank_statement_parse():
+    """Read an uploaded bank statement and return its outgoing payments for review (nothing is saved)."""
+    f = request.files.get("statement")
+    if not f or not f.filename:
+        return jsonify({"error": "No file uploaded"}), 400
+    raw = f.read()
+    if not raw.strip():
+        return jsonify({"error": "This file is empty. Download the statement from your bank again and re-upload it."}), 400
+    expense_types, categories_by_type = _expense_type_options()
+    notes, warnings = [], []  # warnings: problems to fix before importing, shown in full
+    try:
+        needs_suggestions, currency = True, ""
+        ocr_text = request.form.get("ocr_text")
+        if f.filename.lower().endswith(".pdf") and ocr_text:
+            # A picture PDF the browser already read (free text recognition on the user's computer), as a
+            # list of readings - each a list of page texts - made with different image clean-ups
+            try:
+                readings = json.loads(ocr_text)
+            except ValueError:
+                readings = []
+            readings = [p for p in readings if isinstance(p, list)] if isinstance(readings, list) else []
+            rows, credits, currency = _statement_rows_from_ocr(readings, warnings)
+            if not rows and not credits:
+                raise ValueError("The statement was read, but no transactions were found in it. If it's a picture, make "
+                                 "sure it's sharp and shows the transaction lines (date, description, amount). If it is, "
+                                 "its layout may be new: send this PDF to the PIMS admin so it can be added.")
+            for r in rows:
+                r["from_picture"] = True  # date and amount can be corrected on the review screen
+            skipped = int(request.form.get("ocr_pages_skipped") or 0)
+            if skipped:
+                warnings.append(f"Only the first pages were read: {skipped} more page(s) of this PDF weren't. Upload "
+                                f"them as a separate PDF.")
+            notes.append("This statement is a picture, so its text was read by text recognition. Check each "
+                         "date, amount and description against the statement before importing.")
+        elif f.filename.lower().endswith(".pdf"):
+            reader = _open_statement_pdf(raw, request.form.get("pdf_password", ""))
+            rows, credits, currency = _statement_rows_from_pdf_text(reader, warnings)
+            if not rows and not credits:
+                # No readable lines: a scan or picture (some scanners add a garbled text layer). AI reads it when
+                # it's available, otherwise the page reads the picture itself in the browser and sends the text back.
+                try:
+                    rows, credits = _statement_rows_from_pdf(raw, expense_types, categories_by_type)
+                    needs_suggestions = False
+                except Exception as e:
+                    log.info(f"Statement needs browser text recognition (AI unavailable: {e})")
+                    return jsonify({"needs_ocr": True, "error": "This PDF has to be read by text recognition."}), 422
+            else:
+                # A mix of text and picture pages: the picture pages' rows would otherwise go unnoticed
+                picture_pages = []
+                for n, page in enumerate(reader.pages, 1):
+                    try:
+                        if not (page.extract_text() or "").strip() and len(page.images):
+                            picture_pages.append(n)
+                    except Exception as e:
+                        log.warning(f"Statement page {n} couldn't be checked for pictures: {e}")
+                if picture_pages:
+                    warnings.append("Page(s) " + ", ".join(map(str, picture_pages)) + " of this PDF are pictures and "
+                                    "weren't read. If they have transactions on them, add those rows by hand.")
+        else:
+            table = _read_statement_table(f.filename, raw)
+            rows, credits = _statement_rows_from_table(table)
+            head_text = "\n".join(" ".join(str(c) for c in r if c not in (None, "")) for r in table[:60])
+            if _USD_HEADING.search(head_text) or re.search(r"(?<![A-Za-z])(US)?\$\s?\d", head_text):
+                currency = "USD"
+            elif _BDT_HEADING.search(head_text):
+                currency = "BDT"
+        # The books are kept in US dollars, so a dollar statement is used exactly as printed (no conversion).
+        # A Taka statement is converted to dollars at the rate set in Settings; the Taka figure is kept.
+        rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 0)) or 110
+        if currency == "BDT":
+            for r in rows:
+                r["original_amount"], r["original_currency"], r["usd_rate"] = r["amount"], "BDT", rate
+                r["amount"] = round(r["amount"] / rate, 2)
+            notes.append(f"This statement is in Bangladeshi Taka. Amounts were converted to US dollars at Tk {rate:g} "
+                         f"per $1 (Settings → Company → BDT Exchange Rate); the Taka amount is kept in each expense's notes.")
+        elif currency == "INR":
+            warnings.append("This statement looks like it is in Indian rupees. Amounts were NOT converted, so they would "
+                            "be saved as dollars. Check the amounts before importing.")
+        if needs_suggestions:
+            if rows:
+                try:
+                    _suggest_expense_fields(rows, expense_types, categories_by_type)
+                except Exception as e:
+                    log.warning(f"Bank statement categorisation failed: {e}")
+                    reason = str(e) if isinstance(e, RuntimeError) else "the AI service had an error"
+                    notes.append(f"AI suggestions unavailable: {reason} Categories were guessed from the bank "
+                                 f"description instead. Check them and fill in any blanks before importing.")
+        _rule_based_suggestions(rows, categories_by_type)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        log.exception("Bank statement read failed")
+        return jsonify({"error": "Couldn't read this file. Make sure it's the statement exactly as downloaded from your "
+                                 "bank (PDF, Excel .xlsx or CSV), not a copy that was renamed or edited."}), 400
+
+    # Flag rows already recorded. Imported expenses remember the statement line they came from, so a
+    # re-upload still recognises them after the expense is edited. Each expense matches one row at most.
+    by_fp, by_desc, by_amount = {}, {}, {}
+    for e in (fb_get("/balance_sheet_expenses") or {}).values():
+        if not isinstance(e, dict):
+            continue
+        cand = {"label": e.get("expense_name") or e.get("description") or "an existing expense", "used": False}
+        date = str(e.get("date", ""))[:10]
+        if e.get("statement_fp"):
+            by_fp.setdefault(e["statement_fp"], []).append(cand)
+            continue
+        if e.get("source") == "bank_statement":
+            # Imported before statement lines were remembered: the bank description outlives amount edits
+            by_desc.setdefault((date, _norm_statement_desc(e.get("description"))), []).append(cand)
+        by_amount.setdefault((date, round(_safe_float(e.get("amount")), 2)), []).append(cand)
+
+    def _take(cands):
+        for cand in cands or []:
+            if not cand["used"]:
+                cand["used"] = True
+                return cand["label"]
+        return ""
+
+    for r in rows:
+        r["duplicate_of"] = (_take(by_fp.get(_statement_fp(r)))
+                             or _take(by_desc.get((r["date"], _norm_statement_desc(r["description"]))))
+                             or _take(by_amount.get((r["date"], r["amount"]))))
+        if not r.get("expense_name"):
+            r["expense_name"] = r["description"][:80]
+        for k in ("expense_type", "category", "vendor"):
+            r.setdefault(k, "")
+
+    return jsonify({"rows": rows, "credits_skipped": credits, "ai_note": " ".join(notes), "warnings": warnings,
+                    "expense_types": expense_types, "categories_by_type": categories_by_type})
+
+
+@app.route("/financial/bank-statement/import", methods=["POST"])
+@role_required("financial")
+def bank_statement_import():
+    """Save the reviewed bank statement rows as finance expenses, stored like ones added by hand."""
+    payload = request.get_json(silent=True)
+    if payload is None:  # sent as a form so the statement file can come along
+        try:
+            payload = {"rows": json.loads(request.form.get("rows") or "[]"),
+                       "file_name": request.form.get("file_name", "")}
+        except ValueError:
+            return jsonify({"success": False, "error": "The rows sent were unreadable. Read the statement again."}), 400
+    rows = [r for r in (payload.get("rows") or []) if isinstance(r, dict)]
+    file_name = str(payload.get("file_name") or "")[:150]
+    no_vendor = [r for r in rows if not str(r.get("vendor") or "").strip()]
+    if no_vendor:
+        return jsonify({"success": False, "error": f"{len(no_vendor)} ticked row(s) have no vendor. "
+                                                   f"Enter a vendor for each, or untick them."}), 400
+    no_date = [r for r in rows if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(r.get("date") or ""))]
+    if no_date:
+        return jsonify({"success": False, "error": f"{len(no_date)} ticked row(s) have no date. "
+                                                   f"Enter the date from the statement, or untick them."}), 400
+    no_amount = [r for r in rows if _safe_float(r.get("amount")) <= 0]
+    if no_amount:
+        return jsonify({"success": False, "error": f"{len(no_amount)} ticked row(s) have no amount. "
+                                                   f"Enter the amount from the statement, or untick them."}), 400
+    batch_id = f"imp_{uuid.uuid4().hex[:16]}"
+
+    # Keep the uploaded statement with the import so it can be opened later
+    has_file = False
+    upload = request.files.get("statement")
+    if upload and upload.filename and rows:
+        content = upload.read()
+        if 0 < len(content) <= _STATEMENT_FILE_MAX:
+            has_file = fb_update(f"/statement_files/{batch_id}", {
+                "file_base64":  base64.b64encode(content).decode("ascii"),
+                "filename":     upload.filename[:150],
+                "content_type": upload.content_type or "application/octet-stream",
+                "size":         len(content),
+                "uploaded_at":  datetime.now(timezone.utc).isoformat(),
+                "uploaded_by":  session.get("user_email", ""),
+            })
+        file_name = file_name or upload.filename[:150]
+    exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+    now = datetime.now(timezone.utc).isoformat()
+    fallback_type, fallback_cat = _fallback_expense_type(_expense_type_options()[1])
+    saved, skipped, saved_ids = 0, [], {}
+    row_ids = [None] * len(rows)  # new expense id per sent row, so the page can attach each row's receipt
+    for idx, r in enumerate(rows[:1000]):
+        if not r.get("expense_type"):
+            r["expense_type"], r["category"] = fallback_type, fallback_cat
+        amount = round(_safe_float(r.get("amount")), 2)
+        date = str(r.get("date") or "")
+        description = str(r.get("description") or "").strip()
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            date = ""
+        if amount <= 0 or not date:
+            skipped.append(description or str(r.get("date") or ""))
+            continue
+        data = {
+            "expense_type":      str(r.get("expense_type", "")),
+            "expense_name":      str(r.get("expense_name") or description)[:200],
+            "description":       description,
+            "amount":            amount,
+            "amount_bdt":        (_safe_float(r.get("original_amount")) if r.get("original_currency") == "BDT"
+                                  else round(amount * exchange_rate, 2)),
+            "exchange_rate":     ((_safe_float(r.get("usd_rate")) or exchange_rate) if r.get("original_currency") == "BDT"
+                                  else exchange_rate),
+            "category":          str(r.get("category", "")),
+            "date":              date,
+            "vendor":            str(r.get("vendor", "")).strip(),
+            "project_number":    "",
+            "notes":             f"Imported from bank statement: {description}" + (
+                f" (original Tk {_safe_float(r.get('original_amount')):,.2f})"
+                if r.get("original_currency") == "BDT" else ""),
+            "created_by":        session.get("user_email", ""),
+            "submitted_by_name": session.get("user_name", ""),
+            "submitted_by_uid":  session.get("user_uid", ""),
+            "status":            "Approved",
+            "source":            "bank_statement",
+            "import_batch":      batch_id,
+            "import_file":       file_name,
+            "has_statement_file": has_file,
+            **({"has_receipt": True, "receipt_filename": upload.filename[:150],
+                "receipt_type": upload.content_type or "application/octet-stream"} if has_file else {}),
+            "statement_fp":      _statement_fp(r),
+            "statement_line":    {"date": date, "description": description,
+                                  "amount": _safe_float(r.get("original_amount") or amount),
+                                  "currency": r.get("original_currency") or CURRENCY_CODE},
+            "created_at":        now,
+            "updated_at":        now,
+        }
+        new_id = fb_push("/balance_sheet_expenses", data)
+        if new_id:
+            saved += 1
+            saved_ids[new_id] = True
+            row_ids[idx] = new_id
+        else:
+            skipped.append(description or date)
+    if saved_ids:
+        fb_update(f"/statement_imports/{batch_id}", {"expense_ids": saved_ids, "has_file": has_file})
+    elif has_file:
+        fb_delete(f"/statement_files/{batch_id}")  # nothing was saved, so don't keep the file
+    return jsonify({"success": True, "saved": saved, "skipped": len(skipped), "skipped_rows": skipped[:20],
+                    "row_ids": row_ids})
+
+
+@app.route("/financial/bank-statement/receipt/<exp_id>", methods=["POST"])
+@role_required("financial")
+def bank_statement_receipt(exp_id):
+    """Attach the receipt picked for one row of a statement import. Sent one expense at a time so a
+    stack of phone photos doesn't hit the upload size limit."""
+    upload = request.files.get("receipt")
+    if not upload or not upload.filename:
+        return jsonify({"success": False, "error": "No receipt file was sent."}), 400
+    exp = fb_get(f"/balance_sheet_expenses/{exp_id}") if re.fullmatch(r"[-\w]{1,64}", exp_id) else None
+    if not isinstance(exp, dict) or exp.get("source") != "bank_statement":
+        return jsonify({"success": False, "error": "That imported expense wasn't found."}), 404
+    content = upload.read()
+    if not content:
+        return jsonify({"success": False, "error": "The receipt file is empty."}), 400
+    ctype = upload.content_type or "application/octet-stream"
+    if not fb_update(f"/expense_receipts/{exp_id}", {
+        "receipt_base64":   base64.b64encode(content).decode("ascii"),
+        "receipt_filename": upload.filename[:150],
+        "receipt_type":     ctype,
+    }):
+        return jsonify({"success": False, "error": "Couldn't save the receipt. Try again."}), 500
+    # The row's own receipt replaces the statement as what opens from the Expense Log
+    fb_update(f"/balance_sheet_expenses/{exp_id}", {
+        "has_receipt": True, "receipt_filename": upload.filename[:150], "receipt_type": ctype,
+        "has_statement_file": False, "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return jsonify({"success": True})
+
+
+@app.route("/financial/bank-statement/file/<batch_id>")
+@role_required("financial")
+def bank_statement_file(batch_id):
+    """Open the statement file that an import came from."""
+    from flask import Response as _Resp
+    rec = fb_get(f"/statement_files/{batch_id}") if re.fullmatch(r"imp_[0-9a-f]{16}", batch_id) else None
+    if not rec or not rec.get("file_base64"):
+        abort(404, "The statement file for this import wasn't saved (imports before this feature didn't keep it).")
+    fname = re.sub(r'["\\\r\n]', "", rec.get("filename") or "statement")
+    return _Resp(base64.b64decode(rec["file_base64"]), mimetype=rec.get("content_type") or "application/octet-stream",
+                 headers={"Content-Disposition": f'inline; filename="{fname}"'})
+
+
+def _statement_import_batches():
+    """Group imported expenses by the upload they came from: {batch key: [(expense id, expense), ...]}.
+
+    Imports made before batch ids existed are grouped by their save time, which every row of one
+    import shares."""
+    batches = {}
+    for eid, e in (fb_get("/balance_sheet_expenses") or {}).items():
+        if isinstance(e, dict) and e.get("source") == "bank_statement":
+            key = e.get("import_batch") or f"legacy_{str(e.get('created_at', ''))[:19]}"
+            batches.setdefault(key, []).append((eid, e))
+    return batches
+
+
+@app.route("/financial/bank-statement/imports")
+@role_required("financial")
+def bank_statement_imports():
+    """List past statement imports, newest first, so a whole import can be undone."""
+    out = []
+    stored_files = fb_get_shallow("/statement_files") or {}
+    for key, items in _statement_import_batches().items():
+        first = items[0][1]
+        dates = sorted(str(e.get("date", "")) for _, e in items if e.get("date"))
+        out.append({
+            "key": key,
+            "imported_at": first.get("created_at", ""),
+            "file": first.get("import_file", ""),
+            "by": first.get("submitted_by_name") or first.get("created_by", ""),
+            "count": len(items),
+            "total": round(sum(_safe_float(e.get("amount")) for _, e in items), 2),
+            "first_date": dates[0] if dates else "",
+            "last_date": dates[-1] if dates else "",
+            "has_file": key in stored_files,
+        })
+    out.sort(key=lambda b: b["imported_at"], reverse=True)
+    return jsonify({"imports": out})
+
+
+@app.route("/financial/bank-statement/imports/delete", methods=["POST"])
+@role_required("financial")
+def bank_statement_import_delete():
+    """Delete every expense from one statement import, archiving them like a normal expense delete."""
+    key = str((request.get_json(silent=True) or {}).get("key") or "")
+    items = _statement_import_batches().get(key) if key else None
+    if not items:
+        return jsonify({"success": False, "error": "That import wasn't found. It may already be deleted."}), 404
+    now_utc = datetime.now(timezone.utc).isoformat()
+    now_readable = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    deleted_by = session.get("user_name") or session.get("username") or session.get("user_email", "")
+    archive = {}
+    for eid, e in items:
+        archive[eid] = dict(e, firebase_id=eid, deleted_at=now_utc, deleted_at_readable=now_readable,
+                            deleted_by=deleted_by, deleted_by_email=session.get("user_email", ""),
+                            deleted_by_uid=session.get("user_uid", ""), deleted_reason="Statement import undone")
+    # Two multi-path writes instead of one call per expense
+    if not fb_update("/deleted_expenses", archive) or \
+            not fb_update("/balance_sheet_expenses", {eid: None for eid, _ in items}):
+        return jsonify({"success": False, "error": "Couldn't delete this import. Try again."}), 500
+    fb_update("/expense_receipts", {eid: None for eid, _ in items})  # receipts attached to the imported rows
+    if key.startswith("imp_"):
+        fb_delete(f"/statement_files/{key}")
+        fb_delete(f"/statement_imports/{key}")
+        _STATEMENT_CACHE.pop(key, None)
+    log.info(f"Statement import {key} undone by {deleted_by}: {len(items)} expense(s) deleted")
+    return jsonify({"success": True, "deleted": len(items)})
+
+
+# Statement files are shared by every expense of an import and never change, so keep a few in memory
+_STATEMENT_CACHE = {}
+_STATEMENT_CACHE_MAX = 6
+
+
+def _statement_file_cached(batch_id):
+    rec = _STATEMENT_CACHE.get(batch_id)
+    if rec is None:
+        rec = fb_get(f"/statement_files/{batch_id}") or {}
+        if rec.get("file_base64"):
+            if len(_STATEMENT_CACHE) >= _STATEMENT_CACHE_MAX:
+                _STATEMENT_CACHE.pop(next(iter(_STATEMENT_CACHE)))
+            _STATEMENT_CACHE[batch_id] = rec
+    return rec
+
+
 if __name__ == "__main__":
     # Run migrations on startup
     _migrate_add_co_firebase_ids()

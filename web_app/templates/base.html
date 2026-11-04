@@ -79,7 +79,14 @@
     #notifList::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
   </style>
   {% block head %}{% endblock %}
-  <script>const CURRENCY_SYMBOL = "{{ currency_symbol }}";</script>
+  <script>
+    const CURRENCY_SYMBOL = "{{ currency_symbol }}";
+    // Show a YYYY-MM-DD date as MM-DD-YYYY (same as the format_date template filter)
+    function fmtMDY(value) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+      return m ? m[2] + '-' + m[3] + '-' + m[1] : (value || '—');
+    }
+  </script>
 </head>
 <body>
 

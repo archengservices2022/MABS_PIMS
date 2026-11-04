@@ -952,6 +952,9 @@ a[href*="filter_expense"]:hover {
         <li><a class="dropdown-item" href="#" onclick="openAddGroupModal(); return false;">
           <i class="bi bi-folder-plus me-2"></i>Add Group Expenses
         </a></li>
+        <li><a class="dropdown-item" href="#" onclick="openBankImportModal(); return false;">
+          <i class="bi bi-bank me-2"></i>Import Bank Statement
+        </a></li>
       </ul>
     </div>
   </div>
@@ -1026,7 +1029,7 @@ a[href*="filter_expense"]:hover {
                   <button type="button" class="btn btn-xs btn-outline-secondary" data-exp-id="{{ exp.firebase_id }}" onclick="handleEditExpense('{{ exp.firebase_id }}')" title="Edit">
                   <i class="bi bi-pencil"></i>
                 </button>
-                {% if exp.get('receipt_filename') or exp.get('has_receipt') %}
+                {% if exp.get('receipt_filename') or exp.get('has_receipt') or exp.get('has_statement_file') %}
                 <button type="button" class="btn btn-xs btn-outline-primary" onclick="viewReceipt('{{ exp.firebase_id }}')" title="View Receipt">
                   <i class="bi bi-paperclip"></i>
                 </button>
@@ -2589,6 +2592,902 @@ function submitExpenseModal() {
     </div>
   </div>
 </div>
+
+<!-- Bank Statement Import Modal -->
+<div class="modal fade" id="bankImportModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable" style="max-width:min(1600px, 96vw);">
+    <div class="modal-content">
+      <div id="bankConfirm" role="dialog" aria-modal="true" aria-labelledby="bankConfirmTitle"
+           style="display:none;position:absolute;inset:0;z-index:20;background:rgba(15,23,42,.45);
+                  align-items:center;justify-content:center;padding:16px;border-radius:inherit;">
+        <div class="bg-white rounded-3 shadow p-3" style="max-width:520px;width:100%;max-height:90%;overflow:auto;">
+          <h6 class="fw-bold mb-2" id="bankConfirmTitle"></h6>
+          <div class="small" id="bankConfirmBody"></div>
+          <div class="d-flex justify-content-end gap-2 mt-3">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="bankConfirmCancel">Cancel</button>
+            <button type="button" class="btn btn-sm" id="bankConfirmOk"></button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-bank me-2"></i>Import Bank Statement</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <style>
+          .bank-steps { display:flex; gap:8px; margin-bottom:14px; }
+          .bank-step { flex:1; display:flex; gap:8px; align-items:flex-start; padding:8px 10px; border-radius:8px;
+                       border:1px solid #e2e8f0; background:#f8fafc; color:#64748b; font-size:14px; line-height:1.35; }
+          .bank-step .num { flex:none; width:22px; height:22px; border-radius:50%; display:flex; align-items:center;
+                            justify-content:center; font-weight:700; background:#e2e8f0; color:#475569; }
+          .bank-step.active { border-color:#0d9488; background:#f0fdfa; color:#0f172a; }
+          .bank-step.active .num { background:#0d9488; color:#fff; }
+          .bank-step.done .num { background:#99f6e4; color:#115e59; }
+          .bank-step strong { display:block; font-size:12.5px; }
+          @media (max-width: 576px) { .bank-steps { flex-direction:column; } }
+          .bank-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px; }
+          .bank-chip { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px;
+                       font-size:14px; font-weight:600; background:#f1f5f9; color:#334155; border:1px solid #e2e8f0;
+                       white-space:nowrap; }
+          .bank-chip-total { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+          .bank-chip-dup { background:#fff1f2; color:#be123c; border-color:#fecdd3; }
+          button.bank-chip { cursor:pointer; }
+          button.bank-chip:hover { background:#e2e8f0; }
+          .bank-notes { font-size:11.5px; color:#475569; background:#f8fafc; border:1px solid #e2e8f0;
+                        border-radius:8px; padding:6px 10px; margin-bottom:8px; }
+          .bank-table-wrap { max-height:58vh; overflow:auto; border:1px solid #e2e8f0; border-radius:8px; }
+          .bank-table thead th { position:sticky; top:0; z-index:2; }
+          .bank-table tbody tr.bank-off td { opacity:.5; }
+          .bank-table tbody tr.bank-off td:first-child { opacity:1; }
+          .bank-dup { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:999px; font-size:10.5px;
+                      font-weight:600; background:#fff1f2; color:#be123c; border:1px solid #fecdd3; cursor:help;
+                      vertical-align:middle; }
+        </style>
+        <div class="bank-steps" id="bankSteps">
+          <div class="bank-step active" data-step="1"><span class="num">1</span>
+            <div><strong>Choose file</strong>Bank or card statement: Excel, CSV or PDF</div></div>
+          <div class="bank-step" data-step="2"><span class="num">2</span>
+            <div><strong>Click Read Statement</strong>Payments going out are listed below</div></div>
+          <div class="bank-step" data-step="3"><span class="num">3</span>
+            <div><strong>Review &amp; Import Selected</strong>Tick rows, fill any vendor, attach receipts, then import</div></div>
+        </div>
+        <div id="bankUploadStep">
+          <p class="small text-muted mb-2">
+            Deposits and card payments are skipped automatically. Nothing is saved until you click
+            <strong>Import Selected</strong>.
+          </p>
+          <div class="d-flex gap-2 align-items-center">
+            <input type="file" id="bankStatementFile" class="form-control form-control-sm" accept=".csv,.xlsx,.pdf"
+                   onchange="bankFileChosen(this)">
+            <button type="button" class="btn btn-sm btn-teal text-nowrap" id="bankReadBtn" onclick="readBankStatement()">
+              <i class="bi bi-search me-1"></i>Read Statement
+            </button>
+          </div>
+          <div id="bankPdfPasswordWrap" class="mt-2" style="display:none;max-width:360px;">
+            <input type="password" id="bankPdfPassword" class="form-control form-control-sm" autocomplete="off"
+                   placeholder="PDF password (only if your bank locked the PDF)">
+          </div>
+          <div id="bankNextHint" class="small fw-semibold mt-2" style="color:#0d9488;display:none;">
+            <i class="bi bi-arrow-up-right-circle me-1"></i>File chosen. Now click <strong>Read Statement</strong> to see its transactions.
+          </div>
+          <div class="form-text">CSV, Excel and PDFs downloaded from net banking are all read directly. Pictures saved as PDF
+            (scans, photos, screenshots) are read on this computer with text recognition, so check their amounts before importing.
+            The statement file is saved with the import so you can open it later.</div>
+          <div class="mt-3">
+            <a href="#" class="small" onclick="toggleBankImports(); return false;">
+              <i class="bi bi-clock-history me-1"></i><span id="bankImportsToggleText">Show past imports (undo an import)</span>
+            </a>
+            <div id="bankImportsPanel" class="mt-2" style="display:none;">
+              <div id="bankImportsStatus" class="small text-muted"></div>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0" style="font-size:14px;">
+                  <thead class="table-light">
+                    <tr><th>Imported</th><th>File</th><th>Statement dates</th><th class="text-end">Rows</th><th class="text-end">Total</th><th></th></tr>
+                  </thead>
+                  <tbody id="bankImportsRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="bankStatus" class="small mt-3"></div>
+        <div id="bankReviewStep" style="display:none;">
+          <div class="bank-toolbar">
+            <div class="d-flex flex-wrap align-items-center gap-2" id="bankSummary"></div>
+            <div class="d-flex align-items-center gap-2 ms-auto">
+              <span class="bank-chip bank-chip-total" id="bankSelectedTotal"></span>
+              <button type="button" class="btn btn-sm btn-primary bank-import-go" onclick="importBankRows()">
+                <i class="bi bi-check-circle me-1"></i>Import Selected
+              </button>
+            </div>
+          </div>
+          <div id="bankNotes" class="bank-notes" style="display:none;"></div>
+          <div class="text-muted mb-2" style="font-size:11.5px;">
+            Untick anything that isn't a company expense. Every ticked row needs a <strong>Vendor</strong> and a <strong>Receipt</strong>.
+          </div>
+          <div class="table-responsive bank-table-wrap">
+            <table class="table table-sm table-hover align-middle mb-0 bank-table" style="font-size:14px;">
+              <thead class="table-light">
+                <tr>
+                  <th><input type="checkbox" id="bankSelectAll" onchange="toggleAllBankRows(this.checked)"></th>
+                  <th>Date</th>
+                  <th style="min-width:180px;">Bank Description</th>
+                  <th class="text-end">Amount</th>
+                  <th style="min-width:160px;">Expense Name</th>
+                  <th style="min-width:160px;">Type</th>
+                  <th style="min-width:170px;">Category</th>
+                  <th style="min-width:130px;">Vendor</th>
+                  <th style="min-width:150px;">Receipt</th>
+                </tr>
+              </thead>
+              <tbody id="bankRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-primary bank-import-go" id="bankImportBtn" style="display:none;" onclick="importBankRows()">
+          <i class="bi bi-check-circle me-1"></i>Import Selected
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let bankRowsData = [];
+let bankCategoriesByType = {};
+let bankReceiptFiles = {};  // row index -> receipt File, uploaded to each new expense after the import
+
+function bankEsc(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+const BANK_MAX_MB = 12;
+
+function bankJson(r) {
+  const type = r.headers.get('content-type') || '';
+  if (type.indexOf('application/json') !== -1) return r.json();
+  return r.text().then(text => {
+    let msg;
+    if (r.redirected && /login/i.test(r.url)) msg = 'Your login has expired. Refresh the page, log in again, then retry.';
+    else if (r.status === 413) msg = 'This file is too large. The limit is ' + BANK_MAX_MB + ' MB.';
+    else if (r.status === 400) {
+      const m = text.match(/<p>([\s\S]*?)<\/p>/);
+      msg = (m ? m[1] : 'The server rejected this request.')
+        .replace('Please upload a PDF or image.', 'Upload the statement as PDF, Excel (.xlsx) or CSV.');
+    }
+    else if (r.status === 403) msg = 'You don\'t have permission to do this.';
+    else if (r.status >= 500) msg = 'The server had a problem (error ' + r.status + '). Wait a minute and try again.';
+    else msg = 'Unexpected reply from the server (status ' + r.status + '). Refresh the page and try again.';
+    return { error: msg, success: false };
+  });
+}
+
+function bankMoney(n) {
+  return CURRENCY_SYMBOL + Number(n || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+function setBankStep(n) {
+  document.querySelectorAll('#bankSteps .bank-step').forEach(el => {
+    const step = +el.dataset.step;
+    el.classList.toggle('active', step === n);
+    el.classList.toggle('done', step < n);
+  });
+}
+
+function bankFileChosen(input) {
+  const chosen = !!input.files.length;
+  document.getElementById('bankPdfPasswordWrap').style.display = /\.pdf$/i.test(input.value) ? '' : 'none';
+  document.getElementById('bankNextHint').style.display = chosen ? '' : 'none';
+  // A new file means the table below no longer applies
+  bankRowsData = [];
+  bankReceiptFiles = {};
+  document.getElementById('bankReviewStep').style.display = 'none';
+  document.getElementById('bankImportBtn').style.display = 'none';
+  document.getElementById('bankStatus').innerHTML = '';
+  setBankStep(chosen ? 2 : 1);
+}
+
+function openBankImportModal() {
+  bankRowsData = [];
+  bankReceiptFiles = {};
+  setBankStep(1);
+  document.getElementById('bankNextHint').style.display = 'none';
+  document.getElementById('bankStatementFile').value = '';
+  document.getElementById('bankPdfPassword').value = '';
+  document.getElementById('bankPdfPasswordWrap').style.display = 'none';
+  document.getElementById('bankStatus').innerHTML = '';
+  document.getElementById('bankReviewStep').style.display = 'none';
+  document.getElementById('bankImportBtn').style.display = 'none';
+  document.getElementById('bankUploadStep').style.display = '';
+  document.getElementById('bankImportsPanel').style.display = 'none';
+  document.getElementById('bankImportsToggleText').textContent = 'Show past imports (undo an import)';
+  new bootstrap.Modal(document.getElementById('bankImportModal')).show();
+}
+
+// Picture PDFs (scans, photos, screenshots) are read here in the browser with free text recognition
+// (Tesseract), so the server only receives the text. The libraries load the first time they are needed.
+const BANK_PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+const BANK_TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+const BANK_OCR_MAX_PAGES = 15;
+
+function bankLoadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector('script[src="' + src + '"]')) return resolve();
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('couldn\'t load the text recognition tool. Check the internet connection and try again.'));
+    document.head.appendChild(s);
+  });
+}
+
+// Clean a rendered page for text recognition. 'plain': grayscale with fixed extra contrast. 'full': the
+// contrast stretched (faint or dark pictures), sharpened (blurry ones) and straightened (slightly tilted
+// photos). Each reads some pictures better than the other, so both are used and compared.
+function bankCleanPicture(source, mode) {
+  const w = source.width, h = source.height, canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(source, 0, 0);
+  const img = ctx.getImageData(0, 0, w, h), px = img.data, n = w * h;
+  if (mode === 'plain') {
+    for (let i = 0; i < n; i++) {
+      const g = 0.299 * px[4 * i] + 0.587 * px[4 * i + 1] + 0.114 * px[4 * i + 2];
+      px[4 * i] = px[4 * i + 1] = px[4 * i + 2] = Math.max(0, Math.min(255, (g - 128) * 1.6 + 128));
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas;
+  }
+  const gray = new Float32Array(n), hist = new Uint32Array(256);
+  for (let i = 0; i < n; i++) {
+    const g = 0.299 * px[4 * i] + 0.587 * px[4 * i + 1] + 0.114 * px[4 * i + 2];
+    gray[i] = g; hist[g | 0]++;
+  }
+  // 1st and 99th percentile become black and white
+  let lo = 0, hi = 255, seen = 0;
+  for (let v = 0; v < 256; v++) { seen += hist[v]; if (seen >= n * 0.01) { lo = v; break; } }
+  seen = 0;
+  for (let v = 255; v >= 0; v--) { seen += hist[v]; if (seen >= n * 0.01) { hi = v; break; } }
+  const k = 255 / Math.max(1, hi - lo);
+  for (let i = 0; i < n; i++) {
+    const v = Math.max(0, Math.min(255, (gray[i] - lo) * k));
+    px[4 * i] = px[4 * i + 1] = px[4 * i + 2] = v;
+  }
+  ctx.putImageData(img, 0, 0);
+
+  // Sharpen (unsharp mask): image + 1.2 x (image - blurred image); skipped where canvas filters aren't supported
+  if ('filter' in ctx) {
+    const blur = document.createElement('canvas');
+    blur.width = w; blur.height = h;
+    const bctx = blur.getContext('2d');
+    bctx.filter = 'blur(2px)';
+    bctx.drawImage(canvas, 0, 0);
+    const b = bctx.getImageData(0, 0, w, h).data, s = ctx.getImageData(0, 0, w, h);
+    for (let i = 0; i < s.data.length; i += 4) {
+      const d = s.data[i] - b[i];
+      if (Math.abs(d) > 2) s.data[i] = s.data[i + 1] = s.data[i + 2] = Math.max(0, Math.min(255, s.data[i] + 1.2 * d));
+    }
+    ctx.putImageData(s, 0, 0);
+  }
+
+  // Straighten: the angle (-5 to 5 degrees) at which text rows line up most sharply, found on a small copy
+  const sw = Math.min(900, w), sh = Math.round(h * sw / w);
+  const small = document.createElement('canvas');
+  small.width = sw; small.height = sh;
+  small.getContext('2d').drawImage(canvas, 0, 0, sw, sh);
+  const sp = small.getContext('2d').getImageData(0, 0, sw, sh).data, xs = [], ys = [];
+  for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) if (sp[4 * (y * sw + x)] < 128) { xs.push(x - sw / 2); ys.push(y - sh / 2); }
+  let best = -1, angle = 0;
+  for (let a = -5; a <= 5.001; a += 0.25) {
+    const t = a * Math.PI / 180, c = Math.cos(t), si = Math.sin(t), rows = new Float64Array(sh * 2 + sw * 2);
+    const off = sh + sw;
+    for (let j = 0; j < xs.length; j++) rows[Math.round(ys[j] * c - xs[j] * si) + off]++;
+    let score = 0;
+    for (let r = 1; r < rows.length; r++) score += (rows[r] - rows[r - 1]) ** 2;
+    if (score > best) { best = score; angle = a; }
+  }
+  if (Math.abs(angle) < 0.2) return canvas;
+  const t = angle * Math.PI / 180, cw = Math.ceil(w * Math.abs(Math.cos(t)) + h * Math.abs(Math.sin(t)));
+  const ch = Math.ceil(h * Math.abs(Math.cos(t)) + w * Math.abs(Math.sin(t)));
+  const out = document.createElement('canvas');
+  out.width = cw; out.height = ch;
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#fff';
+  octx.fillRect(0, 0, cw, ch);
+  octx.translate(cw / 2, ch / 2);
+  octx.rotate(-t);
+  octx.drawImage(canvas, -w / 2, -h / 2);
+  return out;
+}
+
+// A copy of a canvas turned clockwise by a quarter-turn multiple, optionally scaled down
+function bankTurn(canvas, degrees, scale) {
+  const swap = degrees % 180 !== 0, out = document.createElement('canvas');
+  out.width = (swap ? canvas.height : canvas.width) * scale;
+  out.height = (swap ? canvas.width : canvas.height) * scale;
+  const ctx = out.getContext('2d');
+  ctx.translate(out.width / 2, out.height / 2);
+  ctx.rotate(degrees * Math.PI / 180);
+  ctx.drawImage(canvas, -canvas.width * scale / 2, -canvas.height * scale / 2, canvas.width * scale, canvas.height * scale);
+  return out;
+}
+
+// A copy with scanner specks removed: each pixel becomes the median of the 5x5 square around it (a sliding
+// histogram per row keeps this fast on full pages)
+function bankDespeckle(canvas) {
+  const w = canvas.width, h = canvas.height, r = 2, half = ((2 * r + 1) ** 2 - 1) / 2;
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const ctx = out.getContext('2d');
+  ctx.drawImage(canvas, 0, 0);
+  const img = ctx.getImageData(0, 0, w, h), px = img.data, gray = new Uint8Array(w * h);
+  for (let i = 0; i < gray.length; i++) gray[i] = (px[4 * i] + px[4 * i + 1] + px[4 * i + 2]) / 3;
+  const at = (x, y) => gray[Math.max(0, Math.min(h - 1, y)) * w + Math.max(0, Math.min(w - 1, x))];
+  for (let y = 0; y < h; y++) {
+    const hist = new Uint16Array(256);
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) hist[at(dx, y + dy)]++;
+    for (let x = 0; x < w; x++) {
+      let seen = 0, v = 0;
+      while ((seen += hist[v]) <= half) v++;
+      px[4 * (y * w + x)] = px[4 * (y * w + x) + 1] = px[4 * (y * w + x) + 2] = v;
+      for (let dy = -r; dy <= r; dy++) { hist[at(x - r, y + dy)]--; hist[at(x + r + 1, y + dy)]++; }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return out;
+}
+
+// Share of dark pixels that are isolated dots: nothing else dark on a ring around them, which text never is.
+// Despeckling only helps pages that have such dots, and thins the text on others.
+function bankSpeckShare(canvas) {
+  const w = canvas.width, h = canvas.height, r = 8, px = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+  const dark = (x, y) => px[4 * (y * w + x) + 1] < 110;
+  const ring = [[r, 0], [-r, 0], [0, r], [0, -r], [6, 6], [-6, 6], [6, -6], [-6, -6]];
+  let total = 0, isolated = 0;
+  for (let y = r; y < h - r; y += 2) {
+    for (let x = r; x < w - r; x += 2) {
+      if (!dark(x, y)) continue;
+      total++;
+      if (!ring.some(([dx, dy]) => dark(x + dx, y + dy))) isolated++;
+    }
+  }
+  return total ? isolated / total : 0;
+}
+
+// Pages scanned sideways or upside down read as nonsense: when a small test reading scores badly, turn
+// the page to whichever way reads best
+async function bankUprightPage(worker, canvas) {
+  const scale = Math.min(1, 1500 / Math.max(canvas.width, canvas.height));
+  const score = async degrees => (await worker.recognize(bankTurn(canvas, degrees, scale))).data.confidence;
+  let bestScore = await score(0), best = 0;
+  if (bestScore >= 70) return canvas;
+  for (const degrees of [90, 180, 270]) {
+    const turned = await score(degrees);
+    if (turned > bestScore) { bestScore = turned; best = degrees; }
+  }
+  return best ? bankTurn(canvas, best, 1) : canvas;
+}
+
+async function bankOcrPdf(file, password, onProgress) {
+  await bankLoadScript(BANK_PDFJS + 'pdf.min.js');
+  await bankLoadScript(BANK_TESSERACT);
+  pdfjsLib.GlobalWorkerOptions.workerSrc = BANK_PDFJS + 'pdf.worker.min.js';
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer(), password: password || undefined }).promise;
+  const count = Math.min(pdf.numPages, BANK_OCR_MAX_PAGES);
+  const worker = await Tesseract.createWorker('eng');
+  await worker.setParameters({ preserve_interword_spaces: '1' });
+  const plain = [], full = [];  // two readings of every page, compared on the server
+  plain.skipped = Math.max(0, pdf.numPages - count);
+  try {
+    for (let n = 1; n <= count; n++) {
+      onProgress('Reading page ' + n + ' of ' + count + ' of the picture (twice, to double-check)...');
+      const page = await pdf.getPage(n);
+      // About 3000px wide: sharp enough for small statement print
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: Math.max(1, Math.min(4, 3000 / base.width)) });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      const upright = await bankUprightPage(worker, canvas);
+      plain.push((await worker.recognize(bankCleanPicture(upright, 'plain'))).data.text);
+      const spotless = bankSpeckShare(upright) > 0.18 ? bankDespeckle(upright) : upright;
+      full.push((await worker.recognize(bankCleanPicture(spotless, 'full'))).data.text);
+    }
+  } finally {
+    await worker.terminate();
+  }
+  return [plain, full];
+}
+
+// ocrPages: for a picture statement, its two readings from bankOcrPdf ([[page texts], [page texts]])
+function readBankStatement(ocrPages) {
+  const file = document.getElementById('bankStatementFile').files[0];
+  const status = document.getElementById('bankStatus');
+  if (!file) { status.innerHTML = '<span class="text-danger">Choose a statement file first.</span>'; return; }
+  if (!/\.(pdf|xlsx|csv)$/i.test(file.name)) {
+    status.innerHTML = '<span class="text-danger">"' + bankEsc(file.name) + '" isn\'t a supported file. Upload the statement as ' +
+      'PDF, Excel (.xlsx) or CSV. For an old .xls file, open it in Excel and save as .xlsx.</span>';
+    return;
+  }
+  if (file.size > BANK_MAX_MB * 1024 * 1024) {
+    status.innerHTML = '<span class="text-danger">This file is ' + (file.size / 1048576).toFixed(1) + ' MB. The limit is ' +
+      BANK_MAX_MB + ' MB. Download a shorter date range from your bank.</span>';
+    return;
+  }
+  if (!file.size) { status.innerHTML = '<span class="text-danger">This file is empty. Download the statement again.</span>'; return; }
+  const btn = document.getElementById('bankReadBtn');
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Reading statement and suggesting categories. Large statements can take a minute...';
+  const fd = new FormData();
+  fd.append('statement', file);
+  fd.append('pdf_password', document.getElementById('bankPdfPassword').value);
+  if (ocrPages) {
+    fd.append('ocr_text', JSON.stringify(ocrPages));
+    fd.append('ocr_pages_skipped', ocrPages[0].skipped || 0);
+  }
+  fetch('/financial/bank-statement/parse', { method: 'POST', body: fd })
+    .then(bankJson)
+    .then(res => {
+      if (res.needs_ocr && !ocrPages) {
+        // A picture: read it here, then send the text back
+        const say = msg => { status.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' + bankEsc(msg) +
+          ' <span class="text-muted">This statement is a picture, so it\'s read on this computer. It takes a few seconds a page' +
+          ' (longer the first time, while the reader downloads).</span>'; };
+        say('Getting the text reader ready...');
+        bankOcrPdf(file, document.getElementById('bankPdfPassword').value, say)
+          .then(pages => readBankStatement(pages))
+          .catch(err => {
+            btn.disabled = false;
+            status.innerHTML = '<span class="text-danger">Couldn\'t read the picture: ' + bankEsc(err.message || String(err)) +
+              ' You can also download the statement from net banking as PDF, Excel or CSV.</span>';
+          });
+        return;
+      }
+      btn.disabled = false;
+      if (res.error) { status.innerHTML = '<span class="text-danger">' + bankEsc(res.error) + '</span>'; return; }
+      bankRowsData = res.rows || [];
+      bankReceiptFiles = {};
+      bankCategoriesByType = res.categories_by_type || {};
+      renderBankRows(res.expense_types || []);
+      const dupes = bankRowsData.filter(r => r.duplicate_of).length;
+      const unsure = bankRowsData.filter(r => r.direction_unknown).length;
+      status.innerHTML = '';
+      // Problems to fix before importing (e.g. rows not adding up to the statement's Total) are shown in full
+      const warns = res.warnings || [];
+      if (warns.length) {
+        status.innerHTML += '<div class="alert alert-warning py-2 px-3 mb-2" style="font-size:14px;">' +
+          warns.map(w => '<div><i class="bi bi-exclamation-triangle me-1"></i>' + bankEsc(w) + '</div>').join('') + '</div>';
+      }
+      if (bankRowsData.some(r => r.from_picture)) {
+        status.innerHTML += '<div class="small mb-2"><i class="bi bi-image me-1"></i>Read from a picture: dates and amounts ' +
+          'can be corrected in the table. <a href="' + URL.createObjectURL(file) + '" target="_blank" rel="noopener">' +
+          'Open the statement</a> to compare.</div>';
+      }
+      // Reader notes (currency conversion, AI unavailable, unclear rows) stay tucked behind a chip
+      const notes = [];
+      if (res.ai_note) notes.push(res.ai_note);
+      if (unsure) notes.push(unsure + ' row(s) didn\'t say whether money went in or out. Untick any deposits.');
+      const notesBox = document.getElementById('bankNotes');
+      notesBox.innerHTML = notes.map(n => '<div>' + bankEsc(n) + '</div>').join('');
+      notesBox.style.display = 'none';
+      document.getElementById('bankSummary').innerHTML =
+        '<span class="bank-chip"><i class="bi bi-arrow-up-right"></i>' + bankRowsData.length + ' payments</span>' +
+        (res.credits_skipped ? '<span class="bank-chip"><i class="bi bi-arrow-down-left"></i>' + res.credits_skipped + ' deposits skipped</span>' : '') +
+        (dupes ? '<span class="bank-chip bank-chip-dup" title="Unticked because a matching expense is already recorded">' +
+          '<i class="bi bi-files"></i>' + dupes + ' possible duplicates</span>' : '') +
+        (notes.length ? '<button type="button" class="bank-chip" onclick="toggleBankNotes()" title="Show import notes">' +
+          '<i class="bi bi-info-circle"></i>' + notes.length + (notes.length > 1 ? ' notes' : ' note') + '</button>' : '');
+      document.getElementById('bankReviewStep').style.display = bankRowsData.length ? '' : 'none';
+      document.getElementById('bankImportBtn').style.display = bankRowsData.length ? '' : 'none';
+      document.getElementById('bankNextHint').style.display = 'none';
+      if (bankRowsData.length) setBankStep(3);
+      if (!bankRowsData.length) status.innerHTML += '<div>No outgoing payments found in this file.</div>';
+      updateBankTotal();
+    })
+    .catch(err => {
+      btn.disabled = false;
+      status.innerHTML = '<span class="text-danger">Couldn\'t read the statement: ' + bankEsc(err.message) + '</span>';
+    });
+}
+
+function bankCategoryOptions(type, selected) {
+  const cats = bankCategoriesByType[type] || [];
+  const list = cats.includes(selected) || !selected ? cats : [selected].concat(cats);
+  return '<option value="">—</option>' + list.map(c =>
+    '<option' + (c === selected ? ' selected' : '') + '>' + bankEsc(c) + '</option>').join('');
+}
+
+function renderBankRows(types) {
+  document.getElementById('bankRows').innerHTML = bankRowsData.map((r, i) => {
+    const typeOpts = '<option value="">Select type…</option>' + types.map(t =>
+      '<option' + (t === r.expense_type ? ' selected' : '') + '>' + bankEsc(t) + '</option>').join('');
+    return '<tr' + (r.duplicate_of ? ' class="bank-off"' : '') + '>' +
+      '<td><input type="checkbox" class="bank-row-check" data-i="' + i + '"' + (r.duplicate_of ? '' : ' checked') + ' onchange="updateBankTotal()"></td>' +
+      bankDateCell(r, i) +
+      '<td>' + bankEsc(r.description) +
+        (r.duplicate_of ? '<span class="bank-dup" title="Already recorded as: ' + bankEsc(r.duplicate_of) + '">Duplicate</span>' : '') + '</td>' +
+      bankAmountCell(r, i) +
+      '<td><input type="text" class="form-control form-control-sm" data-i="' + i + '" data-f="expense_name" value="' + bankEsc(r.expense_name) + '" oninput="setBankField(this)"></td>' +
+      '<td><select class="form-select form-select-sm" data-i="' + i + '" data-f="expense_type" onchange="setBankField(this); refreshBankCategories(' + i + ')">' + typeOpts + '</select></td>' +
+      '<td><select class="form-select form-select-sm" id="bankCat' + i + '" data-i="' + i + '" data-f="category" onchange="setBankField(this)">' + bankCategoryOptions(r.expense_type, r.category) + '</select></td>' +
+      '<td><input type="text" class="form-control form-control-sm" data-i="' + i + '" data-f="vendor" value="' + bankEsc(r.vendor) + '" placeholder="Required" oninput="setBankField(this)"></td>' +
+      '<td id="bankReceipt' + i + '">' + bankReceiptCell(i) + '</td>' +
+      '</tr>';
+  }).join('');
+  document.getElementById('bankSelectAll').checked = bankRowsData.every(r => !r.duplicate_of);
+}
+
+// Rows read from a picture can be corrected: date and amount are boxes. A Taka statement shows the
+// Taka amount (as printed, to compare) with the dollar amount it converts to underneath. A dollar
+// statement is shown and saved exactly as printed.
+function bankDateCell(r, i) {
+  if (!r.from_picture) return '<td class="text-nowrap">' + bankEsc(fmtMDY(r.date)) + '</td>';
+  return '<td><input type="date" class="form-control form-control-sm' + (r.date ? '' : ' is-invalid') + '" style="width:140px;" ' +
+    'data-i="' + i + '" data-f="date" value="' + bankEsc(r.date || '') + '" onchange="setBankDate(this)"' +
+    (r.date_unreadable ? ' title="Read as &quot;' + bankEsc(r.date_unreadable) + '&quot;: enter the date from the statement"' : '') + '></td>';
+}
+
+function bankAmountCell(r, i) {
+  const tk = r.original_currency === 'BDT';
+  if (!r.from_picture) {
+    return '<td class="text-end text-nowrap">' + bankMoney(r.amount) +
+      (tk ? '<div class="text-muted" style="font-size:12px;">৳' + Number(r.original_amount).toFixed(2) + '</div>' : '') + '</td>';
+  }
+  const shown = Number(tk ? r.original_amount : r.amount) || 0;
+  // Red: amount couldn't be read. Yellow: the second reading of the picture gave a different amount.
+  const flag = !shown ? ' is-invalid' : (r.recheck ? ' border-warning bg-warning-subtle' : '');
+  const tip = !shown ? 'Read as &quot;' + bankEsc(r.amount_unreadable || '') + '&quot;: enter the amount from the statement'
+    : (r.recheck ? 'A second reading gave a different amount: check it against the statement' : '');
+  return '<td class="text-end text-nowrap"><div class="input-group input-group-sm" style="width:130px;margin-left:auto;">' +
+    '<span class="input-group-text">' + (tk ? '৳' : CURRENCY_SYMBOL) + '</span>' +
+    '<input type="number" step="0.01" min="0" class="form-control text-end' + flag + '" data-i="' + i + '" ' +
+    (tip ? 'title="' + tip + '" ' : '') + 'value="' + (shown ? shown.toFixed(2) : '') + '" onchange="setBankAmount(this)"></div>' +
+    (tk ? '<div class="text-muted" id="bankUsd' + i + '" style="font-size:12px;">' + bankMoney(r.amount) + '</div>' : '') + '</td>';
+}
+
+function setBankDate(el) {
+  bankRowsData[+el.dataset.i].date = el.value;
+  el.classList.toggle('is-invalid', !el.value);
+}
+
+function setBankAmount(el) {
+  const r = bankRowsData[+el.dataset.i], v = Math.max(0, Math.round(Number(el.value || 0) * 100) / 100);
+  if (r.original_currency === 'BDT') {
+    r.original_amount = v;
+    r.amount = Math.round(v / r.usd_rate * 100) / 100;
+    document.getElementById('bankUsd' + el.dataset.i).textContent = bankMoney(r.amount);
+  } else {
+    r.amount = v;
+  }
+  r.recheck = false;  // checked by hand
+  el.classList.remove('border-warning', 'bg-warning-subtle');
+  el.classList.toggle('is-invalid', !v);
+  updateBankTotal();
+}
+
+function bankReceiptCell(i) {
+  const f = bankReceiptFiles[i];
+  if (f) {
+    return '<div class="d-flex align-items-center gap-1" style="max-width:150px;">' +
+      '<i class="bi bi-paperclip text-success"></i>' +
+      '<span class="text-truncate" title="' + bankEsc(f.name) + '">' + bankEsc(f.name) + '</span>' +
+      '<button type="button" class="btn btn-sm btn-link text-danger p-0" title="Remove receipt" onclick="clearBankReceipt(' + i + ')">' +
+      '<i class="bi bi-x-circle"></i></button></div>';
+  }
+  // Looks like the Vendor box: a field reading "Required" that opens the file picker
+  return '<label class="form-control form-control-sm mb-0 text-nowrap bank-receipt-attach" title="Attach a photo or PDF" ' +
+    'style="cursor:pointer;color:#6c757d;">' +
+    '<i class="bi bi-upload me-1"></i>Attach' +
+    '<input type="file" class="d-none" accept="image/*,.pdf" onchange="setBankReceipt(' + i + ', this)"></label>';
+}
+
+function setBankReceipt(i, input) {
+  const f = input.files[0];
+  const status = document.getElementById('bankStatus');
+  if (!f) return;
+  if (!/^image\//.test(f.type) && !/\.pdf$/i.test(f.name)) {
+    status.innerHTML = '<span class="text-danger">"' + bankEsc(f.name) + '" isn\'t a photo or PDF. Attach the receipt as an image or PDF.</span>';
+    input.value = '';
+    return;
+  }
+  if (f.size > BANK_MAX_MB * 1024 * 1024 - 65536) {
+    status.innerHTML = '<span class="text-danger">"' + bankEsc(f.name) + '" is ' + (f.size / 1048576).toFixed(1) +
+      ' MB. Receipts must be under ' + BANK_MAX_MB + ' MB.</span>';
+    input.value = '';
+    return;
+  }
+  if (!f.size) { status.innerHTML = '<span class="text-danger">"' + bankEsc(f.name) + '" is empty.</span>'; input.value = ''; return; }
+  status.innerHTML = '';
+  bankReceiptFiles[i] = f;
+  document.getElementById('bankReceipt' + i).innerHTML = bankReceiptCell(i);
+}
+
+function clearBankReceipt(i) {
+  delete bankReceiptFiles[i];
+  document.getElementById('bankReceipt' + i).innerHTML = bankReceiptCell(i);
+}
+
+// Upload each row's receipt to its new expense, a few at a time; resolves to the rows whose upload failed
+async function uploadBankReceipts(jobs, onProgress) {
+  const failed = [];
+  let next = 0, done = 0;
+  async function worker() {
+    while (next < jobs.length) {
+      const job = jobs[next++];
+      const fd = new FormData();
+      fd.append('receipt', job.file);
+      try {
+        const res = await fetch('/financial/bank-statement/receipt/' + encodeURIComponent(job.id), { method: 'POST', body: fd }).then(bankJson);
+        if (!res.success) failed.push(job.row);
+      } catch (e) {
+        failed.push(job.row);
+      }
+      onProgress(++done);
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);
+  return failed;
+}
+
+function setBankField(el) {
+  bankRowsData[+el.dataset.i][el.dataset.f] = el.value;
+  if (el.dataset.f === 'vendor' && el.value.trim()) el.classList.remove('is-invalid');
+}
+
+function refreshBankCategories(i) {
+  const r = bankRowsData[i];
+  if (!(bankCategoriesByType[r.expense_type] || []).includes(r.category)) r.category = '';
+  document.getElementById('bankCat' + i).innerHTML = bankCategoryOptions(r.expense_type, r.category);
+}
+
+function toggleAllBankRows(on) {
+  document.querySelectorAll('.bank-row-check').forEach(cb => cb.checked = on);
+  updateBankTotal();
+}
+
+function selectedBankRows() {
+  return Array.from(document.querySelectorAll('.bank-row-check:checked')).map(cb => bankRowsData[+cb.dataset.i]);
+}
+
+function toggleBankNotes() {
+  const box = document.getElementById('bankNotes');
+  box.style.display = box.style.display === 'none' ? '' : 'none';
+}
+
+function updateBankTotal() {
+  // Dim unticked rows so it's clear at a glance what will be imported
+  document.querySelectorAll('.bank-row-check').forEach(cb => cb.closest('tr').classList.toggle('bank-off', !cb.checked));
+  const sel = selectedBankRows();
+  const total = sel.reduce((s, r) => s + Number(r.amount || 0), 0);
+  document.getElementById('bankSelectedTotal').textContent = sel.length + ' selected · ' + bankMoney(total);
+}
+
+let bankImportsChanged = false;
+
+// Ask inside the import window instead of a browser pop-up; resolves true for OK, false for Cancel
+function bankConfirm(title, bodyHtml, okLabel, okClass) {
+  return new Promise(resolve => {
+    const box = document.getElementById('bankConfirm');
+    const ok = document.getElementById('bankConfirmOk');
+    const cancel = document.getElementById('bankConfirmCancel');
+    document.getElementById('bankConfirmTitle').textContent = title;
+    document.getElementById('bankConfirmBody').innerHTML = bodyHtml;
+    ok.textContent = okLabel;
+    ok.className = 'btn btn-sm ' + (okClass || 'btn-primary');
+    const done = answer => {
+      box.style.display = 'none';
+      ok.onclick = cancel.onclick = box.onkeydown = null;
+      resolve(answer);
+    };
+    ok.onclick = () => done(true);
+    cancel.onclick = () => done(false);
+    box.onkeydown = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+    box.style.display = 'flex';
+    cancel.focus();
+  });
+}
+
+function toggleBankImports() {
+  const panel = document.getElementById('bankImportsPanel');
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? '' : 'none';
+  document.getElementById('bankImportsToggleText').textContent = show ? 'Hide past imports' : 'Show past imports (undo an import)';
+  if (show) loadBankImports();
+}
+
+function loadBankImports() {
+  const status = document.getElementById('bankImportsStatus');
+  const body = document.getElementById('bankImportsRows');
+  status.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Loading past imports...';
+  body.innerHTML = '';
+  fetch('/financial/bank-statement/imports')
+    .then(bankJson)
+    .then(res => {
+      if (res.error) { status.innerHTML = '<span class="text-danger">' + bankEsc(res.error) + '</span>'; return; }
+      const list = res.imports || [];
+      status.textContent = list.length ? '' : 'No statement imports yet.';
+      body.innerHTML = list.map(b => {
+        const at = b.imported_at ? new Date(b.imported_at) : null;
+        const when = at && !isNaN(at)
+          ? fmtMDY(at.getFullYear() + '-' + String(at.getMonth() + 1).padStart(2, '0') + '-' + String(at.getDate()).padStart(2, '0')) +
+            ' ' + at.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+          : '—';
+        const range = b.first_date === b.last_date ? fmtMDY(b.first_date) : fmtMDY(b.first_date) + ' → ' + fmtMDY(b.last_date);
+        return '<tr>' +
+          '<td class="text-nowrap">' + bankEsc(when) + (b.by ? '<div class="text-muted" style="font-size:13px;">' + bankEsc(b.by) + '</div>' : '') + '</td>' +
+          '<td>' + (b.has_file
+              ? '<a href="/financial/bank-statement/file/' + encodeURIComponent(b.key) + '" target="_blank" rel="noopener">' +
+                '<i class="bi bi-file-earmark-text me-1"></i>' + bankEsc(b.file || 'View statement') + '</a>'
+              : bankEsc(b.file || '—') + (b.key.indexOf('imp_') === 0 ? '' : '<div class="text-muted" style="font-size:13px;">file not kept (older import)</div>')) + '</td>' +
+          '<td class="text-nowrap">' + bankEsc(range) + '</td>' +
+          '<td class="text-end">' + b.count + '</td>' +
+          '<td class="text-end text-nowrap">' + bankMoney(b.total) + '</td>' +
+          '<td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger py-0" ' +
+            'data-key="' + bankEsc(b.key) + '" data-count="' + b.count + '" data-total="' + b.total + '" onclick="undoBankImport(this)">' +
+            '<i class="bi bi-arrow-counterclockwise me-1"></i>Undo import</button></td>' +
+          '</tr>';
+      }).join('');
+    })
+    .catch(err => { status.innerHTML = '<span class="text-danger">Couldn\'t load past imports: ' + bankEsc(err.message) + '</span>'; });
+}
+
+async function undoBankImport(btn) {
+  const row = btn.closest('tr');
+  const file = row.children[1].textContent.trim();
+  const ok = await bankConfirm('Undo this import?',
+    '<p class="mb-2">Delete all <strong>' + bankEsc(btn.dataset.count) + ' expense(s)</strong> from this import (' +
+    bankMoney(btn.dataset.total) + ')' + (file && file !== '—' ? ', file <strong>' + bankEsc(file.split('\n')[0]) + '</strong>' : '') + '?</p>' +
+    '<p class="mb-0 text-muted">They are removed from the Expense Log and totals, and the saved statement file is deleted. ' +
+    'A copy of each expense is kept in the deleted-expenses archive.</p>',
+    'Delete ' + btn.dataset.count + ' expense(s)', 'btn-danger');
+  if (!ok) return;
+  const status = document.getElementById('bankImportsStatus');
+  btn.disabled = true;
+  fetch('/financial/bank-statement/imports/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: btn.dataset.key })
+  })
+    .then(bankJson)
+    .then(res => {
+      if (!res.success) { btn.disabled = false; status.innerHTML = '<span class="text-danger">' + bankEsc(res.error || 'Couldn\'t undo this import.') + '</span>'; return; }
+      bankImportsChanged = true;
+      document.getElementById('bankImportsStatus').innerHTML =
+        '<span class="text-success">Deleted ' + res.deleted + ' expense(s). The page refreshes when you close this window.</span>';
+      btn.closest('tr').remove();
+    })
+    .catch(err => { btn.disabled = false; status.innerHTML = '<span class="text-danger">Couldn\'t undo this import: ' + bankEsc(err.message) + '</span>'; });
+}
+
+document.getElementById('bankImportModal').addEventListener('hidden.bs.modal', () => {
+  const cancel = document.getElementById('bankConfirmCancel');
+  if (cancel.onclick) cancel.onclick();
+  if (bankImportsChanged) location.reload();
+});
+
+async function importBankRows() {
+  const rows = selectedBankRows();
+  const status = document.getElementById('bankStatus');
+  if (!rows.length) { status.innerHTML = '<span class="text-danger">Tick at least one row to import.</span>'; return; }
+  // Picture statements can have a date or amount that couldn't be read
+  const ticked = [...document.querySelectorAll('.bank-row-check')].filter(cb => cb.checked);
+  for (const [what, bad, sel] of [['Date', r => !r.date, 'input[data-f="date"]'],
+                                  ['Amount', r => !(Number(r.amount) > 0), 'input[type="number"]']]) {
+    const missing = ticked.filter(cb => bad(bankRowsData[+cb.dataset.i]));
+    if (!missing.length) continue;
+    status.innerHTML = '<span class="text-danger">' + missing.length + ' ticked row(s) have no <strong>' + what + '</strong> (outlined in red). ' +
+      'Enter it from the statement, or untick the row, then click Import Selected again.</span>';
+    const input = missing[0].closest('tr').querySelector(sel);
+    if (input) { input.scrollIntoView({ behavior: 'smooth', block: 'center' }); input.focus({ preventScroll: true }); }
+    return;
+  }
+  let firstNoVendor = null, noVendor = 0;
+  document.querySelectorAll('.bank-row-check').forEach(cb => {
+    const input = cb.closest('tr').querySelector('input[data-f="vendor"]');
+    const missing = cb.checked && !(bankRowsData[+cb.dataset.i].vendor || '').trim();
+    input.classList.toggle('is-invalid', missing);
+    if (missing) { noVendor++; if (!firstNoVendor) firstNoVendor = input; }
+  });
+  if (noVendor) {
+    status.innerHTML = '<span class="text-danger">' + noVendor + ' ticked row(s) have no <strong>Vendor</strong> (outlined in red). ' +
+      'Type the vendor for each, or untick the row, then click Import Selected again.</span>';
+    firstNoVendor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    firstNoVendor.focus({ preventScroll: true });
+    return;
+  }
+  let firstNoReceipt = null, noReceiptCount = 0;
+  document.querySelectorAll('.bank-row-check').forEach(cb => {
+    const attach = cb.closest('tr').querySelector('.bank-receipt-attach');
+    if (!attach) return;  // a receipt is attached
+    const missing = cb.checked;
+    attach.classList.toggle('is-invalid', missing);
+    if (missing) { noReceiptCount++; if (!firstNoReceipt) firstNoReceipt = attach; }
+  });
+  if (noReceiptCount) {
+    status.innerHTML = '<span class="text-danger">' + noReceiptCount + ' ticked row(s) have no <strong>Receipt</strong> (outlined in red). ' +
+      'Attach a photo or PDF for each, or untick the row, then click Import Selected again.</span>';
+    firstNoReceipt.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  const unticked = bankRowsData.filter(r => !rows.includes(r));
+  const untickedNew = unticked.filter(r => !r.duplicate_of);
+  if (untickedNew.length) {
+    const list = untickedNew.slice(0, 8).map(r =>
+      '<li>' + bankEsc(fmtMDY(r.date)) + ' &middot; ' + bankMoney(r.amount) + ' &middot; ' + bankEsc((r.description || '').slice(0, 45)) + '</li>').join('');
+    const more = untickedNew.length > 8 ? '<li class="text-muted">…and ' + (untickedNew.length - 8) + ' more</li>' : '';
+    const dupNote = unticked.length > untickedNew.length
+      ? '<p class="text-muted mb-0 mt-2">' + (unticked.length - untickedNew.length) + ' other unticked row(s) look already recorded, so leaving them out is expected.</p>' : '';
+    const ok = await bankConfirm(untickedNew.length + ' row(s) will NOT be imported',
+      '<p class="mb-1">These rows are unticked:</p><ul class="mb-2 ps-3">' + list + more + '</ul>' + dupNote +
+      '<p class="mb-0 mt-2">Import the other <strong>' + rows.length + '</strong> row(s)?</p>',
+      'Import ' + rows.length + ' row(s)', 'btn-primary');
+    if (!ok) return;
+  }
+  const buttons = document.querySelectorAll('.bank-import-go');
+  buttons.forEach(b => b.disabled = true);
+  status.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving ' + rows.length + ' expense(s)...';
+  const fd = new FormData();
+  const file = document.getElementById('bankStatementFile').files[0];
+  fd.append('rows', JSON.stringify(rows));
+  fd.append('file_name', file ? file.name : '');
+  if (file) fd.append('statement', file);
+  fetch('/financial/bank-statement/import', { method: 'POST', body: fd })
+    .then(bankJson)
+    .then(async res => {
+      if (!res.success) buttons.forEach(b => b.disabled = false);
+      if (!res.success) { status.innerHTML = '<span class="text-danger">' + bankEsc(res.error || 'Import failed') + '</span>'; return; }
+      // The expenses are saved; now attach each row's receipt to its new expense
+      const ids = res.row_ids || [];
+      const jobs = [], noReceipt = [];
+      rows.forEach((r, k) => {
+        if (!ids[k]) return;  // row was skipped by the server
+        const file = bankReceiptFiles[bankRowsData.indexOf(r)];
+        if (file) jobs.push({ id: ids[k], file: file, row: r });
+        else noReceipt.push(r);
+      });
+      const savedMsg = 'Imported ' + res.saved + ' expense(s).' + (res.skipped ? ' ' + res.skipped + ' row(s) skipped.' : '');
+      let failed = [];
+      if (jobs.length) {
+        failed = await uploadBankReceipts(jobs, n => {
+          status.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' + bankEsc(savedMsg) +
+            ' Uploading receipts ' + n + ' of ' + jobs.length + '...';
+        });
+      }
+      if (!noReceipt.length && !failed.length) {
+        status.innerHTML = '<span class="text-success">' + bankEsc(savedMsg) + ' Refreshing...</span>';
+        setTimeout(() => location.reload(), 900);
+        return;
+      }
+      // Saved, but some expenses have no receipt: say which, and refresh when the window is closed
+      bankImportsChanged = true;
+      document.getElementById('bankReviewStep').style.display = 'none';
+      document.getElementById('bankImportBtn').style.display = 'none';
+      const line = r => '<li>' + bankEsc(fmtMDY(r.date)) + ' &middot; ' + bankMoney(r.amount) + ' &middot; ' +
+        bankEsc(r.vendor || '') + ' &middot; ' + bankEsc((r.expense_name || r.description || '').slice(0, 45)) + '</li>';
+      let html = '<div class="text-success mb-2"><i class="bi bi-check-circle me-1"></i>' + bankEsc(savedMsg) + '</div>';
+      if (noReceipt.length) {
+        html += '<div class="alert alert-danger py-2 mb-2"><i class="bi bi-exclamation-triangle me-1"></i>' +
+          '<strong>' + noReceipt.length + ' expense(s) have no receipt.</strong> Open each one in the Expense Log, click Edit and attach its receipt.' +
+          '<ul class="mb-0 mt-1 ps-3">' + noReceipt.map(line).join('') + '</ul></div>';
+      }
+      if (failed.length) {
+        html += '<div class="alert alert-danger py-2 mb-2"><i class="bi bi-exclamation-triangle me-1"></i>' +
+          '<strong>' + failed.length + ' receipt(s) couldn\'t be uploaded.</strong> The expenses were saved; attach these receipts from Edit.' +
+          '<ul class="mb-0 mt-1 ps-3">' + failed.map(line).join('') + '</ul></div>';
+      }
+      status.innerHTML = html + '<div class="text-muted">Close this window to refresh the Expense Log.</div>';
+      status.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    })
+    .catch(err => {
+      buttons.forEach(b => b.disabled = false);
+      status.innerHTML = '<span class="text-danger">Import failed: ' + bankEsc(err.message) + '</span>';
+    });
+}
+</script>
 
 <!-- Receipt Viewer Modal -->
 <div class="modal fade" id="receiptModal" tabindex="-1">
