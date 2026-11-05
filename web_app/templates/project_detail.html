@@ -1036,9 +1036,11 @@
                     {% endif %}
                   </td>
                   <td style="min-width:130px;">
+                    {# the project's own current rate, for a change order that shares it #}
+                    {% set _prate %}{% if project_rate.type == 'percent' %}{{ project_rate.value }}% custom{% elif project_rate.type == 'fixed' %}Fixed {{ currency_symbol }}{{ "{:,.2f}".format(project_rate.value|float) }}{% else %}Default rate{% endif %}{% endset %}
                     {% if co.get('sales_person') and co.get('firebase_id') not in separate_co_ids %}
                     <div class="fw-500 small">{{ co.get('sales_person') }}</div>
-                    <div class="text-muted" style="font-size:11px;">Same as project · included in its commission</div>
+                    <div class="text-muted" style="font-size:11px;">Same as project · {{ _prate }}</div>
                     {% elif co.get('sales_person') %}
                     <div class="fw-500 small">{{ co.get('sales_person') }}</div>
                     <div class="text-muted" style="font-size:11px;">
@@ -1046,7 +1048,10 @@
                       {% elif co.get('commission_override_type') == 'fixed' %}Fixed {{ currency_symbol }}{{ "{:,.2f}".format(co.get('commission_override_value',0)|float) }}
                       {% else %}Default rate{% endif %}
                     </div>
-                    {% else %}<span class="text-muted small">Project's</span>{% endif %}
+                    {% else %}
+                    <span class="text-muted small">Project's</span>
+                    <div class="text-muted" style="font-size:11px;">{{ _prate }}</div>
+                    {% endif %}
                   </td>
                   <td><span class="text-muted small text-nowrap">{{ co.get('created_at','')[:10] | format_date }}</span></td>
                   {% if can_manage_projects %}
@@ -1477,12 +1482,18 @@ function updateCoPlanPreview() {
 }
 
 // "Same as project" (blank salesperson) means the project's rate too: lock the rate controls.
+window._projRate = {{ project_rate|tojson }};   // the project's own current rate
 function toggleCoCommSales(sel) {
   const card = sel.closest('.co-comm');
   const rate = card.querySelector('[name=co_commission_type]');
   const val = card.querySelector('[name=co_commission_value]');
   const same = sel.value === '';
-  if (same) { rate.value = 'default'; val.value = ''; }
+  // "Same as project": show the PROJECT's current rate (read-only) - it follows the project when that changes
+  if (same) {
+    const pr = window._projRate || {type: 'default', value: 0};
+    rate.value = pr.type || 'default';
+    val.value = pr.type === 'default' ? '' : pr.value;
+  }
   rate.disabled = same;
   val.disabled = same;
   card.querySelector('.co-comm-same').style.display = same ? '' : 'none';

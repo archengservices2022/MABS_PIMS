@@ -5191,6 +5191,8 @@ def project_detail(project_id):
                            co_commissions=_co_comm_rows,
                            commission_base=_commissionable_contract_value(data)[0],
                            commission_ctx=_project_commission_ctx(project_id, data),
+                           project_rate={"type": _norm_override_type(data.get("commission_override_type")),
+                                         "value": _safe_float(data.get("commission_override_value", 0))},
                            separate_co_ids={co.get("firebase_id") for co in _normalise_list(data.get("change_orders")) if isinstance(co, dict) and _co_commission_is_separate(co, data)},
                            co_settled=_co_settled_info(project_id, data),
                            co_ctx=_co_commission_ctx(project_id, data),
