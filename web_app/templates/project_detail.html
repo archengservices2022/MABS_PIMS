@@ -338,7 +338,7 @@
         <div class="modal fade" id="commissionEditModal" tabindex="-1">
           <div class="modal-dialog modal-sm">
             <div class="modal-content">
-              <form method="POST" action="{{ url_for('project_commission_update', project_id=project.firebase_id) }}">
+              <form method="POST" id="commissionEditForm" action="{{ url_for('project_commission_update', project_id=project.firebase_id) }}">
                 <div class="modal-header py-2">
                   <h6 class="modal-title mb-0"><i class="bi bi-cash-coin me-1"></i>Edit Commission</h6>
                   <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
@@ -361,6 +361,7 @@
                            value="{{ comm_val if comm_type != 'default' else '' }}"
                            placeholder="{{ '5' if comm_type == 'percent' else '1500' }}">
                   </div>
+                  <div class="text-danger fw-semibold mt-2" id="commModalError" style="display:none;font-size:12px;"></div>
                   <div class="text-muted" style="font-size:11px;">
                     Contract value: {{ currency_symbol }}{{ "{:,.2f}".format(cv) }}
                   </div>
@@ -1059,6 +1060,9 @@
                                          "amount": co.get("amount",0)|float, "date": co.get("created_at","")[:10],
                                          "down": co_down|int, "installments": co_inst,
                                          "plan_locked": co_lock.billed, "amount_locked": co_lock.billed and co_lock.count > 1,
+                                         "comm_settled": co_settled.get(co.get("firebase_id"), 0)|float,
+                                         "comm_ctx": co_ctx.get(co.get("firebase_id"), {}),
+                                         "eff_sales": co.get("sales_person") or project.get("sales") or "",
                                          "sales_person": co.get("sales_person",""),
                                          "comm_type": co.get("commission_override_type","default"),
                                          "comm_value": co.get("commission_override_value",0)|float}|tojson }}'
@@ -1364,6 +1368,8 @@
                 <input type="number" name="co_commission_value" class="form-control form-control-sm" min="0" step="0.01">
               </div>
             </div>
+            <div class="co-comm-locked small text-danger mt-2" style="display:none;"></div>
+            <div class="co-comm-error small text-danger fw-semibold mt-2" style="display:none;"></div>
             <div class="co-comm-same small text-muted mt-2" style="display:none;">
               <i class="bi bi-lock-fill me-1"></i>Same as project: this change order uses the project's salesperson <strong>and rate</strong>, and is included in the project's commission.
             </div>
@@ -1510,15 +1516,76 @@ function openEditCo(btn) {
   // Disabled plan fields aren't sent, so the server keeps the current plan
   form.elements['co_down_payment_percent'].disabled = !!co.plan_locked;
   form.elements['co_installment_count'].disabled = !!co.plan_locked;
-  form.elements['co_sales_person'].value = co.sales_person || '';
+  // something already paid / adjusted on the commission covering this CO: its salesperson is fixed
+  window._editCoCtx = co.comm_ctx || null;
+  window._editCoOrig = {type: co.comm_type || 'default', value: Number(co.comm_value || 0)};
+  const _settled = Number(co.comm_settled || 0);
+  const _sales_locked = _settled > 0.005;
+  form.elements['co_sales_person'].value = (_sales_locked && !co.sales_person) ? (co.eff_sales || '') : (co.sales_person || '');
   form.elements['co_commission_type'].value = co.comm_type || 'default';
   form.elements['co_commission_value'].value = co.comm_value || '';
   toggleCoCommSales(form.elements['co_sales_person']);
+  // read-only look for the salesperson (a disabled field wouldn't be sent); the rate stays editable
+  const _sel = form.elements['co_sales_person'];
+  _sel.style.pointerEvents = _sales_locked ? 'none' : '';
+  _sel.tabIndex = _sales_locked ? -1 : 0;
+  _sel.classList.toggle('bg-light', _sales_locked);
+  const _note = form.querySelector('.co-comm-locked');
+  _note.style.display = _sales_locked ? '' : 'none';
+  _note.innerHTML = '<i class="bi bi-lock-fill me-1"></i>{{ currency_symbol }}' + _settled.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) +
+    ' of this commission is already paid / adjusted, so the salesperson can\'t be changed. The rate can be changed, but the commission can\'t drop below that amount.';
+  validateEditCoCommission();
   document.getElementById('editCoTitle').textContent = co.co_number || 'Change Order';
   document.getElementById('editCoLockNote').style.display = co.plan_locked ? '' : 'none';
   refreshEditCoPlan();
   new bootstrap.Modal(document.getElementById('editCOModal')).show();
 }
+
+// A commission can't be changed to less than what has already been paid / adjusted on it (checked again on the server)
+function _coPct(v) { return parseFloat(v) || 0; }
+function validateEditCoCommission() {
+  const form = document.getElementById('editCoForm');
+  const box = form.querySelector('.co-comm-error');
+  const valInput = form.elements['co_commission_value'];
+  const ctx = window._editCoCtx;
+  let msg = '';
+  let changed = false;
+  if (ctx && ctx.settled > 0.005) {
+    const type = form.elements['co_commission_type'].value;
+    const val = parseFloat(valInput.value) || 0;
+    const orig = window._editCoOrig || {type: 'default', value: 0};
+    changed = type !== orig.type || (type !== 'default' && Math.abs(val - orig.value) > 0.0001);
+    const coAmt = parseFloat(form.elements['amount'].value) || 0;
+    const sym = '{{ currency_symbol }}';
+    const money = n => sym + Number(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    let newAmt = null;
+    if (ctx.kind === 'separate') {
+      newAmt = type === 'fixed' ? val : (type === 'percent' ? coAmt * _coPct(val) / 100 : coAmt * (ctx.default_rate || 0) / 100);
+    } else if (ctx.proj_pct !== null && ctx.proj_pct !== undefined) {
+      // merged into the project's commission: a different rate splits it off, and the project then earns on the rest only
+      const sameRate = type === ctx.proj_type && (type === 'default' || (type === 'percent' && Math.abs(_coPct(val) - _coPct(ctx.proj_value)) < 0.0001));
+      if (!sameRate) newAmt = Math.max(0, ctx.proj_base - coAmt) * ctx.proj_pct / 100;
+    }
+    if (newAmt !== null && newAmt < ctx.settled - 0.01) {
+      msg = 'This rate gives ' + money(newAmt) + ', which is less than the ' + money(ctx.settled) + ' already paid / adjusted — the commission can\'t be less than that.';
+    }
+  }
+  box.style.display = msg ? '' : 'none';
+  box.textContent = msg;
+  valInput.classList.toggle('is-invalid', !!msg);
+  form.elements['co_commission_type'].classList.toggle('is-invalid', !!msg);
+  return !msg;   // a rate that gives less than what is already paid / adjusted can't be saved
+}
+document.addEventListener('DOMContentLoaded', function () {
+  const f = document.getElementById('editCoForm');
+  ['co_commission_type', 'co_commission_value', 'amount'].forEach(n => {
+    f.elements[n].addEventListener('input', validateEditCoCommission);
+    f.elements[n].addEventListener('change', validateEditCoCommission);
+  });
+  f.addEventListener('submit', function (e) {
+    if (!validateEditCoCommission()) { e.preventDefault(); f.querySelector('.co-comm-error').scrollIntoView({block: 'center'}); }
+  });
+});
 
 function refreshEditCoPlan() {
   const form = document.getElementById('editCoForm');
@@ -1604,6 +1671,8 @@ function refreshEditCoPlan() {
                 <input type="number" name="co_commission_value" class="form-control form-control-sm" min="0" step="0.01">
               </div>
             </div>
+            <div class="co-comm-locked small text-danger mt-2" style="display:none;"></div>
+            <div class="co-comm-error small text-danger fw-semibold mt-2" style="display:none;"></div>
             <div class="co-comm-same small text-muted mt-2" style="display:none;">
               <i class="bi bi-lock-fill me-1"></i>Same as project: this change order uses the project's salesperson <strong>and rate</strong>, and is included in the project's commission.
             </div>
@@ -3219,6 +3288,38 @@ function toggleCommModal() {
     }
   }
 }
+
+{% if commission_ctx is defined and commission_ctx and commission_ctx.settled > 0.005 %}
+// The commission can't be set to less than what has already been paid / adjusted on it (checked again on the server)
+const COMM_MODAL_CTX = {{ commission_ctx|tojson }};
+const COMM_MODAL_BASE = {{ (commission_base if commission_base is defined else 0)|float }};
+function validateCommModal() {
+  const type = document.getElementById('commModalType').value;
+  const val = parseFloat(document.getElementById('commModalValue').value) || 0;
+  const box = document.getElementById('commModalError');
+  const amt = type === 'fixed' ? val : (type === 'percent' ? COMM_MODAL_BASE * val / 100 : COMM_MODAL_BASE * COMM_MODAL_CTX.default_rate / 100);
+  let msg = '';
+  if (amt < COMM_MODAL_CTX.settled - 0.01) {
+    const money = n => COMM_MODAL_CTX.symbol + Number(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    msg = "This rate gives " + money(amt) + ", which is less than the " + money(COMM_MODAL_CTX.settled) + " already paid / adjusted — the commission can't be less than that.";
+  }
+  box.style.display = msg ? '' : 'none';
+  box.textContent = msg;
+  document.getElementById('commModalValue').classList.toggle('is-invalid', !!msg);
+  document.getElementById('commModalType').classList.toggle('is-invalid', !!msg);
+  return !msg;
+}
+document.addEventListener('DOMContentLoaded', function () {
+  ['commModalType', 'commModalValue'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.addEventListener('input', validateCommModal); el.addEventListener('change', validateCommModal); }
+  });
+  const f = document.getElementById('commissionEditForm');
+  if (f) f.addEventListener('submit', function (e) { if (!validateCommModal()) e.preventDefault(); });
+  const m = document.getElementById('commissionEditModal');
+  if (m) m.addEventListener('shown.bs.modal', validateCommModal);
+});
+{% endif %}
 </script>
 
 <!-- ?? Change Order - Reject Modal ???????????????????????????????????? -->

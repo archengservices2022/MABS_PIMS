@@ -67,13 +67,14 @@
           </div>
           <div class="col-md-6">
             <label class="form-label">Sales Person <span class="text-danger">*</span></label>
-            <select name="sales" class="form-select" required>
+            <select name="sales" class="form-select" required{% if commission_locked %} disabled{% endif %}>
               <option value="">-- Select Sales Person --</option>
               {% for sp in sales_people %}
               <option value="{{ sp.get('name') if sp is mapping else sp }}"
                 {{ 'selected' if project and (project.get('sales') == (sp.get('name') if sp is mapping else sp) or project.get('assigned_to') == (sp.get('name') if sp is mapping else sp)) }}>{{ sp.get('name') if sp is mapping else sp }}</option>
               {% endfor %}
             </select>
+            {% if commission_locked %}<div class="form-text text-danger"><i class="bi bi-lock-fill me-1"></i>{{ currency_symbol }}{{ "{:,.2f}".format(commission_settled|float) }} of this project's commission is already paid / adjusted — salesperson can't be changed.</div>{% endif %}
           </div>
           <!-- Commission override -->
           <div class="col-md-6">
@@ -91,6 +92,8 @@
                      style="display:none;">
             </div>
             <div class="form-text" id="commOverrideHint">Uses the salesperson's default commission rate.</div>
+            <div class="form-text text-danger fw-semibold" id="commOverrideError" style="display:none;"></div>
+            {% if commission_locked %}<div class="form-text text-danger"><i class="bi bi-info-circle me-1"></i>The rate can be changed, but the commission can't be less than the {{ currency_symbol }}{{ "{:,.2f}".format(commission_settled|float) }} already paid / adjusted.</div>{% endif %}
           </div>
           <div class="col-md-6">
             <label class="form-label">Site Address</label>
@@ -1882,5 +1885,43 @@ function toggleCommOverride() {
 document.addEventListener('DOMContentLoaded', function () {
   toggleCommOverride();
 });
+
+{% if commission_ctx is defined and commission_ctx and commission_ctx.settled > 0.005 %}
+// The commission can't be changed to less than what has already been paid / adjusted (checked again on the server)
+const COMM_CTX = {{ commission_ctx|tojson }};
+function validateCommissionRate() {
+  const typeEl = document.getElementById('commOverrideType'), valEl = document.getElementById('commOverrideValue');
+  const box = document.getElementById('commOverrideError');
+  const type = typeEl.value, val = parseFloat(valEl.value) || 0;
+  const pct = v => v;
+  const changed = type !== COMM_CTX.orig_type ||
+    (type !== 'default' && Math.abs((type === 'fixed' ? val : pct(val)) - (type === 'fixed' ? COMM_CTX.orig_value : pct(COMM_CTX.orig_value))) > 0.0001);
+  let msg = '';
+  // Warn - and block Save - whenever the rate shown gives less than what is already paid / adjusted,
+  // even if it is the rate already saved.
+  const cv = parseFloat(document.getElementById('contractValue').value) || 0;
+  const base = Math.max(0, cv - (COMM_CTX.carved || 0));
+  const amt = type === 'fixed' ? val : (type === 'percent' ? base * pct(val) / 100 : base * COMM_CTX.default_rate / 100);
+  if (amt < COMM_CTX.settled - 0.01) {
+    const money = n => COMM_CTX.symbol + Number(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    msg = 'This rate gives ' + money(amt) + ', which is less than the ' + money(COMM_CTX.settled) + ' already paid / adjusted — the commission can\'t be less than that.';
+  }
+  box.style.display = msg ? '' : 'none';
+  box.textContent = msg;
+  valEl.classList.toggle('is-invalid', !!msg);
+  typeEl.classList.toggle('is-invalid', !!msg);
+  return !msg;   // a rate that gives less than what is already paid / adjusted can't be saved
+}
+document.addEventListener('DOMContentLoaded', function () {
+  ['commOverrideType', 'commOverrideValue', 'contractValue'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.addEventListener('input', validateCommissionRate); el.addEventListener('change', validateCommissionRate); }
+  });
+  document.getElementById('projectForm').addEventListener('submit', function (e) {
+    if (!validateCommissionRate()) { e.preventDefault(); document.getElementById('commOverrideError').scrollIntoView({block: 'center'}); }
+  });
+  validateCommissionRate();
+});
+{% endif %}
 </script>
 {% endblock %}

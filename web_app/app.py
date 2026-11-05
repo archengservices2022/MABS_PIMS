@@ -5026,7 +5026,7 @@ def project_detail(project_id):
         if "%" in comm_override_type or "percent" in comm_override_type:
             if contract_val > 0:
                 # Handle both decimal (0.50) and percentage (50) formats
-                pct_val = comm_override_val if comm_override_val > 1 else (comm_override_val * 100)
+                pct_val = comm_override_val
                 comm_earned = (contract_val * pct_val / 100)
                 log.info(f"[PROJECT_DETAIL_COMM_PCT] proj={proj_num}: pct_val={pct_val} earned={comm_earned}")
         else:
@@ -5190,7 +5190,10 @@ def project_detail(project_id):
                            sales_people=[p.get("name", "") for p in _load_sales_people() if p.get("name", "")],
                            co_commissions=_co_comm_rows,
                            commission_base=_commissionable_contract_value(data)[0],
+                           commission_ctx=_project_commission_ctx(project_id, data),
                            separate_co_ids={co.get("firebase_id") for co in _normalise_list(data.get("change_orders")) if isinstance(co, dict) and _co_commission_is_separate(co, data)},
+                           co_settled=_co_settled_info(project_id, data),
+                           co_ctx=_co_commission_ctx(project_id, data),
                            project_overpaid=_safe_float(_comm_entry.get("overpaid_amount", 0)),
                            commission_record_amount=_safe_float(_comm_entry.get("commission_amount", 0)),
                            project_invoices=project_invoices,
@@ -5454,8 +5457,30 @@ def co_update_amount(project_id, co_idx):
     new_shipping = request.form.get("shipping_address", None)
     if new_shipping is not None:
         co_updates["shipping_address"] = new_shipping.strip()
-    # This CO's own salesperson / commission rate (editable at any time, even after payments)
-    co_updates.update(_co_commission_from_form(request.form))
+    # This CO's own salesperson / commission rate. Once something has been paid or adjusted on the commission
+    # covering it, the salesperson is fixed; the rate can still change but never below that amount.
+    _form_comm = _co_commission_from_form(request.form)
+    if _form_comm and _is_approved_co(co):
+        _all_comm = fb_get("/project_commissions") or {}
+        _settled = _commission_settled(_co_cover_record(project_id, project, co, _all_comm))
+        _proj_sp = project.get("sales") or project.get("sales_person") or ""
+        _eff_old = _norm_person_name(co.get("sales_person") or _proj_sp)
+        _eff_new = _norm_person_name(_form_comm.get("sales_person", co.get("sales_person")) or _proj_sp)
+        if _eff_old != _eff_new and _settled > 0.005:
+            flash(f"{co.get('co_number', 'This change order')}'s commission already has {CURRENCY_SYMBOL}{_settled:,.2f} paid / adjusted, "
+                  f"so its salesperson can't be changed. Your other changes were saved.", "warning")
+            _form_comm = {}
+        else:
+            # not saved while the commission would be less than what has already been paid / adjusted on it
+            _after = _fb_fast_copy(project)
+            _after_cos = _normalise_list(_after.get("change_orders"))
+            _after_cos[co_idx].update(_form_comm)
+            _after["change_orders"] = _after_cos
+            _err = _commission_rate_floor_error(project_id, _after, _all_comm)
+            if _err:
+                flash(_err + " Nothing was saved.", "danger")
+                return _redirect_project_detail(project_id, "#tab-change-orders")
+    co_updates.update(_form_comm)
 
     # CO number rename — check uniqueness within project first
     new_co_num_req = request.form.get("new_co_number", "").strip()
@@ -6008,6 +6033,28 @@ def project_edit(project_id):
             updated["project_amount"] = updated["contract_value"]
             flash(f"Contract value can't be lower than the approved change orders "
                   f"({CURRENCY_SYMBOL}{_co_floor:,.2f}); it was set to that amount.", "warning")
+        # Once something has been paid or adjusted on the project's commission its salesperson is fixed; the
+        # rate can still change, but never to less than what has already been paid / adjusted
+        _rec_now = fb_get(f"/project_commissions/{project_id}")
+        _settled_now = _commission_settled(_rec_now)
+        if _settled_now > 0.005:
+            if "sales" in request.form and _norm_person_name(updated.get("sales", "")) != _norm_person_name(data.get("sales") or data.get("sales_person") or ""):
+                flash(f"This project's commission already has {CURRENCY_SYMBOL}{_settled_now:,.2f} paid / adjusted, so its salesperson "
+                      f"can't be changed. Your other changes were saved.", "warning")
+            updated["sales"] = data.get("sales", "")
+            updated["sales_email"] = data.get("sales_email", "")
+        # A project is never saved while its commission would be less than what has already been paid / adjusted
+        # on it - checked on every save, so a rate that already gives too little has to be corrected first
+        if "commission_override_type" in request.form:
+            _after = _fb_fast_copy(data)
+            _after.update({"commission_override_type": updated.get("commission_override_type"),
+                           "commission_override_value": updated.get("commission_override_value", 0),
+                           "contract_value": updated.get("contract_value", data.get("contract_value", 0)),
+                           "sales": updated.get("sales", data.get("sales", ""))})
+            _err = _commission_rate_floor_error(project_id, _after)
+            if _err:
+                flash(_err + " Nothing was saved.", "danger")
+                return redirect(url_for("project_edit", project_id=project_id))
         down_pct = _safe_float(updated.get("down_payment_percent", 0))
         mode, installments, custom_amounts = _resolve_installment_plan(updated)
         updated["down_payment_percent"]       = down_pct
@@ -6213,7 +6260,10 @@ def project_edit(project_id):
         return redirect(url)
     sales_people = [p.get("name","") for p in _load_sales_people() if p.get("name","")]
     return render_template("project_form.html", project=data, clients=clients,
-                           sales_people=sales_people, prefill_quote="", is_new=False)
+                           sales_people=sales_people, prefill_quote="", is_new=False,
+                           commission_locked=_commission_settled(fb_get(f"/project_commissions/{project_id}")) > 0.005,
+                           commission_settled=_commission_settled(fb_get(f"/project_commissions/{project_id}")),
+                           commission_ctx=_project_commission_ctx(project_id, data))
 
 @app.route("/projects/<project_id>/status", methods=["POST"])
 @role_required("projects")
@@ -6233,6 +6283,15 @@ def project_status(project_id):
 def project_commission_update(project_id):
     override_type  = request.form.get("commission_override_type", "default").strip()
     override_value = _safe_float(request.form.get("commission_override_value", 0))
+
+    # never saved while the commission would be less than what has already been paid / adjusted on it
+    _proj_now = fb_get(f"/projects/{project_id}") or {}
+    _after = _fb_fast_copy(_proj_now)
+    _after.update({"commission_override_type": override_type, "commission_override_value": override_value})
+    _err = _commission_rate_floor_error(project_id, _after)
+    if _err:
+        flash(_err + " Nothing was saved.", "danger")
+        return redirect(url_for("project_detail", project_id=project_id))
 
     # Snapshot current commission before changing (for history)
     current_comm = fb_get(f"/project_commissions/{project_id}") or {}
@@ -6286,6 +6345,33 @@ def commission_project_update_api(project_id):
 
     # Get current commission data
     current_comm = fb_get(f"/project_commissions/{project_id}") or {}
+
+    # Once something has been paid / adjusted on a commission its salesperson is fixed, and its rate can't go
+    # below that amount (a project's commission, or a change order's)
+    _settled_rec = _commission_settled(current_comm)
+    if _settled_rec > 0.005 and "salesperson" in data and \
+            _norm_person_name(data.get("salesperson")) != _norm_person_name(current_comm.get("salesperson")):
+        return jsonify({"ok": False, "success": False,
+                        "error": f"This commission already has {CURRENCY_SYMBOL}{_settled_rec:,.2f} paid / adjusted, so its salesperson can't be changed."}), 400
+    if ("rate_type" in data or "rate_value" in data) and _rate_override_differs(
+            current_comm.get("commission_override_type"), current_comm.get("commission_override_value", 0),
+            data.get("rate_type", current_comm.get("commission_override_type")),
+            data.get("rate_value", current_comm.get("commission_override_value", 0))):
+        _parent_id = _comm_parent_pid(project_id, current_comm)
+        _parent = fb_get(f"/projects/{_parent_id}") or {}
+        _after = _fb_fast_copy(_parent)
+        _new_t = data.get("rate_type", current_comm.get("commission_override_type"))
+        _new_v = data.get("rate_value", current_comm.get("commission_override_value", 0))
+        if _is_co_commission(current_comm):
+            for _co in _normalise_list(_after.get("change_orders")):
+                if isinstance(_co, dict) and _co.get("firebase_id") == current_comm.get("co_firebase_id"):
+                    _co.update({"commission_override_type": _new_t, "commission_override_value": _safe_float(_new_v)})
+            _after["change_orders"] = _normalise_list(_after.get("change_orders"))
+        else:
+            _after.update({"commission_override_type": _new_t, "commission_override_value": _safe_float(_new_v)})
+        _err = _commission_rate_floor_error(_parent_id, _after)
+        if _err:
+            return jsonify({"ok": False, "success": False, "error": _err}), 400
 
     # Update commission amounts and status
     update_data = {}
@@ -12359,9 +12445,30 @@ def api_commission_edit():
         stored_amount = rate_value
         display_rate_type = f"Custom {rate_value:.2f}%"
 
+    # The commission record being edited, and the project (or change order) its rate really lives on
+    current_comm = fb_get(f"/project_commissions/{commission_id}") or {}
+    _parent_id = _comm_parent_pid(commission_id, current_comm)
+    _parent = fb_get(f"/projects/{_parent_id}") or {}
+    _is_co_row = _is_co_commission(current_comm)
+    _new_override_type = db_rate_type if db_rate_type in ("default", "fixed", "percent") else "default"
+    _new_override_value = 0.0 if _new_override_type == "default" else rate_value
+
+    # Never save a rate that gives less than what has already been paid / adjusted on this commission
+    if _parent and rate_type:
+        _after = _fb_fast_copy(_parent)
+        if _is_co_row:
+            for _co in _normalise_list(_after.get("change_orders")):
+                if isinstance(_co, dict) and _co.get("firebase_id") == current_comm.get("co_firebase_id"):
+                    _co.update({"commission_override_type": _new_override_type, "commission_override_value": _new_override_value})
+            _after["change_orders"] = _normalise_list(_after.get("change_orders"))
+        else:
+            _after.update({"commission_override_type": _new_override_type, "commission_override_value": _new_override_value})
+        _err = _commission_rate_floor_error(_parent_id, _after)
+        if _err:
+            return jsonify({"success": False, "message": _err + " Nothing was saved."}), 400
+
     # Update commission record with both display and database values
     # Calculate new status based on remaining balance or user-selected status
-    current_comm = fb_get(f"/project_commissions/{commission_id}") or {}
     paid_amount = _safe_float(current_comm.get("paid_amount", 0))
     adjusted_amount = _safe_float(current_comm.get("total_deducted", 0))
     remaining_balance = new_amount - adjusted_amount - paid_amount
@@ -12461,42 +12568,33 @@ def api_commission_edit():
     fb_update(f"/project_commissions/{commission_id}", update_data)
     log.info(f"Updated commission {commission_id}: amount={new_amount}, rate_type={display_rate_type} (stored: {stored_type}, value: {stored_amount})")
 
-    # Find and update project sales info - TWO-WAY SYNC
-    all_projects = fb_get("/projects") or {}
+    # Two-way sync: the rate this row shows lives on the project - or, for a change-order row, on that CHANGE ORDER
+    # (it used to be written to the project, whose rate it then overwrote)
     sync_success = False
-
-    if isinstance(all_projects, dict):
-        for proj_id, proj_data in all_projects.items():
-            if not isinstance(proj_data, dict):
-                continue
-
-            proj_num = proj_data.get("project_number", "").strip()
-            if proj_num.lower() != project_number.strip().lower():
-                continue
-
-            # Found the project - update it
-            log.info(f"Found project {proj_id} ({proj_num}) for sync")
-
-            # Update main commission fields directly on project
-            # Use BOTH field names for backwards compatibility
-            # Use stored_type and stored_amount to freeze default rates
+    if _parent:
+        if _is_co_row:
+            for _i, _co in enumerate(_normalise_list(_parent.get("change_orders"))):
+                if isinstance(_co, dict) and _co.get("firebase_id") == current_comm.get("co_firebase_id"):
+                    fb_update(f"/projects/{_parent_id}/change_orders/{_i}", {
+                        "commission_override_type": _new_override_type,
+                        "commission_override_value": _new_override_value,
+                        "updated_at": datetime.now(timezone.utc).isoformat()})
+                    sync_success = True
+                    break
+        else:
             project_update = {
-                # New field names
                 "commission_rate": display_rate_type,
                 "commission_type": stored_type,
                 "commission_amount": new_amount,
-                # Override field names (used by project details page)
-                "commission_override_type": stored_type,
-                "commission_override_value": stored_amount,
+                # the settings the Project page / Edit Project read: Default stays Default
+                "commission_override_type": _new_override_type,
+                "commission_override_value": _new_override_value,
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
-
-            # Also update sales_people nested structure if it exists
-            sales_people = proj_data.get("sales_people", {})
+            sales_people = _parent.get("sales_people", {})
             if isinstance(sales_people, dict) and salesperson:
                 if salesperson not in sales_people:
                     sales_people[salesperson] = {}
-
                 sales_people[salesperson].update({
                     "rate_type": stored_type,
                     "commission_rate": display_rate_type,
@@ -12507,13 +12605,9 @@ def api_commission_edit():
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 })
                 project_update["sales_people"] = sales_people
-
-            # Update project
-            log.info(f"Syncing commission to project {proj_id}: amount={new_amount}, type={display_rate_type}")
-            result = fb_update(f"/projects/{proj_id}", project_update)
+            log.info(f"Syncing commission to project {_parent_id}: amount={new_amount}, type={display_rate_type}")
+            fb_update(f"/projects/{_parent_id}", project_update)
             sync_success = True
-            log.info(f"Sync result: {result}")
-            break
 
     return jsonify({
         "success": True,
@@ -13548,7 +13642,7 @@ def financial_byproject_export(fmt):
             p_comm_earned = p_comm_val
         elif "%" in p_comm_type and p_comm_val > 0 and p_contract > 0:
             # Handle both decimal (0.50) and percentage (50) formats
-            pct_val = p_comm_val if p_comm_val > 1 else (p_comm_val * 100)
+            pct_val = p_comm_val
             p_comm_earned = (p_contract * pct_val / 100)
 
         # Fallback to project_commissions
@@ -17053,7 +17147,7 @@ def financial():
             p_comm_earned = p_comm_val
         elif "%" in p_comm_type and p_comm_val > 0 and p_contract > 0:
             # Handle both decimal (0.50) and percentage (50) formats
-            pct_val = p_comm_val if p_comm_val > 1 else (p_comm_val * 100)
+            pct_val = p_comm_val
             p_comm_earned = (p_contract * pct_val / 100)
 
         # Fallback to project_commissions
@@ -22962,7 +23056,7 @@ def employees():
             _ot = str(_proj.get("commission_override_type", "") or "").strip().lower()
             _ov = _safe_float(_proj.get("commission_override_value", 0))
             if "%" in _ot or "percent" in _ot:
-                _rd = f"{(_ov if _ov > 1 else _ov * 100):g}% (custom)"
+                _rd = f"{_ov:g}% (custom)"
             elif "fixed" in _ot or "$" in _ot:
                 _rd = f"Fixed {CURRENCY_SYMBOL}{_ov:,.2f}"
             else:
@@ -28174,6 +28268,12 @@ def _project_commission_in_sync(proj: dict, existing) -> bool:
     sales_name = (proj.get("sales") or proj.get("sales_person") or "").strip()
     contract_value, _carved = _commissionable_contract_value(proj)
     company = proj.get("company_name", "") or proj.get("company", "")
+    # a custom-percent commission must equal that % of its base (catches an amount saved under an older
+    # reading of the percent value)
+    if _norm_override_type(proj.get("commission_override_type")) == "percent" and sales_name:
+        if abs(_safe_float(existing.get("commission_amount", 0))
+               - round(contract_value * _safe_float(proj.get("commission_override_value", 0)) / 100, 2)) > 0.01:
+            return False
     return (
         (existing.get("salesperson") or "").strip() == sales_name
         and abs(_safe_float(existing.get("contract_value", 0)) - contract_value) < 0.005
@@ -28191,6 +28291,137 @@ def _sync_project_commission_if_stale(project_id: str, proj: dict) -> None:
         _upsert_project_commission(project_id, proj)
     _sync_co_commissions(project_id, proj)
 
+def _rate_override_differs(old_type, old_value, new_type, new_value) -> bool:
+    """Is (new_type, new_value) a different commission rate setting from (old_type, old_value)?"""
+    t_old, t_new = _norm_override_type(old_type), _norm_override_type(new_type)
+    if t_old != t_new:
+        return True
+    if t_new == "default":
+        return False
+    return abs(_safe_float(old_value) - _safe_float(new_value)) > 0.0001
+
+def _co_commission_changes(co: dict, new: dict) -> bool:
+    """Would applying the submitted commission fields (see _co_commission_from_form) change the CO's own setting?"""
+    if not new:
+        return False
+    if "sales_person" in new and _norm_person_name(new["sales_person"]) != _norm_person_name(co.get("sales_person") or ""):
+        return True
+    if "commission_override_type" in new:
+        return _rate_override_differs(co.get("commission_override_type"), co.get("commission_override_value", 0),
+                                      new["commission_override_type"], new.get("commission_override_value", 0))
+    return False
+
+def _commission_settled(rec) -> float:
+    """What has already been paid or adjusted against a commission record."""
+    if not isinstance(rec, dict):
+        return 0.0
+    return _safe_float(rec.get("paid_amount", 0)) + _safe_float(rec.get("total_deducted", 0))
+
+def _co_cover_record(project_id: str, proj: dict, co: dict, all_comm: dict):
+    """The commission record that currently covers a change order: its own record when it has one,
+    otherwise the project's (a CO with the same salesperson and rate is part of that)."""
+    if _co_commission_is_separate(co, proj):
+        return all_comm.get(_co_commission_id(project_id, co))
+    return all_comm.get(project_id)
+
+def _co_settled_info(project_id: str, proj: dict) -> dict:
+    """{co firebase_id: amount already paid/adjusted on the commission covering it} for approved COs."""
+    all_comm = fb_get("/project_commissions") or {}
+    out = {}
+    for co in _normalise_list(proj.get("change_orders")):
+        if isinstance(co, dict) and co.get("firebase_id") and _is_approved_co(co):
+            out[co["firebase_id"]] = _commission_settled(_co_cover_record(project_id, proj, co, all_comm))
+    return out
+
+def _record_default_rate(rec, sales: str) -> float:
+    """The default-rate % a commission record is earning (kept from when it was created), else the salesperson's."""
+    dr = rec.get("default_rate") if isinstance(rec, dict) else None
+    if dr not in (None, ""):
+        return _safe_float(dr)
+    return _salesperson_rate_and_email(sales)[0]
+
+def _project_commission_ctx(project_id: str, proj: dict) -> dict:
+    """What the Edit Project form needs to check a new commission rate in the browser: what is already
+    paid / adjusted, the base the project's commission is earned on and the rate that 'Default' means."""
+    rec = fb_get(f"/project_commissions/{project_id}")
+    base_value, carved = _commissionable_contract_value(proj)
+    return {"settled": _commission_settled(rec), "carved": carved, "symbol": CURRENCY_SYMBOL,
+            "default_rate": _record_default_rate(rec, (proj.get("sales") or proj.get("sales_person") or "").strip()),
+            "orig_type": _norm_override_type(proj.get("commission_override_type")),
+            "orig_value": _safe_float(proj.get("commission_override_value", 0))}
+
+def _co_commission_ctx(project_id: str, proj: dict) -> dict:
+    """{co firebase_id: data} for approved change orders whose covering commission has money settled on it,
+    so the Edit Change Order window can check a new rate in the browser before it is saved."""
+    all_comm = fb_get("/project_commissions") or {}
+    base_rec = all_comm.get(project_id)
+    base_value, _carved = _commissionable_contract_value(proj)
+    psales = (proj.get("sales") or proj.get("sales_person") or "").strip()
+    p_type = _norm_override_type(proj.get("commission_override_type"))
+    p_val = _safe_float(proj.get("commission_override_value", 0))
+    if p_type == "fixed":
+        p_pct = None
+    elif p_type == "percent":
+        p_pct = p_val
+    else:
+        p_pct = _record_default_rate(base_rec, psales)
+    out = {}
+    for co in _normalise_list(proj.get("change_orders")):
+        if not (isinstance(co, dict) and co.get("firebase_id") and _is_approved_co(co)):
+            continue
+        cover = _co_cover_record(project_id, proj, co, all_comm)
+        settled = _commission_settled(cover)
+        if settled <= 0.005:
+            continue
+        if _co_commission_is_separate(co, proj):
+            out[co["firebase_id"]] = {"kind": "separate", "settled": settled,
+                                      "default_rate": _record_default_rate(cover, (co.get("sales_person") or "").strip())}
+        else:
+            out[co["firebase_id"]] = {"kind": "merged", "settled": settled, "proj_type": p_type, "proj_value": p_val,
+                                      "proj_pct": p_pct, "proj_base": base_value}
+    return out
+
+def _commission_rate_floor_error(project_id: str, proj_after: dict, all_comm=None):
+    """None if, with the project / change orders as in `proj_after`, every commission record of this project
+    still earns at least what has already been paid or adjusted on it; otherwise a message saying why not.
+    (A rate can go up, or down as far as that amount - never below it.)"""
+    if all_comm is None:
+        all_comm = fb_get("/project_commissions") or {}
+    sym = CURRENCY_SYMBOL
+    sales = (proj_after.get("sales") or proj_after.get("sales_person") or "").strip()
+    rec = all_comm.get(project_id)
+    settled = _commission_settled(rec)
+    if settled > 0.005 and sales:
+        base_value, _ = _commissionable_contract_value(proj_after)
+        rate, _e = _salesperson_rate_and_email(sales)
+        amount = _calc_commission(rec, sales, base_value, proj_after.get("commission_override_type"),
+                                  proj_after.get("commission_override_value", 0), rate)["amount"]
+        if amount < settled - 0.01:
+            return (f"{proj_after.get('project_number', 'This project')}'s commission can't be less than the {sym}{settled:,.2f} "
+                    f"already paid / adjusted (this rate would make it {sym}{amount:,.2f}).")
+    wanted = set()
+    for co in _separate_commission_cos(proj_after):
+        rid = _co_commission_id(project_id, co)
+        wanted.add(rid)
+        crec = all_comm.get(rid)
+        settled = _commission_settled(crec)
+        if settled > 0.005:
+            sp = (co.get("sales_person") or "").strip()
+            rate, _e = _salesperson_rate_and_email(sp)
+            amount = _calc_commission(crec, sp, _safe_float(co.get("amount", 0)), co.get("commission_override_type"),
+                                      co.get("commission_override_value", 0), rate)["amount"]
+            if amount < settled - 0.01:
+                return (f"{co.get('co_number', 'This change order')}'s commission can't be less than the {sym}{settled:,.2f} "
+                        f"already paid / adjusted (this rate would make it {sym}{amount:,.2f}).")
+    # a change order's own record that would stop earning altogether (e.g. its rate now equals the project's,
+    # so it folds back into the project's commission) must not have money settled on it
+    for rid, crec in all_comm.items():
+        if (isinstance(crec, dict) and crec.get("parent_project_id") == project_id and rid not in wanted
+                and _commission_settled(crec) > 0.005 and _safe_float(crec.get("commission_amount", 0)) > 0.005):
+            return (f"{crec.get('co_number', 'This change order')} has {sym}{_commission_settled(crec):,.2f} already paid / adjusted "
+                    f"on its own commission, so its rate can't be changed to one that merges it into the project's commission.")
+    return None
+
 def _co_commission_id(project_id: str, co: dict) -> str:
     """Record id of a change order's commission for its CURRENT salesperson. Each (CO, salesperson)
     pair has its own record, so when a CO is reassigned the previous person's record - with the
@@ -28202,8 +28433,18 @@ def _co_commission_id(project_id: str, co: dict) -> str:
 def _co_commission_in_sync(proj: dict, co: dict, existing) -> bool:
     if not isinstance(existing, dict) or "commission_amount" not in existing:
         return False
+    # what this record should earn now, and how much of what was settled on it exceeds that: a record
+    # revived after its change order was reassigned back (or left over from an older version) can
+    # carry a stale amount / overpaid flag even though its identifying fields all match
+    _sp = (co.get("sales_person") or "").strip()
+    _rate, _ = _salesperson_rate_and_email(_sp)
+    _calc = _calc_commission(existing, _sp, _safe_float(co.get("amount", 0)), co.get("commission_override_type"),
+                             co.get("commission_override_value", 0), _rate)
+    _settled = _safe_float(existing.get("paid_amount", 0)) + _safe_float(existing.get("total_deducted", 0))
     return (
-        (existing.get("salesperson") or "").strip() == (co.get("sales_person") or "").strip()
+        abs(_safe_float(existing.get("commission_amount", 0)) - _calc["amount"]) < 0.005
+        and abs(_safe_float(existing.get("overpaid_amount", 0)) - max(_settled - _calc["amount"], 0)) < 0.005
+        and (existing.get("salesperson") or "").strip() == (co.get("sales_person") or "").strip()
         and abs(_safe_float(existing.get("contract_value", 0)) - _safe_float(co.get("amount", 0))) < 0.005
         and (existing.get("company_name") or "") == (proj.get("company_name", "") or proj.get("company", ""))
         and (existing.get("project_number") or "") == (proj.get("project_number") or "")
@@ -28378,10 +28619,7 @@ def _co_commission_is_separate(co: dict, project_data: dict) -> bool:
     if p_type != c_type or p_type == "fixed":
         return True
     if p_type == "percent":
-        def _pct(v):
-            v = _safe_float(v)
-            return v if v > 1 else v * 100
-        return abs(_pct(project_data.get("commission_override_value")) - _pct(co.get("commission_override_value"))) > 0.0001
+        return abs(_safe_float(project_data.get("commission_override_value")) - _safe_float(co.get("commission_override_value"))) > 0.0001
     return False   # both on the salesperson's default rate
 
 def _separate_commission_cos(project_data: dict) -> list:
@@ -28415,7 +28653,7 @@ def _calc_commission(existing: dict, sales_name: str, base_value: float,
 
     if _is_percent_override:
         # Handle both decimal (0.50) and percentage (50) formats
-        pct_val = override_value if override_value > 1 else (override_value * 100)
+        pct_val = override_value
         amount = base_value * pct_val / 100
         rate_display = f"{pct_val}% (custom)"
         override_type = "percent"  # Normalize the type

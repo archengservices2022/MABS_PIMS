@@ -572,7 +572,7 @@ input:checked + .toggle-slider:before {
             {% set status_class = 'badge bg-warning text-dark' %}
           {% endif %}
           {% set row_class = 'row-zero-commission' if earned == 0 else '' %}
-          <tr class="{{ row_class }}">
+          <tr class="{{ row_class }}" data-commission-id="{{ comm.get('commission_doc_id', '') }}" data-project-number="{{ comm.get('project_number', '') }}">
             <td><a href="/projects/{{ comm.get('firebase_id', '') }}" class="project-link">{{ comm.get('display_number') or comm.get('project_number', '—') }}</a></td>
             <td style="font-size: 12px; color: #64748b;">
               {% if comm.get('company_name') %}
@@ -634,7 +634,7 @@ input:checked + .toggle-slider:before {
                   {% set calculated_rate = comm.get('rate_value', 0) or earned %}
                 {% endif %}
 
-                <button type="button" class="btn-sm btn-outline-secondary" title="Edit Commission" onclick="openEditModal('{{ comm.get('commission_doc_id') }}', '{{ comm.get('project_number') }}', {{ earned }}, '{{ rate_display_str }}', '{{ comm.get('commission_type', 'default') }}', '{{ comm.get('paid_at', '') }}', '{{ comm.get('status', 'Pending') }}', {{ calculated_rate }})"><i class="bi bi-pencil"></i></button>
+                <button type="button" class="btn-sm btn-outline-secondary" title="Edit Commission" onclick="openEditModal('{{ comm.get('commission_doc_id') }}', '{{ comm.get('display_number') or comm.get('project_number') }}', {{ earned }}, '{{ rate_display_str }}', '{{ comm.get('commission_type', 'default') }}', '{{ comm.get('paid_at', '') }}', '{{ comm.get('status', 'Pending') }}', {{ calculated_rate }})"><i class="bi bi-pencil"></i></button>
                 {% if remaining > 0.01 %}
                   <button type="button" class="btn-sm btn-outline-success" title="Mark as Paid" onclick="markProjectPaid('{{ comm.get('commission_doc_id') }}', '{{ comm.get('project_number') }}', {{ remaining }})"><i class="bi bi-check-circle"></i></button>
                 {% endif %}
@@ -726,9 +726,11 @@ input:checked + .toggle-slider:before {
         </div>
       </div>
 
+      <div id="editCommissionError" style="display:none; color:#b91c1c; font-size:13px; font-weight:600; margin-bottom:14px;"></div>
+
       <div class="modal-actions" style="justify-content: flex-end;">
         <button type="button" class="btn-cancel" onclick="closeEditModal()">Cancel</button>
-        <button type="submit" class="btn-pay">Save Changes</button>
+        <button type="submit" class="btn-pay" id="editSaveBtn">Save Changes</button>
       </div>
     </form>
   </div>
@@ -1067,8 +1069,9 @@ function openEditModal(commissionId, projectNumber, commissionAmount, rateDispla
   let rowData = null;
 
   rows.forEach(row => {
-    if (row.querySelector('td:nth-child(1)').textContent.includes(projectNumber)) {
+    if (row.dataset.commissionId === commissionId) {
       rowData = {
+        realProjectNumber: row.dataset.projectNumber || projectNumber,
         salesperson: '{{ salesperson_name }}',
         project: row.querySelector('td:nth-child(1)').textContent.trim(),
         client: row.querySelector('td:nth-child(2)').textContent.trim(),
@@ -1089,7 +1092,8 @@ function openEditModal(commissionId, projectNumber, commissionAmount, rateDispla
   }
 
   // Populate form fields
-  document.getElementById('editProjectNumber').value = projectNumber;
+  document.getElementById('editProjectNumber').value = projectNumber;   // shown as MABS-x or MABS-x_CO-1
+  document.getElementById('editModal').dataset.realProjectNumber = rowData.realProjectNumber;
   document.getElementById('editSalesperson').value = rowData.salesperson;
   document.getElementById('editContractValue').value = rowData.contractValue;
   // Map rate display to rate type option
@@ -1203,6 +1207,27 @@ function calculateCommissionEarned() {
   // Calculate Remaining Due = Commission Earned - Adjusted - Paid
   const remaining = Math.max(0, commissionEarned - adjusted - paid);
   document.getElementById('editRemaining').value = remaining.toFixed(2);
+  validateEditCommissionRate();
+}
+
+// A commission can't be set to less than what has already been paid / adjusted on it (checked again on the server)
+function validateEditCommissionRate() {
+  const earned = parseFloat(document.getElementById('editCommissionAmount').value) || 0;
+  const adjusted = parseFloat(document.getElementById('editAdjusted').value) || 0;
+  const paid = parseFloat(document.getElementById('editModal').dataset.paidAmount) || 0;
+  const settled = adjusted + paid;
+  const box = document.getElementById('editCommissionError');
+  const btn = document.getElementById('editSaveBtn');
+  let msg = '';
+  if (settled > 0.005 && earned < settled - 0.01) {
+    const money = n => '{{ currency_symbol }}' + Number(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    msg = "This rate gives " + money(earned) + ", which is less than the " + money(settled) + " already paid / adjusted \u2014 the commission can't be less than that.";
+  }
+  box.style.display = msg ? '' : 'none';
+  box.textContent = msg;
+  if (btn) { btn.disabled = !!msg; btn.style.opacity = msg ? '0.55' : ''; btn.style.cursor = msg ? 'not-allowed' : ''; }
+  ['editRateType', 'editRateValue'].forEach(id => document.getElementById(id).style.borderColor = msg ? '#dc2626' : '');
+  return !msg;
 }
 
 function submitEditCommission(event) {
@@ -1210,7 +1235,7 @@ function submitEditCommission(event) {
 
   const modal = document.getElementById('editModal');
   const commissionId = modal.dataset.commissionId;
-  const projectNumber = document.getElementById('editProjectNumber').value;
+  const projectNumber = modal.dataset.realProjectNumber || document.getElementById('editProjectNumber').value;
   const newAmount = parseFloat(document.getElementById('editCommissionAmount').value);
   const rateType = document.getElementById('editRateType').value;
   const rateValue = document.getElementById('editRateValue').value;
@@ -1220,6 +1245,7 @@ function submitEditCommission(event) {
     alert('Please enter a valid commission amount');
     return;
   }
+  if (!validateEditCommissionRate()) { return; }
 
   if (rateType !== 'Default (salesperson rate)' && (!rateValue || rateValue < 0)) {
     alert('Please enter a valid rate value');
