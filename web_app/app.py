@@ -281,9 +281,14 @@ def _sync_contract_value_from_cos(project_id: str, project: dict, change_orders=
     if not _normalise_list(cos):
         return False
     base_value = _base_contract_value(project, cos)
+    # A base below zero means the contract value was saved lower than the approved change
+    # orders (e.g. a project created at $0 whose form later re-saved a $0 total). The base can't be
+    # negative, so floor it at 0 and let the contract value be base + approved COs.
+    if base_value < 0:
+        base_value = 0.0
     expected_value = base_value + _approved_co_total(cos)
     current_value = _safe_float(project.get("contract_value", 0))
-    if abs(expected_value - current_value) <= 0.01:
+    if abs(expected_value - current_value) <= 0.01 and _safe_float(project.get("base_contract_value", base_value)) >= 0:
         return False
     project["base_contract_value"] = base_value
     project["contract_value"] = expected_value
@@ -853,7 +858,30 @@ def fb_update(path: str, data: dict) -> bool:
         return False
     ref.update(data)
     _fb_cache_bust_path(path)
+    _maybe_sync_project_commission(path, data)
     return True
+
+# Project fields the commission records (/project_commissions, shown on the Finance
+# Commission tab, Payroll > Commission Management, Quotes > Sales People and the
+# employee's own Commission tab) are derived from. Any write to a project that touches
+# one of these re-syncs its commission record, wherever in the app the write comes from.
+_COMMISSION_TRIGGER_KEYS = frozenset({
+    "contract_value", "project_amount", "sales", "sales_person", "sales_email",
+    "company_name", "company", "client_name", "project_number",
+    "commission_override_type", "commission_override_value",
+})
+
+def _maybe_sync_project_commission(path: str, data: dict) -> None:
+    try:
+        m = re.fullmatch(r"/?projects/([^/]+)", path or "")
+        if not m or not isinstance(data, dict) or not (_COMMISSION_TRIGGER_KEYS & set(data.keys())):
+            return
+        pid = m.group(1)
+        proj = fb_get(f"/projects/{pid}")
+        if isinstance(proj, dict):
+            _sync_project_commission_if_stale(pid, proj)
+    except Exception as exc:  # never let a commission sync break the write that triggered it
+        log.warning("Commission sync after project update failed for %s: %s", path, exc)
 
 def fb_multi_update(updates: dict) -> bool:
     """Apply many {relative/path: value} writes atomically in one round trip."""
@@ -3149,6 +3177,7 @@ def quotes():
     )
 
     # Load project commissions for Commission Details section
+    _resync_stale_project_commissions()
     _raw_proj_comm = fb_get("/project_commissions") or {}
     _all_projects_quotes = fb_get("/projects") or {}
     project_commissions = []
@@ -4423,7 +4452,7 @@ def projects_import_excel():
                 "co_index":    co_idx,
             })
         # base_contract_value: use the stored value if already set, else current contract_value (before CO)
-        if parent.get("base_contract_value"):
+        if parent.get("base_contract_value") not in (None, ""):   # 0 is a valid stored base
             base_value = _safe_float(parent.get("base_contract_value"))
         else:
             base_value = _safe_float(parent.get("contract_value", 0))
@@ -5140,10 +5169,12 @@ def co_new(project_id):
         "po_wo_number":     co_po_wo,
         "shipping_address": co_shipping,
     }
+    # Save base contract value if it was never stored. Test for "missing", not "falsy": a project
+    # created at $0 legitimately has a base of 0, and treating that as missing re-based it on the
+    # current contract value (which already includes earlier change orders), double-counting them.
+    if project.get("base_contract_value") in (None, ""):
+        fb_update(f"/projects/{project_id}", {"base_contract_value": max(0.0, _base_contract_value(project, cos))})
     cos.append(new_co)
-    # Save base contract value on first CO creation
-    if not project.get("base_contract_value"):
-        fb_update(f"/projects/{project_id}", {"base_contract_value": project.get("contract_value", 0)})
     fb_update(f"/projects/{project_id}", {"change_orders": cos})
     flash(f"Change Order {co_num} created.", "success")
     return _redirect_project_detail(project_id, "#tab-change-orders")
@@ -5201,12 +5232,21 @@ def co_status(project_id, co_idx):
         co_amount = _safe_float(cos[co_idx].get("amount", 0))
         co_title  = cos[co_idx].get("title", cos[co_idx].get("co_number", ""))
         old_value = _safe_float(project.get("contract_value", 0))
-        new_value = old_value + co_amount
+        # Contract value is always base + every approved CO, so it self-corrects instead of
+        # drifting if it was ever saved out of step with the change orders.
+        _stored_base = project.get("base_contract_value")
+        if _stored_base in (None, ""):
+            # (cos already carries this CO as Approved, so take it back out of the old total)
+            base_value = max(0.0, old_value - (_approved_co_total(cos) - co_amount))
+        else:
+            base_value = max(0.0, _safe_float(_stored_base))
+        new_value = base_value + _approved_co_total(cos)
         # One stage, or one per payment when the CO has its own payment plan
         new_co_stages = _co_payment_stages(cos[co_idx], co_idx)
         stages.extend(new_co_stages)
         update_data = {
             "change_orders":  cos,
+            "base_contract_value": base_value,
             "contract_value": new_value,
             "payment_stages": stages,
         }
@@ -5828,6 +5868,15 @@ def project_edit(project_id):
                 stage["status"] = "Pending Invoice"
     if request.method == "POST":
         updated = _parse_project_form(request.form)
+        # The form's Contract Value is the TOTAL (base + approved change orders). It can never
+        # be lower than the approved COs: that would store a negative base and zero out the
+        # project (a $0 project with a CO, re-saved as $0).
+        _co_floor = _approved_co_total(data.get("change_orders"))
+        if _co_floor > 0 and _safe_float(updated.get("contract_value", 0)) < _co_floor - 0.005:
+            updated["contract_value"] = f"{_co_floor:.2f}"
+            updated["project_amount"] = updated["contract_value"]
+            flash(f"Contract value can't be lower than the approved change orders "
+                  f"({CURRENCY_SYMBOL}{_co_floor:,.2f}); it was set to that amount.", "warning")
         down_pct = _safe_float(updated.get("down_payment_percent", 0))
         mode, installments, custom_amounts = _resolve_installment_plan(updated)
         updated["down_payment_percent"]       = down_pct
@@ -6017,8 +6066,7 @@ def project_edit(project_id):
         if existing_paid > 0 and new_status == "Not Started" and existing_status not in ("Not Started", "Cancelled"):
             updated["status"] = existing_status
 
-        fb_update(f"/projects/{project_id}", updated)
-        _upsert_project_commission(project_id, updated)
+        fb_update(f"/projects/{project_id}", updated)  # also re-syncs /project_commissions (see fb_update)
 
         # Re-sync payment-derived status so that a fully-paid project always shows Completed.
         proj_num = updated.get("project_number", data.get("project_number", ""))
@@ -6066,10 +6114,7 @@ def project_commission_update(project_id):
         "commission_override_value": override_value,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
-    proj = fb_get(f"/projects/{project_id}") or {}
-    proj["commission_override_type"]  = override_type
-    proj["commission_override_value"] = override_value
-    _upsert_project_commission(project_id, proj)
+    # (fb_update above already re-synced /project_commissions from the project)
 
     # Record history entry if commission actually changed
     changed = (old_type != override_type) or (abs(old_value - override_value) > 0.001)
@@ -8433,6 +8478,72 @@ def _repair_payment_log_stage_index(invoice_data):
     return invoice_data
 
 
+def _backfill_missing_payment_log(invoice_id, data):
+    """Self-heal an invoice whose paid amount (meta.amount_paid) isn't backed by payment_log
+    entries, so the Payment History table is never empty for a paid invoice.
+
+    The shortfall is allocated to the invoice's line items (stage by stage, in order) exactly
+    like a normal payment. Returns (data, changed); persists the new entries when changed.
+    """
+    meta = data.get("meta") or {}
+    existing = data.get("payment_log")
+    existing = [p for p in existing if isinstance(p, dict)] if isinstance(existing, list) else []
+    missing = round(_safe_float(meta.get("amount_paid", 0)) - sum(_safe_float(p.get("amount", 0)) for p in existing), 2)
+    if missing <= 0.01:
+        return data, False
+
+    main_project = (meta.get("project_number") or "").strip()
+    pay_date = ((data.get("_payment_date") or "").strip()
+                or (meta.get("updated_at") or "")[:10]
+                or datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"))
+    method = meta.get("payment_method", "") or data.get("_payment_method", "")
+    reference = data.get("_payment_reference", "") or meta.get("payment_reference", "")
+
+    def _entry(amount, proj, stage_idx, stage_name):
+        return {
+            "amount": str(amount), "date": pay_date, "method": method, "reference": reference,
+            "notes": "Restored automatically: invoice was marked paid without a payment record",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "project_number": proj, "invoice_number": meta.get("invoice_number", ""),
+            "stage_name": stage_name or "", "stage_index": str(stage_idx),
+            "backfilled": True,
+        }
+
+    new_entries = []
+    remaining = missing
+    for li in (data.get("line_items") or []):
+        if remaining <= 0.01:
+            break
+        if not isinstance(li, dict):
+            continue
+        proj = (li.get("project_number") or "").strip() or main_project
+        line_amt = _safe_float(li.get("amount", 0))
+        if not proj or line_amt <= 0:
+            continue
+        idx = li.get("payment_stage_index")
+        if idx is None or idx == "":
+            idx = meta.get("payment_stage_index")
+        if idx is None or idx == "":
+            idx = 0
+        already = sum(_safe_float(p.get("amount", 0)) for p in existing + new_entries
+                      if p.get("project_number") == proj and str(p.get("stage_index", "")) == str(idx))
+        alloc = round(min(remaining, max(0.0, line_amt - already)), 2)
+        if alloc > 0.01:
+            new_entries.append(_entry(alloc, proj, idx, li.get("stage_name") or meta.get("payment_stage", "")))
+            remaining -= alloc
+    if not new_entries and main_project and not (data.get("line_items") or []):
+        idx = meta.get("payment_stage_index")
+        new_entries.append(_entry(missing, main_project, 0 if idx in (None, "") else idx, meta.get("payment_stage", "")))
+    if not new_entries:
+        return data, False
+
+    data["payment_log"] = existing + new_entries
+    fb_update(f"/invoices/{invoice_id}", {"payment_log": data["payment_log"]})
+    log.info("[BACKFILL_PAYMENT_LOG] Invoice %s: restored %d payment entr(ies) totalling $%.2f",
+             invoice_id, len(new_entries), missing - max(remaining, 0))
+    return data, True
+
+
 def _ensure_payment_ids(invoice_data):
     """
     Guarantee every payment_log / tax_payments entry has a stable, unique "payment_id".
@@ -8498,6 +8609,13 @@ def invoice_detail(invoice_id):
         flash("That invoice no longer exists. It may have been deleted.", "warning")
         return redirect(url_for("invoicing"))
     data["firebase_id"] = invoice_id
+
+    # Paid amount with no payment records behind it -> restore them so Payment History shows
+    data, _log_restored = _backfill_missing_payment_log(invoice_id, data)
+    if _log_restored:
+        for _pn in _invoice_linked_projects(data):
+            _sync_project_payment(_pn)
+            _auto_complete_project_if_paid(_pn)
 
     # Repair payment_log if needed (add missing stage_index values)
     payment_log_before = _fb_fast_copy(data.get("payment_log", []))
@@ -11571,6 +11689,7 @@ def payroll():
                 commission_by_period[_sp].get(_period, 0.0) + _amt
 
     # Load from project_commissions (project-level paid commissions)
+    _resync_stale_project_commissions()
     _proj_comm_raw = fb_get("/project_commissions") or {}
     if isinstance(_proj_comm_raw, dict):
         for _proj_id, _pc in _proj_comm_raw.items():
@@ -14112,6 +14231,7 @@ def salary_delete_perms():
 def get_payroll_commissions():
     """Get all project commissions for payroll management tab"""
     try:
+        _resync_stale_project_commissions()
         all_proj_comm = fb_get("/project_commissions") or {}
         all_projects = fb_get("/projects") or {}  # Get raw projects, not filtered list
 
@@ -17822,6 +17942,7 @@ def financial():
                 _fin_sp_totals[_sp]["periods"][_period]["earned"] += _pval * _rate / 100
 
     # Per-project commission log - build first to get paid amounts
+    _resync_stale_project_commissions()   # pick up project edits made outside this web app
     _raw_proj_comm = fb_get("/project_commissions") or {}
 
     project_commissions = []
@@ -22648,6 +22769,7 @@ def employees():
         if _n:
             _my_name_variants.add(_n)
 
+    _resync_stale_project_commissions()
     _raw_my_comm = fb_get("/project_commissions") or {}
     _my_proj_lookup = fb_get("/projects") or {}
     my_commissions = []
@@ -27894,21 +28016,92 @@ def _parse_project_form(form) -> dict:
         "commission_override_value": _safe_float(form.get("commission_override_value", 0)),
     }
 
+def _norm_override_type(t) -> str:
+    t = str(t or "default").strip().lower()
+    if "percent" in t or "%" in t:
+        return "percent"
+    if "fixed" in t or "$" in t:
+        return "fixed"
+    return "default"
+
+def _project_commission_in_sync(proj: dict, existing) -> bool:
+    """True when the stored commission record matches the project's client, salesperson,
+    contract value, project number and rate override."""
+    if not isinstance(existing, dict) or "commission_amount" not in existing:
+        return False
+    sales_name = (proj.get("sales") or proj.get("sales_person") or "").strip()
+    contract_value = _safe_float(proj.get("contract_value") or proj.get("project_amount") or 0)
+    company = proj.get("company_name", "") or proj.get("company", "")
+    return (
+        (existing.get("salesperson") or "").strip() == sales_name
+        and abs(_safe_float(existing.get("contract_value", 0)) - contract_value) < 0.005
+        and (existing.get("company_name") or "") == company
+        and (existing.get("project_number") or "") == (proj.get("project_number") or "")
+        and _norm_override_type(existing.get("commission_override_type")) == _norm_override_type(proj.get("commission_override_type"))
+        and abs(_safe_float(existing.get("commission_override_value", 0)) - _safe_float(proj.get("commission_override_value", 0))) < 0.0001
+    )
+
+def _sync_project_commission_if_stale(project_id: str, proj: dict) -> None:
+    """Re-run _upsert_project_commission only when the stored commission record no longer
+    matches the project."""
+    existing = fb_get(f"/project_commissions/{project_id}")
+    if not _project_commission_in_sync(proj, existing):
+        _upsert_project_commission(project_id, proj)
+
+_last_commission_resync = 0.0
+
+def _resync_stale_project_commissions(force: bool = False) -> int:
+    """Bring every EXISTING commission record back in line with its project.
+
+    Projects are also written outside this web app (the desktop app writes straight to
+    Firebase), so those edits never pass through fb_update. The commission views call this
+    before reading /project_commissions; it's throttled and only touches records that differ.
+    """
+    global _last_commission_resync
+    now = _time.time()
+    if not force and now - _last_commission_resync < 20:
+        return 0
+    _last_commission_resync = now
+    try:
+        projects = fb_get("/projects") or {}
+        comms = fb_get("/project_commissions") or {}
+        if not isinstance(projects, dict) or not isinstance(comms, dict):
+            return 0
+        fixed = 0
+        for pid, proj in projects.items():
+            existing = comms.get(pid)
+            if (not isinstance(proj, dict) or not isinstance(existing, dict)
+                    or "commission_amount" not in existing or proj.get("status") == "Cancelled"):
+                continue
+            if not _project_commission_in_sync(proj, existing):
+                _upsert_project_commission(pid, proj)
+                fixed += 1
+        if fixed:
+            log.info("[COMMISSION_RESYNC] Re-synced %d stale project commission record(s)", fixed)
+        return fixed
+    except Exception as exc:
+        log.warning("Commission resync failed: %s", exc)
+        return 0
+
 def _upsert_project_commission(project_id: str, project_data: dict) -> None:
     """Calculate and store a commission entry for a project at /project_commissions/{project_id}.
     Preserves existing status/paid fields so editing a project doesn't reset a paid commission."""
     sales_name     = (project_data.get("sales") or project_data.get("sales_person") or "").strip()
     contract_value = _safe_float(project_data.get("contract_value") or project_data.get("project_amount") or 0)
     if not sales_name or not contract_value:
-        return
+        # A brand-new project with no salesperson / value has nothing to record, but an
+        # EXISTING record must still follow the project (e.g. value set to 0 or salesperson
+        # cleared) instead of silently keeping the old figures.
+        _ex = fb_get(f"/project_commissions/{project_id}")
+        if not (isinstance(_ex, dict) and "commission_amount" in _ex):
+            return
 
     sp_default_rate = 0.0
     sp_email = (project_data.get("sales_email") or "").strip()
     for u in _load_all_users():
         if (u.get("username") or "").strip() == sales_name:
             sp_default_rate = _safe_float(u.get("commission_rate", 0))
-            if not sp_email:
-                sp_email = u.get("email", "")
+            sp_email = u.get("email", "") or sp_email   # the user record wins over a stale project copy
             break
 
     override_type  = (project_data.get("commission_override_type") or "default").strip()
@@ -27945,9 +28138,21 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
         commission_amount = contract_value * sp_default_rate / 100
         rate_display = f"{sp_default_rate}% (default)"
     elif override_type == "default" and not is_new_project and existing_override_type == "default" and not salesperson_changed:
-        # EXISTING project with default rate, same salesperson: preserve original commission
-        commission_amount = _safe_float(existing.get("commission_amount", 0))
-        rate_display = existing.get("rate_display", f"{sp_default_rate}% (default)")
+        # EXISTING project with default rate, same salesperson: keep the rate the project was
+        # created with (a later change to the salesperson's default rate in settings must not
+        # rewrite old projects) but apply it to the CURRENT contract value, so editing the
+        # contract value / adding a change order updates the commission.
+        _kept_rate = existing.get("default_rate")
+        if _kept_rate in (None, ""):
+            _rm = re.search(r"([\d.]+)\s*%", str(existing.get("rate_display", "")))
+            _kept_rate = _rm.group(1) if _rm else None
+        if _kept_rate in (None, ""):
+            _old_cv = _safe_float(existing.get("contract_value", 0))
+            _kept_rate = (_safe_float(existing.get("commission_amount", 0)) / _old_cv * 100) if _old_cv else sp_default_rate
+        _kept_rate = _safe_float(_kept_rate)
+        commission_amount = contract_value * _kept_rate / 100
+        rate_display = f"{_kept_rate:g}% (default)"
+        sp_default_rate = _kept_rate
     else:
         # Recalculate for: salesperson changed, override changed from non-default to default, or fallback
         override_type = "default"
@@ -27983,6 +28188,7 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
         "commission_override_type":  override_type,
         "commission_override_value": override_value,
         "rate_display":              rate_display,
+        "default_rate":              sp_default_rate if override_type == "default" else "",
         "commission_amount":         round(commission_amount, 2),
         "status":                    status,
         "paid_at":                   paid_at,
