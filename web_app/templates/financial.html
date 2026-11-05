@@ -6449,9 +6449,10 @@ function viewReceipt(expId) {
 
           <tr data-sp="{{ pc.get('salesperson','') }}" data-status="{{ display_status }}" data-amount="{{ pc.get('commission_amount',0)|float }}" data-adjusted="{{ pc.get('adjusted_amount',0)|float }}" data-paid="{{ pc.get('paid_amount',0)|float }}" data-remaining="{{ pc.get('remaining_due',0)|float }}" data-deduction-status="{{ pc.get('deduction_status','not_covered') }}">
             <td class="fw-semibold">
-              <a href="{{ url_for('project_detail', project_id=pc.firebase_id) }}" class="text-decoration-none">
-                {{ pc.get('project_number','—') }}
+              <a href="{{ url_for('project_detail', project_id=pc.get('project_link_id') or pc.firebase_id) }}" class="text-decoration-none">
+                {{ pc.get('display_number') or pc.get('project_number','—') }}
               </a>
+              {% if pc.get('overpaid_amount',0)|float > 0.005 %}<div class="text-danger" style="font-size:11px;" title="Paid / adjusted more than it now earns (e.g. a change order was reassigned). Not clawed back."><i class="bi bi-exclamation-triangle-fill"></i> Overpaid {{ currency_symbol }}{{ "{:,.2f}".format(pc.get('overpaid_amount',0)|float) }}</div>{% endif %}
             </td>
             <td>{{ pc.get('company_name','—') }}</td>
             <td>

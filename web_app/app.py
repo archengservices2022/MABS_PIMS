@@ -311,6 +311,24 @@ def _is_co_stage(s: dict) -> bool:
     return bool(s.get("co_number")) or "CO-" in s.get("name", "")
 
 
+def _co_commission_from_form(form) -> dict:
+    """The salesperson / rate a change order is submitted with. Only the fields actually present in
+    the form are returned, so a form that doesn't carry them leaves the CO's current ones alone."""
+    out = {}
+    if "co_sales_person" in form:
+        out["sales_person"] = (form.get("co_sales_person") or "").strip()
+        if not out["sales_person"]:
+            # "Same as project": the project's salesperson AND rate apply, so no rate of its own is kept
+            out["commission_override_type"] = "default"
+            out["commission_override_value"] = 0.0
+            return out
+    if "co_commission_type" in form:
+        t = _norm_override_type(form.get("co_commission_type"))
+        out["commission_override_type"] = t
+        out["commission_override_value"] = 0.0 if t == "default" else max(0.0, _safe_float(form.get("co_commission_value", 0)))
+    return out
+
+
 def _co_plan_from_form(form, co: dict = None) -> tuple:
     """(down payment %, installment count) for a change order, read from a submitted form.
     Fields left out of the form keep the CO's current plan."""
@@ -868,13 +886,16 @@ def fb_update(path: str, data: dict) -> bool:
 _COMMISSION_TRIGGER_KEYS = frozenset({
     "contract_value", "project_amount", "sales", "sales_person", "sales_email",
     "company_name", "company", "client_name", "project_number",
-    "commission_override_type", "commission_override_value",
+    "commission_override_type", "commission_override_value", "change_orders",
 })
 
 def _maybe_sync_project_commission(path: str, data: dict) -> None:
     try:
-        m = re.fullmatch(r"/?projects/([^/]+)", path or "")
-        if not m or not isinstance(data, dict) or not (_COMMISSION_TRIGGER_KEYS & set(data.keys())):
+        m = re.fullmatch(r"/?projects/([^/]+)(/change_orders(?:/.*)?)?", path or "")
+        if not m or not isinstance(data, dict):
+            return
+        # a write straight into one change order (/projects/<id>/change_orders/<n>) always counts
+        if not m.group(2) and not (_COMMISSION_TRIGGER_KEYS & set(data.keys())):
             return
         pid = m.group(1)
         proj = fb_get(f"/projects/{pid}")
@@ -895,6 +916,19 @@ def fb_multi_update(updates: dict) -> bool:
         ref.update(dict(items[i:i + 400]))
     for top in {k.split("/", 1)[0] for k in updates}:
         _fb_cache_bust_path("/" + top)
+    # keep project-derived commission records (client, salesperson, contract value, rate) in step
+    try:
+        touched = {}
+        for k in updates:
+            parts = k.strip("/").split("/")
+            if len(parts) >= 3 and parts[0] == "projects" and (parts[2] in _COMMISSION_TRIGGER_KEYS):
+                touched[parts[1]] = True
+        for pid in touched:
+            proj = fb_get(f"/projects/{pid}")
+            if isinstance(proj, dict):
+                _sync_project_commission_if_stale(pid, proj)
+    except Exception as exc:
+        log.warning("Commission sync after multi-update failed: %s", exc)
     return True
 
 def fb_delete(path: str) -> bool:
@@ -1021,6 +1055,74 @@ def _employee_full_name(employee_name: str) -> str:
         log.error(f"Error resolving full name for {employee_name}: {e}")
     return given
 
+# ── Change-order commissions ─────────────────────────────────────────────────
+# A change order can carry its own salesperson and rate. Such a CO gets its OWN record in
+# /project_commissions keyed "<project_id>__<co_firebase_id>" (with parent_project_id,
+# co_firebase_id and co_number), so its paid amount and adjustments are tracked separately.
+# Everything that reads commission records treats a record whose key isn't a project id as a
+# CO record and resolves the real project through parent_project_id.
+def _is_co_commission(rec) -> bool:
+    return isinstance(rec, dict) and bool(rec.get("co_firebase_id"))
+
+def _own_name_variants(uid, names) -> set:
+    """The names a user's commission rows may be filed under (login name, name, display name),
+    minus any that is really ANOTHER user's login name. A display name like "Asha" on the user
+    "Asha ash" must not pull in the commissions of the separate user called "Asha"."""
+    def norm(x):
+        return (x or "").strip().lower().replace("_", " ")
+    mine = {norm(n) for n in names if norm(n)}
+    others = {norm(u.get("username")) for u in _load_all_users()
+              if u.get("firebase_uid") != uid and norm(u.get("username"))}
+    return {n for n in mine if n not in others}
+
+def _commission_display_number(rec) -> str:
+    """What a commission row calls its project: "MABS-202605141" for a project's own commission and
+    "MABS-202605141_CO-1" (project number, underscore, change-order number) for a change order's."""
+    if not isinstance(rec, dict):
+        return ""
+    num = rec.get("project_number", "") or ""
+    return f"{num}_{rec.get('co_number') or 'CO'}" if _is_co_commission(rec) else num
+
+def _comm_parent_pid(rid, rec) -> str:
+    """The project a commission record belongs to (the record's own key for a normal one)."""
+    if isinstance(rec, dict) and rec.get("parent_project_id"):
+        return rec["parent_project_id"]
+    return rid
+
+def _commission_record_project_number(rid, all_projects, all_comm=None) -> str:
+    """Project number a commission record id stands for (project id or CO record id)."""
+    proj = all_projects.get(rid) if isinstance(all_projects, dict) else None
+    if isinstance(proj, dict):
+        return proj.get("project_number", rid)
+    if all_comm is None:
+        all_comm = fb_get("/project_commissions") or {}
+    rec = all_comm.get(rid) if isinstance(all_comm, dict) else None
+    if isinstance(rec, dict) and rec.get("project_number"):
+        return rec["project_number"]
+    return rid
+
+def _employee_commission_targets(employee_name: str, all_projects: dict, all_comm: dict,
+                                 only_with_amount=True, include_cancelled=False):
+    """[(record_id, record, parent_project_id, parent_project)] for every commission record
+    owned by `employee_name` on a non-cancelled project: the project's own record when they
+    are the project's salesperson, plus any change-order record assigned to them."""
+    want = (employee_name or "").strip().lower()
+    out = []
+    if not isinstance(all_comm, dict) or not isinstance(all_projects, dict):
+        return out
+    for rid, rec in all_comm.items():
+        if not isinstance(rec, dict) or (only_with_amount and "commission_amount" not in rec):
+            continue
+        pid = _comm_parent_pid(rid, rec)
+        proj = all_projects.get(pid)
+        if not isinstance(proj, dict) or (not include_cancelled and (proj.get("status") or "").strip() == "Cancelled"):
+            continue
+        owner =(rec.get("salesperson") if _is_co_commission(rec) else (proj.get("sales") or "")) or ""
+        if owner.strip().lower() != want:
+            continue
+        out.append((rid, rec, pid, proj))
+    return out
+
 def _calculate_employee_pending_commission(salesperson_name: str) -> float:
     """Calculate pending (unpaid) commission using same filters as Commission Details page"""
     try:
@@ -1057,13 +1159,15 @@ def _calculate_employee_pending_commission(salesperson_name: str) -> float:
                     continue
 
                 # Filter 3: Only projects WITH salespeople assigned
+                # (a change-order record carries its own salesperson, so it skips 3 and 4)
                 project_salesperson = (project_data.get("sales") or project_data.get("sales_person") or "").strip()
-                if not project_salesperson:
-                    continue
+                if not _is_co_commission(comm_data):
+                    if not project_salesperson:
+                        continue
 
-                # Filter 4: Salesperson must match project's salesperson
-                if project_salesperson.lower() != salesperson.lower():
-                    continue
+                    # Filter 4: Salesperson must match project's salesperson
+                    if project_salesperson.lower() != salesperson.lower():
+                        continue
 
                 # Calculate remaining_due using same formula as Commission Details page
                 commission_amount = _safe_float(comm_data.get("commission_amount", 0))
@@ -1129,16 +1233,11 @@ def _recalculate_project_deductions_for_salesperson(salesperson_name: str):
                             deductions_by_project[proj_id] = {}
                         deductions_by_project[proj_id][cp_id] = amount
 
-        # Update all projects for this salesperson
-        for proj_id, proj_data in all_projects.items():
-            if not isinstance(proj_data, dict):
-                continue
-            if (proj_data.get("sales", "").strip() or "").lower() != salesperson_name.lower():
-                continue
-
-            proj_comm = all_proj_commissions.get(proj_id)
-            if not isinstance(proj_comm, dict) or "commission_amount" not in proj_comm:
-                continue   # no commission on this project - never create a bare record for it
+        # Update every commission record for this salesperson (their projects' own records and
+        # any change-order records assigned to them)
+        for proj_id, proj_comm, _parent_pid, proj_data in _employee_commission_targets(
+                salesperson_name, all_projects, all_proj_commissions, include_cancelled=True):
+            # (records without a commission_amount are never touched - no bare records created)
 
             # Update deductions for this project
             new_deductions = deductions_by_project.get(proj_id, {})
@@ -1202,6 +1301,8 @@ def _commission_calc_label(comm: dict, project_number: str, applied_amount: floa
     if not isinstance(comm, dict):
         return project_number
     project = project if isinstance(project, dict) else {}
+    if _is_co_commission(comm) or _safe_float(comm.get("co_carved_amount", 0)) > 0:
+        project = {}   # the record's own base (a CO's amount / the project minus carved-out COs), not the project total
     # Same sources as the Commission Details page: client and contract value come from the project
     client = (comm.get("company_name") or comm.get("client_name")
               or project.get("client_name") or project.get("company_name") or "").strip() or project_number
@@ -1237,6 +1338,10 @@ def _enrich_advance_adjustments_with_commission_projects(advances_list):
         all_proj_comm = fb_get("/project_commissions") or {}
         if not isinstance(all_proj_comm, dict):
             all_proj_comm = {}
+        # change-order commission records stand for their parent project's number
+        for _rid, _rec in all_proj_comm.items():
+            if _is_co_commission(_rec) and _rid not in proj_number_by_id:
+                proj_number_by_id[_rid] = _rec.get("project_number", "")
         all_cpay = fb_get("/commission_payments") or {}
         breakdown_by_adjustment_id = {}
         if isinstance(all_cpay, dict):
@@ -1251,6 +1356,8 @@ def _enrich_advance_adjustments_with_commission_projects(advances_list):
                 seen_proj_nums = {b["project_number"] for b in breakdown}
                 for pid, amt in proj_deductions.items():
                     proj_num = proj_number_by_id.get(pid, "")
+                    if proj_num and _is_co_commission(all_proj_comm.get(pid)):
+                        proj_num = f"{proj_num}_{all_proj_comm[pid].get('co_number', 'CO')}"
                     if proj_num and proj_num not in seen_proj_nums:
                         seen_proj_nums.add(proj_num)
                         breakdown.append({
@@ -2817,17 +2924,13 @@ def sales_dashboard():
                 _comm_rev_month += _qval
     # Real per-project commission totals from /project_commissions (same figures
     # as the Employees → Commission and Finance → Commission tabs).
-    _sd_name_variants = set()
-    for _n in (user_name, _u_data.get("username", ""), _u_data.get("name", ""),
-               _u_data.get("display_name", "")):
-        _n = (_n or "").strip().lower().replace("_", " ")
-        if _n:
-            _sd_name_variants.add(_n)
+    _sd_name_variants = _own_name_variants(_uid, (user_name, _u_data.get("username", ""), _u_data.get("name", ""),
+                                                  _u_data.get("display_name", "")))
     _sd_comm_raw = fb_get("/project_commissions") or {}
     _comm_total_earned = _comm_total_adjusted = _comm_total_paid = _comm_total_remaining = 0.0
     if isinstance(_sd_comm_raw, dict):
         for _cid, _cv in _sd_comm_raw.items():
-            if not isinstance(_cv, dict) or _cid not in _proj_raw:
+            if not isinstance(_cv, dict) or _comm_parent_pid(_cid, _cv) not in _proj_raw:
                 continue
             if (_cv.get("salesperson", "") or "").strip().lower().replace("_", " ") not in _sd_name_variants:
                 continue
@@ -3184,10 +3287,11 @@ def quotes():
     for k, v in _raw_proj_comm.items():
         if isinstance(v, dict):
             # Check if project still exists before displaying commission
-            if k not in _all_projects_quotes:
+            # (a change-order commission record belongs to its parent project)
+            if _comm_parent_pid(k, v) not in _all_projects_quotes:
                 continue
 
-            pc = dict(v, firebase_id=k)
+            pc = dict(v, firebase_id=k, project_link_id=_comm_parent_pid(k, v), display_number=_commission_display_number(v))
             # Ensure all required fields are present
             pc["salesperson"] = pc.get("salesperson", "")
             pc["project_number"] = pc.get("project_number", "—")
@@ -4887,13 +4991,19 @@ def project_detail(project_id):
                 adj_details = edata.get("adjustment_payment_details", [])
                 if adj_details and isinstance(adj_details, list):
                     # Find this project's deduction amount
+                    # Find this project's deduction amount (its own commission record plus any
+                    # change-order commission records share the project number)
+                    _proj_adj_total = 0.0
+                    _proj_adj_hit = False
                     for detail in adj_details:
                         if isinstance(detail, dict) and detail.get("project_number") == proj_num:
-                            # Create a copy with only this project's amount
-                            project_exp = dict(edata)
-                            project_exp["amount"] = _safe_float(detail.get("amount", 0))
-                            project_expenses.append(project_exp)
-                            break
+                            _proj_adj_total += _safe_float(detail.get("amount", 0))
+                            _proj_adj_hit = True
+                    if _proj_adj_hit:
+                        # Create a copy with only this project's amount
+                        project_exp = dict(edata)
+                        project_exp["amount"] = _proj_adj_total
+                        project_expenses.append(project_exp)
                 else:
                     # No per-project details, use full amount
                     project_expenses.append(edata)
@@ -4929,6 +5039,10 @@ def project_detail(project_id):
         log.info(f"[PROJECT_DETAIL_COMM_FALLBACK] proj={proj_num}: comm_amount={comm_earned}")
 
     comm_paid = _safe_float(_comm_entry.get("paid_amount", 0))
+    for _rec in (fb_get("/project_commissions") or {}).values():
+        if isinstance(_rec, dict) and _rec.get("parent_project_id") == project_id:
+            comm_paid += _safe_float(_rec.get("paid_amount", 0))
+            comm_earned += _safe_float(_rec.get("commission_amount", 0))
     if comm_earned > 0:
         # Determine payment status
         if comm_paid >= comm_earned - 0.01:
@@ -5067,7 +5181,18 @@ def project_detail(project_id):
         key=lambda x: x.get("changed_at", ""), reverse=True
     ) if isinstance(_raw_history, dict) else []
 
+    _co_comm_rows = []   # this project's change-order commissions, shown under Commission
+    for _rid, _rec in (fb_get("/project_commissions") or {}).items():
+        if isinstance(_rec, dict) and _rec.get("parent_project_id") == project_id:
+            _co_comm_rows.append(dict(_rec, firebase_id=_rid))
+    _co_comm_rows.sort(key=lambda r: r.get("co_number", ""))
     return render_template("project_detail.html", project=data,
+                           sales_people=[p.get("name", "") for p in _load_sales_people() if p.get("name", "")],
+                           co_commissions=_co_comm_rows,
+                           commission_base=_commissionable_contract_value(data)[0],
+                           separate_co_ids={co.get("firebase_id") for co in _normalise_list(data.get("change_orders")) if isinstance(co, dict) and _co_commission_is_separate(co, data)},
+                           project_overpaid=_safe_float(_comm_entry.get("overpaid_amount", 0)),
+                           commission_record_amount=_safe_float(_comm_entry.get("commission_amount", 0)),
                            project_invoices=project_invoices,
                            project_expenses=project_expenses,
                            inv_total=inv_total, inv_paid=inv_paid,
@@ -5169,6 +5294,8 @@ def co_new(project_id):
         "po_wo_number":     co_po_wo,
         "shipping_address": co_shipping,
     }
+    # This CO's own salesperson and commission rate (blank salesperson = the project's)
+    new_co.update(_co_commission_from_form(request.form))
     # Save base contract value if it was never stored. Test for "missing", not "falsy": a project
     # created at $0 legitimately has a base of 0, and treating that as missing re-based it on the
     # current contract value (which already includes earlier change orders), double-counting them.
@@ -5258,6 +5385,7 @@ def co_status(project_id, co_idx):
         stage_note = (f"{len(new_co_stages)} payment stages added" if len(new_co_stages) > 1
                       else "new payment stage added")
         flash(f"{cos[co_idx]['co_number']} approved — contract updated to {CURRENCY_SYMBOL}{new_value:,.0f} and {stage_note}.", "success")
+        _flash_commission_overpaid(project_id)
         return _redirect_project_detail(project_id, "#tab-change-orders")
     fb_update(f"/projects/{project_id}", {"change_orders": cos})
     flash(f"{cos[co_idx]['co_number']} status updated to {new_status}.", "success")
@@ -5326,6 +5454,8 @@ def co_update_amount(project_id, co_idx):
     new_shipping = request.form.get("shipping_address", None)
     if new_shipping is not None:
         co_updates["shipping_address"] = new_shipping.strip()
+    # This CO's own salesperson / commission rate (editable at any time, even after payments)
+    co_updates.update(_co_commission_from_form(request.form))
 
     # CO number rename — check uniqueness within project first
     new_co_num_req = request.form.get("new_co_number", "").strip()
@@ -5406,6 +5536,7 @@ def co_update_amount(project_id, co_idx):
     })
     cache_bust("projects_list")
     flash(f"{co.get('co_number', 'CO')} updated.", "success")
+    _flash_commission_overpaid(project_id)
     return _redirect_project_detail(project_id, "#tab-change-orders")
 
 @app.route("/projects/<project_id>/change-orders/<int:co_idx>/stage-amount", methods=["POST"])
@@ -6196,46 +6327,64 @@ def commission_project_update_api(project_id):
             update_data["rate_display"] = str(data.get("rate_display", "")).strip()
 
     # Handle salesperson update (from Payroll Commission Management)
+    _co_new_salesperson = None
     if "salesperson" in data:
         new_salesperson = str(data.get("salesperson", "")).strip()
-        update_data["salesperson"] = new_salesperson
+        if _is_co_commission(current_comm):
+            # reassigning a change order starts a new record for the new person (see _co_commission_id);
+            # this record keeps its own history, so don't relabel it
+            _co_new_salesperson = new_salesperson
+        else:
+            update_data["salesperson"] = new_salesperson
 
     # Update the commission record
-    if update_data:
-        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
-        fb_update(f"/project_commissions/{project_id}", update_data)
+    if update_data or _co_new_salesperson is not None:
+        if update_data:
+            update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+            fb_update(f"/project_commissions/{project_id}", update_data)
 
         # Record change in history
         ts_key = str(int(datetime.now(timezone.utc).timestamp() * 1000))
         fb_update(f"/project_commissions/{project_id}/history/{ts_key}", {
             "changed_at": datetime.now(timezone.utc).isoformat(),
             "changed_by": session.get("user_name", session.get("user_email", "")),
-            "changes": update_data,
+            "changes": update_data or {"reassigned_to": _co_new_salesperson},
         })
 
-        # SYNC to project record if rate was changed
-        if "commission_override_type" in update_data or "commission_override_value" in update_data or "rate_display" in update_data:
-            # Find and update the corresponding project
-            all_projects = fb_get("/projects") or {}
-            if isinstance(all_projects, dict):
-                for proj_id, proj_data in all_projects.items():
-                    if isinstance(proj_data, dict):
-                        project_comm = fb_get(f"/project_commissions/{proj_id}") or {}
-                        # Check if this is the project we're updating (by matching project_id in commission data)
-                        if isinstance(project_comm, dict) and project_comm.get("project_id") == project_id:
-                            # Update project with new commission override settings
-                            proj_update = {}
-                            if "commission_override_type" in update_data:
-                                proj_update["commission_override_type"] = update_data["commission_override_type"]
-                            if "commission_override_value" in update_data:
-                                proj_update["commission_override_value"] = update_data["commission_override_value"]
-                            if "rate_display" in update_data:
-                                proj_update["rate_display"] = update_data["rate_display"]
-
-                            if proj_update:
-                                proj_update["updated_at"] = datetime.now(timezone.utc).isoformat()
-                                fb_update(f"/projects/{proj_id}", proj_update)
-                            break
+        # SYNC the project (or, for a change-order record, that change order) so the commission
+        # record keeps matching what it is derived from instead of being reverted on the next sync
+        _rate_changed = ("commission_override_type" in update_data or "commission_override_value" in update_data
+                         or "rate_display" in update_data)
+        if _rate_changed or "salesperson" in update_data or _co_new_salesperson is not None:
+            _now = datetime.now(timezone.utc).isoformat()
+            if _is_co_commission(current_comm):
+                _parent_id = current_comm.get("parent_project_id")
+                _parent = fb_get(f"/projects/{_parent_id}") or {}
+                for _i, _co in enumerate(_normalise_list(_parent.get("change_orders"))):
+                    if isinstance(_co, dict) and _co.get("firebase_id") == current_comm.get("co_firebase_id"):
+                        _co_upd = {}
+                        if _co_new_salesperson is not None:
+                            _co_upd["sales_person"] = _co_new_salesperson
+                        if "commission_override_type" in update_data:
+                            _co_upd["commission_override_type"] = update_data["commission_override_type"]
+                        if "commission_override_value" in update_data:
+                            _co_upd["commission_override_value"] = update_data["commission_override_value"]
+                        if _co_upd:
+                            fb_update(f"/projects/{_parent_id}/change_orders/{_i}", _co_upd)
+                        break
+            else:
+                proj_update = {}
+                if "commission_override_type" in update_data:
+                    proj_update["commission_override_type"] = update_data["commission_override_type"]
+                if "commission_override_value" in update_data:
+                    proj_update["commission_override_value"] = update_data["commission_override_value"]
+                if "rate_display" in update_data:
+                    proj_update["rate_display"] = update_data["rate_display"]
+                if "salesperson" in update_data:
+                    proj_update["sales"] = update_data["salesperson"]
+                if proj_update:
+                    proj_update["updated_at"] = _now
+                    fb_update(f"/projects/{project_id}", proj_update)
 
     # Fetch updated commission data
     new_comm = fb_get(f"/project_commissions/{project_id}") or {}
@@ -6581,6 +6730,9 @@ def project_delete(project_id):
 
     fb_delete(f"/projects/{project_id}")
     fb_delete(f"/project_commissions/{project_id}")
+    for _rid, _rec in (fb_get("/project_commissions") or {}).items():
+        if isinstance(_rec, dict) and _rec.get("parent_project_id") == project_id:
+            fb_delete(f"/project_commissions/{_rid}")
     cache_bust("projects_list")
 
     # If project was created from a quote, reset quote status to "Approved"
@@ -11861,20 +12013,24 @@ def _get_salesperson_commissions(salesperson_name):
                 continue
 
             # Filter: Only show commissions from projects WITH salespeople
+            # (a change-order record carries its own salesperson, so it skips the project checks)
             project_salesperson = (project_data.get("sales") or project_data.get("sales_person") or "").strip()
-            if not project_salesperson:
-                continue
+            if not _is_co_commission(comm_data):
+                if not project_salesperson:
+                    continue
 
-            # Filter: Only show commissions where the salesperson matches the project's salesperson
-            if project_salesperson != salesperson:
-                continue
+                # Filter: Only show commissions where the salesperson matches the project's salesperson
+                if project_salesperson != salesperson:
+                    continue
 
             # Build commission entry
             comm_data = dict(comm_data)
             comm_data["firebase_id"] = actual_project_id
             comm_data["commission_doc_id"] = comm_id
+            comm_data["display_number"] = _commission_display_number(comm_data)
             comm_data["client_name"] = project_data.get("client_name", "")
-            comm_data["contract_value"] = project_data.get("contract_value", 0)
+            # The record's own commissionable base (a CO's amount / the project minus carved-out COs)
+            comm_data["contract_value"] = comm_data.get("contract_value", project_data.get("contract_value", 0))
 
             # Calculate remaining_due: commission_amount - adjusted - paid_amount
             commission_amount = _safe_float(comm_data.get("commission_amount", 0))
@@ -11895,6 +12051,7 @@ def _get_salesperson_commissions(salesperson_name):
 @role_required("payroll")
 def commission_detail(salesperson_name):
     """Display commission details for a specific salesperson"""
+    _resync_stale_project_commissions()   # project/CO edits made elsewhere (client, rate, salesperson...)
     commissions = _get_salesperson_commissions(salesperson_name)
 
     # Sort by project_number: descending by year-month, descending by sequence
@@ -11963,7 +12120,7 @@ def api_commission_pay():
                 continue
 
             project_salesperson = (project_data.get("sales") or project_data.get("sales_person") or "").strip()
-            if not project_salesperson or project_salesperson != salesperson:
+            if not _is_co_commission(comm_data) and (not project_salesperson or project_salesperson != salesperson):
                 continue
 
             comm_data["commission_doc_id"] = comm_id
@@ -13376,8 +13533,7 @@ def financial_byproject_export(fmt):
                     for _detail in adj_details:
                         if isinstance(_detail, dict) and _detail.get("project_number") == pnum:
                             p_expenses += _safe_float(_detail.get("amount", 0))
-                            _matched = True
-                            break
+                            _matched = True   # keep going: a project's CO commission records share its number
                 if not _matched and not adj_details:
                     p_expenses += _safe_float(e.get("amount", 0))
 
@@ -13401,6 +13557,9 @@ def financial_byproject_export(fmt):
 
         # Only add PAID commission to expenses (cash basis accounting)
         p_comm_paid = _safe_float(p_comm.get("paid_amount", 0))
+        # + commissions paid on this project's change orders (their own records)
+        p_comm_paid += sum(_safe_float(_r.get("paid_amount", 0)) for _r in _all_project_commissions.values()
+                           if isinstance(_r, dict) and _r.get("parent_project_id") == pid)
         if p_comm_paid > 0:
             p_expenses += p_comm_paid
         # If no paid amount, don't add commission to expenses yet
@@ -14270,11 +14429,12 @@ def get_payroll_commissions():
                         break
 
             # Filter: Only show commissions from active (non-deleted) projects WITH salespeople
-            if project_is_deleted or not project_has_salesperson:
+            if project_is_deleted or (not project_has_salesperson and not _is_co_commission(comm_data)):
                 continue
 
             # Filter: Only show commissions where the salesperson matches the project's salesperson
-            if project_salesperson.strip() != salesperson.strip():
+            # (a change-order record carries its own salesperson)
+            if not _is_co_commission(comm_data) and project_salesperson.strip() != salesperson.strip():
                 continue
 
             # Build commission entry using fields from commission data
@@ -14307,6 +14467,8 @@ def get_payroll_commissions():
                 "project_id": comm_data.get("project_id", ""),
                 "actual_project_id": actual_project_id or "",  # The real project ID for linking
                 "project_number": project_number,
+                "display_number": _commission_display_number(comm_data),   # MABS-x or MABS-x_CO-1
+                "co_number": comm_data.get("co_number", ""),   # set for a change-order commission
                 "client_name": comm_data.get("company_name", ""),
                 "salesperson": salesperson,
                 "salesperson_email": comm_data.get("salesperson_email", ""),
@@ -14531,17 +14693,8 @@ def _get_project_numbers_from_commission_deduction(employee_name, deduction_amou
         all_proj_commissions = fb_get("/project_commissions") or {}
 
         pending_projects = []
-        for proj_id, proj_data in all_projects.items():
-            if not isinstance(proj_data, dict):
-                continue
-            if proj_data.get("status", "").strip() == "Cancelled":
-                continue
-            if (proj_data.get("sales", "").strip() or "").lower() != employee_name.lower():
-                continue
-
-            proj_comm = all_proj_commissions.get(proj_id, {})
-            if not isinstance(proj_comm, dict):
-                continue
+        for proj_id, proj_comm, _parent_pid, proj_data in _employee_commission_targets(
+                employee_name, all_projects, all_proj_commissions, only_with_amount=False):
             if proj_comm.get("status", "").strip() == "Paid":
                 continue
 
@@ -14640,8 +14793,8 @@ def _sync_adjustment_to_expense(adjustment_id, adjustment, advance_data, advance
                         proj_deductions = cp_data.get("project_deductions", {})
                         if isinstance(proj_deductions, dict):
                             for proj_id, deduct_amt in proj_deductions.items():
-                                proj_data = all_projects.get(proj_id, {})
-                                proj_num = proj_data.get("project_number", proj_id) if isinstance(proj_data, dict) else proj_id
+                                # (a change-order commission record id resolves to its parent project's number)
+                                proj_num = _commission_record_project_number(proj_id, all_projects)
                                 project_deductions_details.append({
                                     "project_id": proj_id,
                                     "project_number": proj_num,
@@ -14974,18 +15127,9 @@ def _add_advance_adjustment_core(data):
 
                 # 2. Filter pending commissions for this salesperson
                 pending_projects = []
-                for proj_id, proj_data in all_projects.items():
-                    if not isinstance(proj_data, dict):
-                        continue
-                    if proj_data.get("status", "").strip() == "Cancelled":
-                        continue
-                    if (proj_data.get("sales", "").strip() or "").lower() != employee_name.lower():
-                        continue
-
-                    proj_comm = all_proj_commissions.get(proj_id, {})
-                    if not isinstance(proj_comm, dict):
-                        continue
-
+                # (the employee's own projects' records AND any change-order records assigned to them)
+                for proj_id, proj_comm, _parent_pid, proj_data in _employee_commission_targets(
+                        employee_name, all_projects, all_proj_commissions, only_with_amount=False):
                     # Include ANY commission with remaining balance (don't skip by status alone)
                     commission_amount = _safe_float(proj_comm.get("commission_amount", 0))
                     paid_amount = _safe_float(proj_comm.get("paid_amount", 0))
@@ -16894,8 +17038,7 @@ def financial():
                     for _detail in adj_details:
                         if isinstance(_detail, dict) and _detail.get("project_number") == pnum:
                             p_expenses += _safe_float(_detail.get("amount", 0))
-                            _matched = True
-                            break
+                            _matched = True   # keep going: a project's CO commission records share its number
                 if not _matched and not adj_details:
                     p_expenses += _safe_float(e.get("amount", 0))
 
@@ -16919,6 +17062,9 @@ def financial():
 
         # Only add PAID commission to expenses (cash basis accounting)
         p_comm_paid = _safe_float(p_comm.get("paid_amount", 0))
+        # + commissions paid on this project's change orders (their own records)
+        p_comm_paid += sum(_safe_float(_r.get("paid_amount", 0)) for _r in _all_project_commissions.values()
+                           if isinstance(_r, dict) and _r.get("parent_project_id") == pid)
         if p_comm_paid > 0:
             p_expenses += p_comm_paid
         # If no paid amount, don't add commission to expenses yet
@@ -17310,7 +17456,7 @@ def financial():
                 continue
 
             # Check if project still exists before displaying commission
-            if _pcid not in all_projects:
+            if _comm_parent_pid(_pcid, _pc) not in all_projects:
                 _skipped_deleted_commissions += 1
                 continue
 
@@ -17951,14 +18097,14 @@ def financial():
             continue
 
         # Check if project still exists before displaying commission
-        if k not in all_projects:
+        if _comm_parent_pid(k, v) not in all_projects:
             continue
 
         # Bare deduction-bookkeeping records are not commissions
         if "commission_amount" not in v:
             continue
 
-        pc = dict(v, firebase_id=k)
+        pc = dict(v, firebase_id=k, project_link_id=_comm_parent_pid(k, v), display_number=_commission_display_number(v))
         project_commissions.append(pc)
 
     # Apply paid_amount from project commissions to commission summary
@@ -22762,12 +22908,8 @@ def employees():
 
     # My commissions — per-project commission tracking for the "Commission" tab
     # (same data the Quotes → Sales People tab shows, filtered to this user).
-    _my_name_variants = set()
-    for _n in (session.get("user_name", ""), _profile_data.get("username", ""),
-               _profile_data.get("name", ""), _profile_data.get("display_name", "")):
-        _n = (_n or "").strip().lower().replace("_", " ")
-        if _n:
-            _my_name_variants.add(_n)
+    _my_name_variants = _own_name_variants(uid, (session.get("user_name", ""), _profile_data.get("username", ""),
+                                                 _profile_data.get("name", ""), _profile_data.get("display_name", "")))
 
     _resync_stale_project_commissions()
     _raw_my_comm = fb_get("/project_commissions") or {}
@@ -22775,12 +22917,12 @@ def employees():
     my_commissions = []
     if isinstance(_raw_my_comm, dict):
         for _cid, _cv in _raw_my_comm.items():
-            if not isinstance(_cv, dict) or _cid not in _my_proj_lookup:
+            if not isinstance(_cv, dict) or _comm_parent_pid(_cid, _cv) not in _my_proj_lookup:
                 continue
             _sp = (_cv.get("salesperson", "") or "").strip().lower().replace("_", " ")
             if _sp not in _my_name_variants:
                 continue
-            _pc = dict(_cv, firebase_id=_cid)
+            _pc = dict(_cv, firebase_id=_cid, project_link_id=_comm_parent_pid(_cid, _cv), display_number=_commission_display_number(_cv))
             _pc["project_number"]    = _pc.get("project_number", "—")
             _pc["company_name"]      = _pc.get("company_name", "—")
             _pc["status"]            = _pc.get("status", "Pending")
@@ -28030,7 +28172,7 @@ def _project_commission_in_sync(proj: dict, existing) -> bool:
     if not isinstance(existing, dict) or "commission_amount" not in existing:
         return False
     sales_name = (proj.get("sales") or proj.get("sales_person") or "").strip()
-    contract_value = _safe_float(proj.get("contract_value") or proj.get("project_amount") or 0)
+    contract_value, _carved = _commissionable_contract_value(proj)
     company = proj.get("company_name", "") or proj.get("company", "")
     return (
         (existing.get("salesperson") or "").strip() == sales_name
@@ -28047,6 +28189,135 @@ def _sync_project_commission_if_stale(project_id: str, proj: dict) -> None:
     existing = fb_get(f"/project_commissions/{project_id}")
     if not _project_commission_in_sync(proj, existing):
         _upsert_project_commission(project_id, proj)
+    _sync_co_commissions(project_id, proj)
+
+def _co_commission_id(project_id: str, co: dict) -> str:
+    """Record id of a change order's commission for its CURRENT salesperson. Each (CO, salesperson)
+    pair has its own record, so when a CO is reassigned the previous person's record - with the
+    payments and adjustments made to them - stays exactly as it was and a new record is started
+    for the new person (reassigning back later revives the earlier one)."""
+    slug = re.sub(r"[^a-z0-9]+", "", (co.get("sales_person") or "").lower()) or "x"
+    return f"{project_id}__{co.get('firebase_id')}__{slug}"
+
+def _co_commission_in_sync(proj: dict, co: dict, existing) -> bool:
+    if not isinstance(existing, dict) or "commission_amount" not in existing:
+        return False
+    return (
+        (existing.get("salesperson") or "").strip() == (co.get("sales_person") or "").strip()
+        and abs(_safe_float(existing.get("contract_value", 0)) - _safe_float(co.get("amount", 0))) < 0.005
+        and (existing.get("company_name") or "") == (proj.get("company_name", "") or proj.get("company", ""))
+        and (existing.get("project_number") or "") == (proj.get("project_number") or "")
+        and (existing.get("co_number") or "") == (co.get("co_number") or "")
+        and _norm_override_type(existing.get("commission_override_type")) == _norm_override_type(co.get("commission_override_type"))
+        and abs(_safe_float(existing.get("commission_override_value", 0)) - _safe_float(co.get("commission_override_value", 0))) < 0.0001
+    )
+
+def _upsert_co_commission(project_id: str, proj: dict, co: dict, existing=None) -> None:
+    """Store the commission record of one change order that has its own salesperson and rate."""
+    rid = _co_commission_id(project_id, co)
+    if existing is None:
+        existing = fb_get(f"/project_commissions/{rid}") or {}
+    sales_name = (co.get("sales_person") or "").strip()
+    amount = _safe_float(co.get("amount", 0))
+    sp_default_rate, sp_email = _salesperson_rate_and_email(sales_name)
+    calc = _calc_commission(existing, sales_name, amount, co.get("commission_override_type"),
+                            co.get("commission_override_value", 0), sp_default_rate)
+    total_deducted = _safe_float(existing.get("total_deducted", 0))
+    paid_amount = _safe_float(existing.get("paid_amount", 0))
+    remaining_due = max(calc["amount"] - total_deducted - paid_amount, 0)
+    if remaining_due <= 0:
+        deduction_status = "fully_covered"
+    elif total_deducted > 0:
+        deduction_status = "partially_covered"
+    else:
+        deduction_status = "not_covered"
+    status = _calculate_commission_status(remaining_due, paid_amount, total_deducted)
+    paid_at = existing.get("paid_at", "")
+    if status == "Paid" and not paid_at:
+        paid_at = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    fb_update(f"/project_commissions/{rid}", {
+        "project_id":                rid,
+        "parent_project_id":         project_id,
+        "co_firebase_id":            co.get("firebase_id"),
+        "co_number":                 co.get("co_number", ""),
+        "overpaid_amount":           round(max(total_deducted + paid_amount - calc["amount"], 0), 2),
+        "project_number":            proj.get("project_number", ""),
+        "company_name":              proj.get("company_name", "") or proj.get("company", ""),
+        "salesperson":               sales_name,
+        "salesperson_email":         sp_email,
+        "contract_value":            amount,
+        "commission_override_type":  calc["override_type"],
+        "commission_override_value": calc["override_value"],
+        "rate_display":              calc["rate_display"],
+        "default_rate":              calc["default_rate"],
+        "commission_amount":         calc["amount"],
+        "status":                    status,
+        "paid_at":                   paid_at,
+        "paid_by":                   existing.get("paid_by", ""),
+        "created_at":                existing.get("created_at", now),
+        "updated_at":                now,
+        "deductions":                existing.get("deductions", {}),
+        "total_deducted":            total_deducted,
+        "remaining_due":             remaining_due,
+        "deduction_status":          deduction_status,
+        "deductions_list":           existing.get("deductions_list", []),
+    })
+
+def _sync_co_commissions(project_id: str, proj: dict, all_comm=None) -> None:
+    """Make a project's change-order commission records match its change orders: one record per
+    approved CO that has its own salesperson; records of COs that no longer qualify are removed
+    (or, if money was already paid/adjusted on them, frozen at what was actually paid)."""
+    if all_comm is None:
+        all_comm = fb_get("/project_commissions") or {}
+    mine = {k: v for k, v in all_comm.items()
+            if isinstance(v, dict) and v.get("parent_project_id") == project_id} if isinstance(all_comm, dict) else {}
+    wanted = {}
+    for co in _separate_commission_cos(proj):
+        wanted[_co_commission_id(project_id, co)] = co
+    for rid, co in wanted.items():
+        if not _co_commission_in_sync(proj, co, mine.get(rid)):
+            _upsert_co_commission(project_id, proj, co, mine.get(rid))
+    for rid, rec in mine.items():
+        if rid in wanted:
+            continue
+        paid = _safe_float(rec.get("paid_amount", 0))
+        deducted = _safe_float(rec.get("total_deducted", 0))
+        if paid > 0.005 or deducted > 0.005:
+            # This CO no longer earns commission for this person (it was reassigned or its
+            # override removed, and the project's own record earns on it again), so counting
+            # what was settled as "earned" would double-count it. It earns 0 now and the money
+            # already paid/adjusted is recorded as overpaid for review. No automatic clawback.
+            kept = round(paid + deducted, 2)
+            if (abs(_safe_float(rec.get("commission_amount", 0))) > 0.005
+                    or abs(_safe_float(rec.get("overpaid_amount", 0)) - kept) > 0.005):
+                fb_update(f"/project_commissions/{rid}", {
+                    "commission_amount": 0.0, "remaining_due": 0, "status": "Paid",
+                    "overpaid_amount": kept,
+                    "updated_at": datetime.now(timezone.utc).isoformat()})
+                log.warning("CO commission %s no longer qualifies but has %.2f settled; recorded as overpaid", rid, kept)
+        else:
+            fb_delete(f"/project_commissions/{rid}")
+
+def _flash_commission_overpaid(project_id: str) -> None:
+    """After a change order's salesperson / rate / approval changed, warn if a commission record of
+    this project now has more paid or adjusted against it than it earns."""
+    try:
+        for rid, rec in (fb_get("/project_commissions") or {}).items():
+            if not isinstance(rec, dict) or _comm_parent_pid(rid, rec) != project_id:
+                continue
+            over = _safe_float(rec.get("overpaid_amount", 0))
+            if over <= 0.005:
+                continue
+            who = rec.get("salesperson", "") or "The salesperson"
+            if _is_co_commission(rec):
+                who += f" ({rec.get('co_number', 'CO')})"
+            settled = _safe_float(rec.get("paid_amount", 0)) + _safe_float(rec.get("total_deducted", 0))
+            flash(f"{who} was already paid / adjusted {CURRENCY_SYMBOL}{settled:,.2f} on this project but now earns "
+                  f"{CURRENCY_SYMBOL}{_safe_float(rec.get('commission_amount', 0)):,.2f}: {CURRENCY_SYMBOL}{over:,.2f} is overpaid. "
+                  f"Nothing was clawed back automatically; review it under Commission.", "warning")
+    except Exception as exc:
+        log.warning("overpaid check failed for %s: %s", project_id, exc)
 
 _last_commission_resync = 0.0
 
@@ -28068,10 +28339,14 @@ def _resync_stale_project_commissions(force: bool = False) -> int:
         if not isinstance(projects, dict) or not isinstance(comms, dict):
             return 0
         fixed = 0
+        _has_co_records = {v.get("parent_project_id") for v in comms.values() if isinstance(v, dict) and v.get("parent_project_id")}
         for pid, proj in projects.items():
+            if not isinstance(proj, dict) or proj.get("status") == "Cancelled":
+                continue
+            if _separate_commission_cos(proj) or pid in _has_co_records:
+                _sync_co_commissions(pid, proj, comms)
             existing = comms.get(pid)
-            if (not isinstance(proj, dict) or not isinstance(existing, dict)
-                    or "commission_amount" not in existing or proj.get("status") == "Cancelled"):
+            if not isinstance(existing, dict) or "commission_amount" not in existing:
                 continue
             if not _project_commission_in_sync(proj, existing):
                 _upsert_project_commission(pid, proj)
@@ -28083,37 +28358,53 @@ def _resync_stale_project_commissions(force: bool = False) -> int:
         log.warning("Commission resync failed: %s", exc)
         return 0
 
-def _upsert_project_commission(project_id: str, project_data: dict) -> None:
-    """Calculate and store a commission entry for a project at /project_commissions/{project_id}.
-    Preserves existing status/paid fields so editing a project doesn't reset a paid commission."""
-    sales_name     = (project_data.get("sales") or project_data.get("sales_person") or "").strip()
-    contract_value = _safe_float(project_data.get("contract_value") or project_data.get("project_amount") or 0)
-    if not sales_name or not contract_value:
-        # A brand-new project with no salesperson / value has nothing to record, but an
-        # EXISTING record must still follow the project (e.g. value set to 0 or salesperson
-        # cleared) instead of silently keeping the old figures.
-        _ex = fb_get(f"/project_commissions/{project_id}")
-        if not (isinstance(_ex, dict) and "commission_amount" in _ex):
-            return
+def _is_approved_co(co) -> bool:
+    return isinstance(co, dict) and co.get("status") in ("Approved", "Invoiced", "Paid")
 
-    sp_default_rate = 0.0
-    sp_email = (project_data.get("sales_email") or "").strip()
-    for u in _load_all_users():
-        if (u.get("username") or "").strip() == sales_name:
-            sp_default_rate = _safe_float(u.get("commission_rate", 0))
-            sp_email = u.get("email", "") or sp_email   # the user record wins over a stale project copy
-            break
+def _co_commission_is_separate(co: dict, project_data: dict) -> bool:
+    """Does this change order need its OWN commission row?
 
-    override_type  = (project_data.get("commission_override_type") or "default").strip()
-    override_value = _safe_float(project_data.get("commission_override_value", 0))
+    No - it stays inside the project's commission - when it has no salesperson of its own, or when
+    its salesperson AND rate are the same as the project's (so they are simply one commission on
+    the whole amount). Yes - a separate row - when the salesperson differs, or the rate differs
+    (a different custom %, default vs custom, or any fixed amount, which can't be merged)."""
+    sp = (co.get("sales_person") or "").strip()
+    if not sp or not co.get("firebase_id"):
+        return False
+    if _norm_person_name(sp) != _norm_person_name(project_data.get("sales") or project_data.get("sales_person") or ""):
+        return True
+    p_type = _norm_override_type(project_data.get("commission_override_type"))
+    c_type = _norm_override_type(co.get("commission_override_type"))
+    if p_type != c_type or p_type == "fixed":
+        return True
+    if p_type == "percent":
+        def _pct(v):
+            v = _safe_float(v)
+            return v if v > 1 else v * 100
+        return abs(_pct(project_data.get("commission_override_value")) - _pct(co.get("commission_override_value"))) > 0.0001
+    return False   # both on the salesperson's default rate
 
-    existing = fb_get(f"/project_commissions/{project_id}") or {}
+def _separate_commission_cos(project_data: dict) -> list:
+    """Approved change orders that get their own commission record (see _co_commission_is_separate)."""
+    return [co for co in _normalise_list(project_data.get("change_orders"))
+            if _is_approved_co(co) and _co_commission_is_separate(co, project_data)]
 
-    # For existing projects with "default" rate, preserve the original commission amount
-    # Only recalculate for new projects, if override has changed, or if salesperson changed
-    is_new_project = not existing
+def _commissionable_contract_value(project_data: dict):
+    """(value the project's own commission is earned on, amount carved out to change-order records).
+
+    Change orders without their own salesperson stay in the project's base, exactly as before."""
+    cv = _safe_float(project_data.get("contract_value") or project_data.get("project_amount") or 0)
+    carved = min(sum(_safe_float(co.get("amount", 0)) for co in _separate_commission_cos(project_data)), cv)
+    return cv - carved, carved
+
+def _calc_commission(existing: dict, sales_name: str, base_value: float,
+                     override_type: str, override_value: float, sp_default_rate: float) -> dict:
+    """Commission amount for `base_value` under a rate setting. `existing` is the record already
+    stored (if any): a default-rate record keeps the rate it was created with."""
+    override_type = (override_type or "default").strip()
+    override_value = _safe_float(override_value)
+    is_new = not existing
     existing_override_type = existing.get("commission_override_type", "default")
-    existing_override_value = _safe_float(existing.get("commission_override_value", 0))
     existing_salesperson = (existing.get("salesperson") or "").strip()
     salesperson_changed = existing_salesperson and existing_salesperson != sales_name
 
@@ -28125,23 +28416,21 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
     if _is_percent_override:
         # Handle both decimal (0.50) and percentage (50) formats
         pct_val = override_value if override_value > 1 else (override_value * 100)
-        commission_amount = contract_value * pct_val / 100
+        amount = base_value * pct_val / 100
         rate_display = f"{pct_val}% (custom)"
         override_type = "percent"  # Normalize the type
     elif _is_fixed_override:
-        commission_amount = override_value
+        amount = override_value
         rate_display = "Fixed amount"
         override_type = "fixed"  # Normalize the type
-    elif override_type == "default" and is_new_project:
-        # NEW project with default rate: use current rate from settings
-        override_type = "default"
-        commission_amount = contract_value * sp_default_rate / 100
+    elif override_type == "default" and is_new:
+        # NEW record with default rate: use current rate from settings
+        amount = base_value * sp_default_rate / 100
         rate_display = f"{sp_default_rate}% (default)"
-    elif override_type == "default" and not is_new_project and existing_override_type == "default" and not salesperson_changed:
-        # EXISTING project with default rate, same salesperson: keep the rate the project was
-        # created with (a later change to the salesperson's default rate in settings must not
-        # rewrite old projects) but apply it to the CURRENT contract value, so editing the
-        # contract value / adding a change order updates the commission.
+    elif override_type == "default" and not is_new and existing_override_type == "default" and not salesperson_changed:
+        # EXISTING record with default rate, same salesperson: keep the rate it was created with
+        # (a later change to the salesperson's default rate in settings must not rewrite old
+        # records) but apply it to the CURRENT base value.
         _kept_rate = existing.get("default_rate")
         if _kept_rate in (None, ""):
             _rm = re.search(r"([\d.]+)\s*%", str(existing.get("rate_display", "")))
@@ -28150,14 +28439,48 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
             _old_cv = _safe_float(existing.get("contract_value", 0))
             _kept_rate = (_safe_float(existing.get("commission_amount", 0)) / _old_cv * 100) if _old_cv else sp_default_rate
         _kept_rate = _safe_float(_kept_rate)
-        commission_amount = contract_value * _kept_rate / 100
+        amount = base_value * _kept_rate / 100
         rate_display = f"{_kept_rate:g}% (default)"
         sp_default_rate = _kept_rate
     else:
         # Recalculate for: salesperson changed, override changed from non-default to default, or fallback
         override_type = "default"
-        commission_amount = contract_value * sp_default_rate / 100
+        amount = base_value * sp_default_rate / 100
         rate_display = f"{sp_default_rate}% (default)"
+    return {"amount": round(amount, 2), "rate_display": rate_display, "override_type": override_type,
+            "override_value": override_value,
+            "default_rate": sp_default_rate if override_type == "default" else ""}
+
+def _salesperson_rate_and_email(sales_name: str, fallback_email: str = ""):
+    for u in _load_all_users():
+        if (u.get("username") or "").strip() == sales_name:
+            # the user record wins over a stale copy on the project
+            return _safe_float(u.get("commission_rate", 0)), (u.get("email", "") or fallback_email)
+    return 0.0, fallback_email
+
+def _upsert_project_commission(project_id: str, project_data: dict) -> None:
+    """Calculate and store a commission entry for a project at /project_commissions/{project_id}.
+    Preserves existing status/paid fields so editing a project doesn't reset a paid commission.
+    Change orders that have their own salesperson are carved out of this record's base and get
+    their own records (see _sync_co_commissions)."""
+    sales_name     = (project_data.get("sales") or project_data.get("sales_person") or "").strip()
+    contract_value = _safe_float(project_data.get("contract_value") or project_data.get("project_amount") or 0)
+    if not sales_name or not contract_value:
+        # A brand-new project with no salesperson / value has nothing to record, but an
+        # EXISTING record must still follow the project (e.g. value set to 0 or salesperson
+        # cleared) instead of silently keeping the old figures.
+        _ex = fb_get(f"/project_commissions/{project_id}")
+        if not (isinstance(_ex, dict) and "commission_amount" in _ex):
+            return
+
+    sp_default_rate, sp_email = _salesperson_rate_and_email(sales_name, (project_data.get("sales_email") or "").strip())
+    base_value, carved = _commissionable_contract_value(project_data)
+
+    existing = fb_get(f"/project_commissions/{project_id}") or {}
+    calc = _calc_commission(existing, sales_name, base_value,
+                            project_data.get("commission_override_type"),
+                            project_data.get("commission_override_value", 0), sp_default_rate)
+    commission_amount = calc["amount"]
 
     # Recalculate deduction_status based on new commission_amount and existing deductions
     total_deducted = _safe_float(existing.get("total_deducted", 0))
@@ -28178,17 +28501,24 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
         if not paid_at:
             paid_at = datetime.now(timezone.utc).isoformat()
 
+    # Money already paid / adjusted against this record can exceed what it now earns (e.g. a change
+    # order was reassigned to another salesperson after the project's commission was settled).
+    # Nothing is clawed back automatically; the excess is recorded so it is visible and reviewable.
+    overpaid = round(max(total_deducted + _safe_float(existing.get("paid_amount", 0)) - commission_amount, 0), 2)
+
     fb_update(f"/project_commissions/{project_id}", {
         "project_id":                project_id,
         "project_number":            project_data.get("project_number", ""),
         "company_name":              project_data.get("company_name", "") or project_data.get("company", ""),
         "salesperson":               sales_name,
         "salesperson_email":         sp_email,
-        "contract_value":            contract_value,
-        "commission_override_type":  override_type,
-        "commission_override_value": override_value,
-        "rate_display":              rate_display,
-        "default_rate":              sp_default_rate if override_type == "default" else "",
+        "contract_value":            base_value,
+        "co_carved_amount":          carved,
+        "overpaid_amount":           overpaid,
+        "commission_override_type":  calc["override_type"],
+        "commission_override_value": calc["override_value"],
+        "rate_display":              calc["rate_display"],
+        "default_rate":              calc["default_rate"],
         "commission_amount":         round(commission_amount, 2),
         "status":                    status,
         "paid_at":                   paid_at,

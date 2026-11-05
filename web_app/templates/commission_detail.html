@@ -553,7 +553,8 @@ input:checked + .toggle-slider:before {
           {% set earned = comm.get('commission_amount', 0) | float %}
           {% set adjusted = comm.get('total_deducted', 0) | float %}
           {% set paid_amount = comm.get('paid_amount', 0) | float %}
-          {% set remaining = (earned - adjusted - paid_amount) | float %}
+          {% set remaining = [(earned - adjusted - paid_amount) | float, 0] | max %}
+          {% set overpaid = [(adjusted + paid_amount - earned) | float, 0] | max %}
 
           {# Status determination logic based on remaining balance #}
           {# A commission with $0 remaining is shown as Paid whether it was settled via a
@@ -572,7 +573,7 @@ input:checked + .toggle-slider:before {
           {% endif %}
           {% set row_class = 'row-zero-commission' if earned == 0 else '' %}
           <tr class="{{ row_class }}">
-            <td><a href="/projects/{{ comm.get('firebase_id', '') }}" class="project-link">{{ comm.get('project_number', '—') }}</a></td>
+            <td><a href="/projects/{{ comm.get('firebase_id', '') }}" class="project-link">{{ comm.get('display_number') or comm.get('project_number', '—') }}</a></td>
             <td style="font-size: 12px; color: #64748b;">
               {% if comm.get('company_name') %}
                 {{ comm.get('company_name', '') }}
@@ -592,7 +593,7 @@ input:checked + .toggle-slider:before {
             <td class="amount-success">
               <div style="font-weight:600;color:#10b981;">{{ currency_symbol }}{{ "{:,.2f}".format(paid_amount) }}</div>
             </td>
-            <td class="amount-info"><strong style="font-weight:600;color:#ef4444;">{{ currency_symbol }}{{ "{:,.2f}".format(remaining) }}</strong></td>
+            <td class="amount-info"><strong style="font-weight:600;color:#ef4444;">{{ currency_symbol }}{{ "{:,.2f}".format(remaining) }}</strong>{% if overpaid > 0.01 %}<div style="font-size:11px;color:#b91c1c;" title="Paid / adjusted more than this now earns (e.g. a change order was reassigned). Not clawed back."><i class="bi bi-exclamation-triangle-fill"></i> Overpaid {{ currency_symbol }}{{ "{:,.2f}".format(overpaid) }}</div>{% endif %}</td>
             <td>
               <div>
                 <span class="status-badge {{ status_class }}">

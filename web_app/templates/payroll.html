@@ -1848,7 +1848,7 @@ function renderSalespersonSummary(filtered, tbody, statusFilter) {
     // Calculate revenue generated as sum of unique project contract values
     const uniqueProjectsMap = {};
     personComms.forEach(c => {
-      const projKey = c.project_number || c.project_id || 'Unknown';
+      const projKey = c.display_number || c.project_number || c.project_id || 'Unknown';
       if (!uniqueProjectsMap[projKey]) {
         uniqueProjectsMap[projKey] = parseFloat(c.contract_value) || 0;
       }
@@ -1856,7 +1856,7 @@ function renderSalespersonSummary(filtered, tbody, statusFilter) {
     const revenueGenerated = Object.values(uniqueProjectsMap).reduce((sum, val) => sum + val, 0);
 
     // Count unique projects
-    const uniqueProjects = new Set(personComms.map(c => c.project_number || c.project_id || 'Unknown'));
+    const uniqueProjects = new Set(personComms.map(c => c.display_number || c.project_number || c.project_id || 'Unknown'));
     const projectCount = uniqueProjects.size;
 
     // Status is driven purely by the aggregate remaining balance
@@ -1907,7 +1907,7 @@ function renderProjectDetailsModal(personName) {
   // Group by project
   const grouped = {};
   personComms.forEach(comm => {
-    const projNum = comm.project_number || comm.project_id || "Unknown";
+    const projNum = comm.display_number || comm.project_number || comm.project_id || "Unknown";
     if (!grouped[projNum]) {
       grouped[projNum] = [];
     }
@@ -1950,7 +1950,7 @@ function renderProjectDetailsModal(personName) {
     if (hasMultiple) {
       html += `
         <tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
-          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}">${firstComm.project_number || firstComm.project_id || '—'}</a></td>
+          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}">${firstComm.display_number || firstComm.project_number || firstComm.project_id || '—'}</a></td>
           <td><strong>${firstComm.client_name || '—'}</strong></td>
           <td><strong>${firstComm.salesperson || '—'}</strong></td>
           <td>${CURRENCY_SYMBOL}${fmt(parseFloat(firstComm.contract_value) || 0)}</td>
@@ -2009,7 +2009,7 @@ function renderProjectDetailsModal(personName) {
 
       html += `
         <tr style="background:white;border-top:1px solid #e2e8f0;" data-commission-id="${comm.commission_doc_id}">
-          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}">${comm.project_number || comm.project_id || '—'}</a></td>
+          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}">${comm.display_number || comm.project_number || comm.project_id || '—'}</a></td>
           <td><strong>${comm.client_name || '—'}</strong></td>
           <td>${comm.salesperson || '—'}</td>
           <td>${CURRENCY_SYMBOL}${fmt(parseFloat(comm.contract_value) || 0)}</td>
@@ -2058,7 +2058,7 @@ function renderProjectDetailsInContainer(personName, container) {
   // Group by project
   const grouped = {};
   personComms.forEach(comm => {
-    const projNum = comm.project_number || comm.project_id || "Unknown";
+    const projNum = comm.display_number || comm.project_number || comm.project_id || "Unknown";
     if (!grouped[projNum]) {
       grouped[projNum] = [];
     }
@@ -2107,7 +2107,7 @@ function renderProjectDetailsInContainer(personName, container) {
       // Header row for multiple commissions
       html += `
         <tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
-          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}">${firstComm.project_number || firstComm.project_id || '—'}</a></td>
+          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}">${firstComm.display_number || firstComm.project_number || firstComm.project_id || '—'}</a></td>
           <td><strong>${firstComm.client_name || '—'}</strong></td>
           <td><strong>${firstComm.salesperson || '—'}</strong></td>
           <td>${CURRENCY_SYMBOL}${fmt(parseFloat(firstComm.contract_value) || 0)}</td>
@@ -2167,7 +2167,7 @@ function renderProjectDetailsInContainer(personName, container) {
 
       html += `
         <tr style="background:white;border-top:1px solid #e2e8f0;" data-commission-id="${comm.commission_doc_id}">
-          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}">${comm.project_number || comm.project_id || '—'}</a></td>
+          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}">${comm.display_number || comm.project_number || comm.project_id || '—'}</a></td>
           <td><strong>${comm.client_name || '—'}</strong></td>
           <td>${comm.salesperson || '—'}</td>
           <td>${CURRENCY_SYMBOL}${fmt(parseFloat(comm.contract_value) || 0)}</td>
@@ -2228,7 +2228,7 @@ function renderProjectDetailsByPerson(filtered, personName, tbody) {
 
   const grouped = {};
   personComms.forEach(comm => {
-    const projNum = comm.project_number || comm.project_id || "Unknown";
+    const projNum = comm.display_number || comm.project_number || comm.project_id || "Unknown";
     if (!grouped[projNum]) {
       grouped[projNum] = [];
     }
@@ -2261,7 +2261,7 @@ function renderProjectDetailsByPerson(filtered, personName, tbody) {
 
       html += `
         <tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
-          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}" title="${hasProjectLink ? 'View project details' : 'Project not found'}">${firstComm.project_number || firstComm.project_id || '—'}</a></td>
+          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}" title="${hasProjectLink ? 'View project details' : 'Project not found'}">${firstComm.display_number || firstComm.project_number || firstComm.project_id || '—'}</a></td>
           <td><strong>${firstComm.client_name || '—'}</strong></td>
           <td><strong>${firstComm.salesperson || '—'}</strong></td>
           <td>${CURRENCY_SYMBOL}${fmt(parseFloat(firstComm.contract_value) || 0)}</td>
@@ -2330,7 +2330,7 @@ function renderProjectDetailsByPerson(filtered, personName, tbody) {
 
       html += `
         <tr style="background:white;border-top:1px solid #e2e8f0;" data-commission-id="${comm.commission_doc_id}">
-          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}" title="${hasProjectLink ? 'View project details' : 'Project not found'}">${comm.project_number || comm.project_id || '—'}</a></td>
+          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}" title="${hasProjectLink ? 'View project details' : 'Project not found'}">${comm.display_number || comm.project_number || comm.project_id || '—'}</a></td>
           <td><strong>${comm.client_name || '—'}</strong></td>
           <td>${comm.salesperson || '—'}</td>
           <td>${CURRENCY_SYMBOL}${fmt(parseFloat(comm.contract_value) || 0)}</td>
@@ -2368,7 +2368,7 @@ function editCommission(commissionDocId) {
   }
 
   document.getElementById('commEditProjectId').value = comm.commission_doc_id;
-  document.getElementById('commEditProject').value = comm.project_number || comm.project_id || '';
+  document.getElementById('commEditProject').value = comm.display_number || comm.project_number || comm.project_id || '';
   document.getElementById('commEditSalesperson').value = comm.salesperson || '';
   document.getElementById('commEditContractValue').value = parseFloat(comm.contract_value) || 0;
 

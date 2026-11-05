@@ -222,7 +222,8 @@
         {% set comm_type   = project.get('commission_override_type', 'default') %}
         {% set comm_val    = project.get('commission_override_value', 0)|float %}
         {% set cv          = project.get('contract_value', 0)|float %}
-        {% set comm_amount = (cv * comm_val / 100) if comm_type == 'percent' else (comm_val if comm_type == 'fixed' else 0) %}
+        {% set cvb         = (commission_base if commission_base is defined else cv)|float %}
+        {% set comm_amount = (cvb * comm_val / 100) if comm_type == 'percent' else (comm_val if comm_type == 'fixed' else (commission_record_amount|float if commission_record_amount is defined else 0)) %}
         <div class="card-panel mt-3">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="section-heading mb-0"><i class="bi bi-cash-coin me-1"></i>Commission</h6>
@@ -255,6 +256,36 @@
             {% endif %}
           </div>
         </div>
+
+        {% if project_overpaid is defined and project_overpaid > 0.005 %}
+        <div class="alert alert-danger py-2 small mt-3 mb-0"><i class="bi bi-exclamation-triangle-fill me-1"></i>
+          {{ project.get('sales') }} was paid / adjusted {{ currency_symbol }}{{ "{:,.2f}".format(project_overpaid) }} more than this project's commission now earns
+          (a change order was reassigned to someone else). Nothing was clawed back automatically.</div>
+        {% endif %}
+        {% if co_commissions %}
+        <div class="card-panel mt-3">
+          <h6 class="section-heading mb-2"><i class="bi bi-cash-coin me-1"></i>Change Order Commissions</h6>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0" style="font-size:0.85rem;">
+              <thead><tr><th>CO</th><th>Salesperson</th><th>Rate</th><th class="text-end">Commission</th></tr></thead>
+              <tbody>
+                {% for c in co_commissions %}
+                <tr>
+                  <td class="fw-600 text-teal">{{ c.get('co_number','CO') }}</td>
+                  <td>{{ c.get('salesperson','') }}</td>
+                  <td>{{ c.get('rate_display','') }}</td>
+                  <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(c.get('commission_amount',0)|float) }}</td>
+                </tr>
+                {% if c.get('overpaid_amount',0)|float > 0.005 %}
+                <tr><td colspan="4" class="text-danger small pt-0"><i class="bi bi-exclamation-triangle-fill me-1"></i>{{ c.get('salesperson','') }} was paid / adjusted more than this change order now earns — {{ currency_symbol }}{{ "{:,.2f}".format(c.get('overpaid_amount',0)|float) }} overpaid (not clawed back).</td></tr>
+                {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="text-muted mt-2" style="font-size:11px;">The project's own commission above excludes these change orders.</div>
+        </div>
+        {% endif %}
 
         <!-- Commission Change History -->
         {% if comm_history %}
@@ -940,6 +971,7 @@
                   <th class="text-end">Amount</th>
                   <th>Payment Plan</th>
                   <th>Status</th>
+                  <th>Commission</th>
                   <th>Date</th>
                   {% if can_manage_projects %}<th></th>{% endif %}
                 </tr>
@@ -1002,6 +1034,19 @@
                     <span class="badge bg-secondary">Draft</span>
                     {% endif %}
                   </td>
+                  <td style="min-width:130px;">
+                    {% if co.get('sales_person') and co.get('firebase_id') not in separate_co_ids %}
+                    <div class="fw-500 small">{{ co.get('sales_person') }}</div>
+                    <div class="text-muted" style="font-size:11px;">Same as project · included in its commission</div>
+                    {% elif co.get('sales_person') %}
+                    <div class="fw-500 small">{{ co.get('sales_person') }}</div>
+                    <div class="text-muted" style="font-size:11px;">
+                      {% if co.get('commission_override_type') == 'percent' %}{{ co.get('commission_override_value',0)|float }}% custom
+                      {% elif co.get('commission_override_type') == 'fixed' %}Fixed {{ currency_symbol }}{{ "{:,.2f}".format(co.get('commission_override_value',0)|float) }}
+                      {% else %}Default rate{% endif %}
+                    </div>
+                    {% else %}<span class="text-muted small">Project's</span>{% endif %}
+                  </td>
                   <td><span class="text-muted small text-nowrap">{{ co.get('created_at','')[:10] | format_date }}</span></td>
                   {% if can_manage_projects %}
                   <td style="white-space:nowrap;">
@@ -1013,7 +1058,10 @@
                                          "description": co.get("description",""), "shipping_address": co.get("shipping_address",""),
                                          "amount": co.get("amount",0)|float, "date": co.get("created_at","")[:10],
                                          "down": co_down|int, "installments": co_inst,
-                                         "plan_locked": co_lock.billed, "amount_locked": co_lock.billed and co_lock.count > 1}|tojson }}'
+                                         "plan_locked": co_lock.billed, "amount_locked": co_lock.billed and co_lock.count > 1,
+                                         "sales_person": co.get("sales_person",""),
+                                         "comm_type": co.get("commission_override_type","default"),
+                                         "comm_value": co.get("commission_override_value",0)|float}|tojson }}'
                             onclick="openEditCo(this)">
                       <i class="bi bi-pencil"></i> Edit
                     </button>
@@ -1292,6 +1340,34 @@
             <label class="form-label fw-600">Notes</label>
             <input type="text" name="notes" class="form-control" placeholder="Internal notes">
           </div>
+          <div class="co-plan-section co-comm mt-3">
+            <div class="co-plan-head"><i class="bi bi-cash-coin me-1"></i>Commission
+              <span class="text-muted fw-normal">· salesperson &amp; rate for this change order</span></div>
+            <div class="row g-2">
+              <div class="col-md-5">
+                <label class="form-label small fw-600 mb-1">Salesperson</label>
+                <select name="co_sales_person" class="form-select form-select-sm" onchange="toggleCoCommSales(this)">
+                  <option value="">— Same as project{% if project.get('sales') %} ({{ project.get('sales') }}){% endif %} —</option>
+                  {% for sp in sales_people %}<option value="{{ sp }}" {{ 'selected' if sp == project.get('sales') }}>{{ sp }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small fw-600 mb-1">Rate</label>
+                <select name="co_commission_type" class="form-select form-select-sm" onchange="toggleCoCommValue(this)">
+                  <option value="default">Default rate</option>
+                  <option value="percent">Custom %</option>
+                  <option value="fixed">Fixed amount</option>
+                </select>
+              </div>
+              <div class="col-md-4 co-comm-val" style="display:none;">
+                <label class="form-label small fw-600 mb-1">Percentage (%)</label>
+                <input type="number" name="co_commission_value" class="form-control form-control-sm" min="0" step="0.01">
+              </div>
+            </div>
+            <div class="co-comm-same small text-muted mt-2" style="display:none;">
+              <i class="bi bi-lock-fill me-1"></i>Same as project: this change order uses the project's salesperson <strong>and rate</strong>, and is included in the project's commission.
+            </div>
+          </div>
           </div>
           <div class="col-lg-5 d-flex flex-column gap-3">
           <div class="co-plan-section">
@@ -1394,6 +1470,27 @@ function updateCoPlanPreview() {
     'Payment stages added when approved');
 }
 
+// "Same as project" (blank salesperson) means the project's rate too: lock the rate controls.
+function toggleCoCommSales(sel) {
+  const card = sel.closest('.co-comm');
+  const rate = card.querySelector('[name=co_commission_type]');
+  const val = card.querySelector('[name=co_commission_value]');
+  const same = sel.value === '';
+  if (same) { rate.value = 'default'; val.value = ''; }
+  rate.disabled = same;
+  val.disabled = same;
+  card.querySelector('.co-comm-same').style.display = same ? '' : 'none';
+  toggleCoCommValue(rate);
+}
+document.querySelectorAll('.co-comm [name=co_sales_person]').forEach(toggleCoCommSales);
+
+// Show the value box only for a custom % / fixed commission on a change order
+function toggleCoCommValue(sel) {
+  const box = sel.closest('.co-comm').querySelector('.co-comm-val');
+  box.style.display = sel.value === 'default' ? 'none' : '';
+  box.querySelector('label').textContent = sel.value === 'fixed' ? 'Amount ($)' : 'Percentage (%)';
+}
+
 // Edit Change Order window, filled from the row's Edit button
 function openEditCo(btn) {
   const co = JSON.parse(btn.dataset.co);
@@ -1413,6 +1510,10 @@ function openEditCo(btn) {
   // Disabled plan fields aren't sent, so the server keeps the current plan
   form.elements['co_down_payment_percent'].disabled = !!co.plan_locked;
   form.elements['co_installment_count'].disabled = !!co.plan_locked;
+  form.elements['co_sales_person'].value = co.sales_person || '';
+  form.elements['co_commission_type'].value = co.comm_type || 'default';
+  form.elements['co_commission_value'].value = co.comm_value || '';
+  toggleCoCommSales(form.elements['co_sales_person']);
   document.getElementById('editCoTitle').textContent = co.co_number || 'Change Order';
   document.getElementById('editCoLockNote').style.display = co.plan_locked ? '' : 'none';
   refreshEditCoPlan();
@@ -1479,9 +1580,37 @@ function refreshEditCoPlan() {
               <textarea name="description" class="form-control" rows="3"></textarea>
             </div>
           </div>
+          <div class="co-plan-section co-comm mt-3">
+            <div class="co-plan-head"><i class="bi bi-cash-coin me-1"></i>Commission
+              <span class="text-muted fw-normal">· salesperson &amp; rate for this change order</span></div>
+            <div class="row g-2">
+              <div class="col-md-5">
+                <label class="form-label small fw-600 mb-1">Salesperson</label>
+                <select name="co_sales_person" class="form-select form-select-sm" onchange="toggleCoCommSales(this)">
+                  <option value="">— Same as project{% if project.get('sales') %} ({{ project.get('sales') }}){% endif %} —</option>
+                  {% for sp in sales_people %}<option value="{{ sp }}">{{ sp }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small fw-600 mb-1">Rate</label>
+                <select name="co_commission_type" class="form-select form-select-sm" onchange="toggleCoCommValue(this)">
+                  <option value="default">Default rate</option>
+                  <option value="percent">Custom %</option>
+                  <option value="fixed">Fixed amount</option>
+                </select>
+              </div>
+              <div class="col-md-4 co-comm-val" style="display:none;">
+                <label class="form-label small fw-600 mb-1">Percentage (%)</label>
+                <input type="number" name="co_commission_value" class="form-control form-control-sm" min="0" step="0.01">
+              </div>
+            </div>
+            <div class="co-comm-same small text-muted mt-2" style="display:none;">
+              <i class="bi bi-lock-fill me-1"></i>Same as project: this change order uses the project's salesperson <strong>and rate</strong>, and is included in the project's commission.
+            </div>
+          </div>
           </div>
           <div class="col-lg-5">
-          <div class="co-plan-section h-100">
+          <div class="co-plan-section">
             <div class="co-plan-head"><i class="bi bi-calendar2-week me-1"></i>Payment Plan</div>
             <div class="row g-2">
               <div class="col-6">

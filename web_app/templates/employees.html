@@ -1228,7 +1228,7 @@
             {% set _rem  = (_comm - _adj - _paid) %}
             <tr class="ec-comm-row" data-comm="{{ _comm }}" data-adj="{{ _adj }}" data-paid="{{ _paid }}" data-rem="{{ _remd }}" data-status="{{ 'paid' if _rem <= 0.01 else 'pending' }}">
               <td class="fw-semibold">
-                <a href="{{ url_for('project_detail', project_id=c.firebase_id) }}" class="text-decoration-none">{{ c.project_number }}</a>
+                <a href="{{ url_for('project_detail', project_id=c.get('project_link_id') or c.firebase_id) }}" class="text-decoration-none">{{ c.get('display_number') or c.project_number }}</a>
               </td>
               <td>{{ c.company_name }}</td>
               <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(c.contract_value | float) }}</td>
