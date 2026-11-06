@@ -1207,6 +1207,54 @@ def _remove_commission_stubs() -> int:
         log.error(f"Error removing bare commission records: {e}")
     return removed
 
+def _reconcile_orphan_deductions(all_comm=None, commission_payments=None) -> int:
+    """A commission record can keep a deduction whose advance adjustment was deleted afterwards (the adjustment's
+    entry in /commission_payments is gone) - it then still shows as adjusted, and as Paid, for money that was never
+    deducted. Drop those deductions and recalculate the record. Adjusted amounts that were never tied to an
+    adjustment entry (typed in by hand) are left alone. Returns how many records were corrected."""
+    if all_comm is None:
+        all_comm = fb_get("/project_commissions") or {}
+    if commission_payments is None:
+        commission_payments = fb_get("/commission_payments") or {}
+    if not isinstance(all_comm, dict) or not isinstance(commission_payments, dict):
+        return 0
+    fixed = 0
+    for rid, rec in all_comm.items():
+        ded = rec.get("deductions") if isinstance(rec, dict) else None
+        if not isinstance(ded, dict) or not ded:
+            continue
+        valid = {cp_id: _safe_float(a) for cp_id, a in ded.items() if isinstance(commission_payments.get(cp_id), dict)}
+        if len(valid) == len(ded):
+            continue
+        old_dict_sum = sum(_safe_float(a) for a in ded.values())
+        manual_extra = max(_safe_float(rec.get("total_deducted", 0)) - old_dict_sum, 0.0)
+        total_deducted = round(manual_extra + sum(valid.values()), 2)
+        earned = _safe_float(rec.get("commission_amount", 0))
+        paid = _safe_float(rec.get("paid_amount", 0))
+        remaining_due = max(earned - paid - total_deducted, 0)
+        deductions_list = []
+        for cp_id, amt in valid.items():
+            cp = commission_payments[cp_id]
+            adj_date = cp.get("adjustment_date", "") or cp.get("created_at", "")
+            deductions_list.append({"advance_id": cp.get("advance_id", ""), "advance_no": cp.get("advance_no", ""),
+                                    "deduction_amount": amt, "date": adj_date[:10] if adj_date else ""})
+        update = {
+            "deductions": valid, "total_deducted": total_deducted, "remaining_due": remaining_due,
+            "deduction_status": ("fully_covered" if remaining_due <= 0 else "partially_covered" if total_deducted > 0 else "not_covered"),
+            "deductions_list": deductions_list, "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if remaining_due > 0.01 and (rec.get("status") or "") == "Paid":
+            update["status"] = "Pending"
+            if paid <= 0.005:
+                update["paid_at"] = ""      # it was "paid" only by the deduction that no longer exists
+        fb_update(f"/project_commissions/{rid}", update)
+        log.info("[RECONCILE_DEDUCTIONS] %s: dropped %d deduction(s) whose adjustment no longer exists; adjusted now %.2f",
+                 rid, len(ded) - len(valid), total_deducted)
+        fixed += 1
+    if fixed:
+        cache_bust("commission", "financial")
+    return fixed
+
 def _recalculate_project_deductions_for_salesperson(salesperson_name: str):
     """Recalculate per-project deductions for a salesperson after adjustment changes"""
     try:
@@ -1270,6 +1318,11 @@ def _recalculate_project_deductions_for_salesperson(salesperson_name: str):
                 "deduction_status": deduction_status,
                 "deductions_list": deductions_list
             }
+            if remaining_due > 0.01 and (proj_comm.get("status") or "") == "Paid":
+                # it was settled by deductions that no longer exist (e.g. an adjustment was deleted)
+                update_data["status"] = "Pending"
+                if _safe_float(proj_comm.get("paid_amount", 0)) <= 0.005:
+                    update_data["paid_at"] = ""
 
             fb_update(f"/project_commissions/{proj_id}", update_data)
 
@@ -1285,6 +1338,7 @@ def _recalculate_project_deductions_for_salesperson(salesperson_name: str):
                             "updated_at": datetime.now(timezone.utc).isoformat(),
                         })
                         break
+        _reconcile_orphan_deductions()   # any record still carrying a deduction whose adjustment was deleted
     except Exception as e:
         log.error(f"Error recalculating project deductions for {salesperson_name}: {e}")
 
@@ -6045,6 +6099,14 @@ def project_edit(project_id):
                       f"can't be changed. Your other changes were saved.", "warning")
             updated["sales"] = data.get("sales", "")
             updated["sales_email"] = data.get("sales_email", "")
+        # change orders that share the project's salesperson and rate follow it when either changes
+        _co_follow = []
+        if (_norm_person_name(updated.get("sales", "")) != _norm_person_name(data.get("sales") or data.get("sales_person") or "")
+                or ("commission_override_type" in request.form and _rate_override_differs(
+                    data.get("commission_override_type"), data.get("commission_override_value", 0),
+                    updated.get("commission_override_type"), updated.get("commission_override_value", 0)))):
+            _co_follow = _co_follow_project_changes(data, updated.get("sales"), updated.get("commission_override_type"),
+                                                    updated.get("commission_override_value", 0))
         # A project is never saved while its commission would be less than what has already been paid / adjusted
         # on it - checked on every save, so a rate that already gives too little has to be corrected first
         if "commission_override_type" in request.form:
@@ -6053,6 +6115,7 @@ def project_edit(project_id):
                            "commission_override_value": updated.get("commission_override_value", 0),
                            "contract_value": updated.get("contract_value", data.get("contract_value", 0)),
                            "sales": updated.get("sales", data.get("sales", ""))})
+            _apply_co_follow(_after, _co_follow)
             _err = _commission_rate_floor_error(project_id, _after)
             if _err:
                 flash(_err + " Nothing was saved.", "danger")
@@ -6246,6 +6309,8 @@ def project_edit(project_id):
         if existing_paid > 0 and new_status == "Not Started" and existing_status not in ("Not Started", "Cancelled"):
             updated["status"] = existing_status
 
+        if _co_follow and isinstance(updated.get("change_orders"), (list, dict)):
+            _apply_co_follow(updated, _co_follow)   # saved together with the project below
         fb_update(f"/projects/{project_id}", updated)  # also re-syncs /project_commissions (see fb_update)
 
         # Re-sync payment-derived status so that a fully-paid project always shows Completed.
@@ -6288,8 +6353,13 @@ def project_commission_update(project_id):
 
     # never saved while the commission would be less than what has already been paid / adjusted on it
     _proj_now = fb_get(f"/projects/{project_id}") or {}
+    _follow = []
+    if _rate_override_differs(_proj_now.get("commission_override_type"), _proj_now.get("commission_override_value", 0),
+                              override_type, override_value):
+        _follow = _co_follow_project_changes(_proj_now, _proj_now.get("sales"), override_type, override_value)
     _after = _fb_fast_copy(_proj_now)
     _after.update({"commission_override_type": override_type, "commission_override_value": override_value})
+    _apply_co_follow(_after, _follow)
     _err = _commission_rate_floor_error(project_id, _after)
     if _err:
         flash(_err + " Nothing was saved.", "danger")
@@ -6306,6 +6376,7 @@ def project_commission_update(project_id):
         "commission_override_value": override_value,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
+    _write_co_follow(project_id, _follow)   # change orders that share the project's rate follow it
     # (fb_update above already re-synced /project_commissions from the project)
 
     # Record history entry if commission actually changed
@@ -6364,6 +6435,8 @@ def commission_project_update_api(project_id):
         _after = _fb_fast_copy(_parent)
         _new_t = data.get("rate_type", current_comm.get("commission_override_type"))
         _new_v = data.get("rate_value", current_comm.get("commission_override_value", 0))
+        if not _is_co_commission(current_comm):
+            _apply_co_follow(_after, _co_follow_project_changes(_parent, _parent.get("sales"), _new_t, _new_v))
         if _is_co_commission(current_comm):
             for _co in _normalise_list(_after.get("change_orders")):
                 if isinstance(_co, dict) and _co.get("firebase_id") == current_comm.get("co_firebase_id"):
@@ -6472,7 +6545,14 @@ def commission_project_update_api(project_id):
                     proj_update["sales"] = update_data["salesperson"]
                 if proj_update:
                     proj_update["updated_at"] = _now
+                    _proj_before = fb_get(f"/projects/{project_id}") or {}
+                    _f = []
+                    if "commission_override_type" in proj_update or "sales" in proj_update:
+                        _f = _co_follow_project_changes(_proj_before, proj_update.get("sales", _proj_before.get("sales")),
+                                                        proj_update.get("commission_override_type", _proj_before.get("commission_override_type")),
+                                                        proj_update.get("commission_override_value", _proj_before.get("commission_override_value", 0)))
                     fb_update(f"/projects/{project_id}", proj_update)
+                    _write_co_follow(project_id, _f)   # change orders that share the project's salesperson / rate follow it
 
     # Fetch updated commission data
     new_comm = fb_get(f"/project_commissions/{project_id}") or {}
@@ -12455,6 +12535,12 @@ def api_commission_edit():
     _new_override_type = db_rate_type if db_rate_type in ("default", "fixed", "percent") else "default"
     _new_override_value = 0.0 if _new_override_type == "default" else rate_value
 
+    # change orders that share a project's rate follow it (a project row only)
+    _co_follow = []
+    if _parent and rate_type and not _is_co_row and _rate_override_differs(
+            _parent.get("commission_override_type"), _parent.get("commission_override_value", 0), _new_override_type, _new_override_value):
+        _co_follow = _co_follow_project_changes(_parent, _parent.get("sales"), _new_override_type, _new_override_value)
+
     # Never save a rate that gives less than what has already been paid / adjusted on this commission
     if _parent and rate_type:
         _after = _fb_fast_copy(_parent)
@@ -12465,6 +12551,7 @@ def api_commission_edit():
             _after["change_orders"] = _normalise_list(_after.get("change_orders"))
         else:
             _after.update({"commission_override_type": _new_override_type, "commission_override_value": _new_override_value})
+            _apply_co_follow(_after, _co_follow)
         _err = _commission_rate_floor_error(_parent_id, _after)
         if _err:
             return jsonify({"success": False, "message": _err + " Nothing was saved."}), 400
@@ -12609,6 +12696,7 @@ def api_commission_edit():
                 project_update["sales_people"] = sales_people
             log.info(f"Syncing commission to project {_parent_id}: amount={new_amount}, type={display_rate_type}")
             fb_update(f"/projects/{_parent_id}", project_update)
+            _write_co_follow(_parent_id, _co_follow)
             sync_success = True
 
     return jsonify({
@@ -19160,18 +19248,21 @@ def expense_delete(exp_id):
             if deleted_type == "Commission Deduction":
                 # Find and delete associated commission deduction entry
                 comm_payments = fb_get("/commission_payments") or {}
+                reduced_salesperson = ""
                 if isinstance(comm_payments, dict):
                     for cp_id, cp_data in comm_payments.items():
                         if isinstance(cp_data, dict) and cp_data.get("adjustment_id") == linked_adjustment_id:
+                            reduced_salesperson = (cp_data.get("salesperson") or "").strip()
                             fb_delete(f"/commission_payments/{cp_id}")
                             log.info(f"Deleted commission deduction {cp_id} for adjustment {linked_adjustment_id}")
                             break
 
-                # Recalculate project deductions for this salesperson
-                if employee_name:
-                    _recalculate_project_deductions_for_salesperson(employee_name)
-                    log.info(f"Recalculated project deductions for {employee_name}")
-                    cache_bust("commission")
+                # Recalculate project deductions for the salesperson whose commission was actually reduced
+                # (recorded on the deduction) as well as the employee's own name
+                for sp_name in {n for n in (reduced_salesperson, employee_name) if n}:
+                    _recalculate_project_deductions_for_salesperson(sp_name)
+                    log.info(f"Recalculated project deductions for {sp_name}")
+                cache_bust("commission")
 
             cache_bust("payroll")
 
@@ -28383,6 +28474,42 @@ def _co_commission_ctx(project_id: str, proj: dict) -> dict:
                                       "proj_pct": p_pct, "proj_base": base_value}
     return out
 
+def _co_follow_project_changes(proj_before: dict, new_sales, new_type, new_value) -> list:
+    """[(index, updates)] for the change orders that currently SHARE the project's salesperson and rate (same person,
+    same rate: they are part of the project's own commission). When the project's salesperson or rate changes they
+    follow it, so they stay part of it instead of splitting off with the old rate. A fixed project amount covers its
+    change orders too, so they go back to plain "same as project"."""
+    out = []
+    new_t = _norm_override_type(new_type)
+    for i, co in enumerate(_normalise_list(proj_before.get("change_orders"))):
+        if not isinstance(co, dict):
+            continue
+        sp = (co.get("sales_person") or "").strip()
+        if not sp or _co_commission_is_separate(co, proj_before):
+            continue
+        if new_t == "fixed":
+            out.append((i, {"sales_person": "", "commission_override_type": "default", "commission_override_value": 0.0}))
+        else:
+            person = (new_sales or "").strip() if isinstance(new_sales, str) and (new_sales or "").strip() else sp
+            out.append((i, {"sales_person": person, "commission_override_type": new_t,
+                            "commission_override_value": 0.0 if new_t == "default" else _safe_float(new_value)}))
+    return out
+
+def _apply_co_follow(proj: dict, follow: list) -> dict:
+    """Apply _co_follow_project_changes() results to a project dict (in place) and return it."""
+    cos = _normalise_list(proj.get("change_orders"))
+    for i, upd in follow:
+        if 0 <= i < len(cos) and isinstance(cos[i], dict):
+            cos[i].update(upd)
+    proj["change_orders"] = cos
+    return proj
+
+def _write_co_follow(project_id: str, follow: list) -> None:
+    """Save those updates onto the project's change orders."""
+    now = datetime.now(timezone.utc).isoformat()
+    for i, upd in follow:
+        fb_update(f"/projects/{project_id}/change_orders/{i}", dict(upd, updated_at=now))
+
 def _commission_rate_floor_error(project_id: str, proj_after: dict, all_comm=None):
     """None if, with the project / change orders as in `proj_after`, every commission record of this project
     still earns at least what has already been paid or adjusted on it; otherwise a message saying why not.
@@ -28393,7 +28520,7 @@ def _commission_rate_floor_error(project_id: str, proj_after: dict, all_comm=Non
     sales = (proj_after.get("sales") or proj_after.get("sales_person") or "").strip()
     rec = all_comm.get(project_id)
     settled = _commission_settled(rec)
-    if settled > 0.005 and sales:
+    if settled > 0.005:
         base_value, _ = _commissionable_contract_value(proj_after)
         rate, _e = _salesperson_rate_and_email(sales)
         amount = _calc_commission(rec, sales, base_value, proj_after.get("commission_override_type"),
@@ -28581,6 +28708,9 @@ def _resync_stale_project_commissions(force: bool = False) -> int:
         comms = fb_get("/project_commissions") or {}
         if not isinstance(projects, dict) or not isinstance(comms, dict):
             return 0
+        # deductions whose advance adjustment was deleted must not keep a commission "Paid"
+        if _reconcile_orphan_deductions(comms):
+            comms = fb_get("/project_commissions") or {}
         fixed = 0
         _has_co_records = {v.get("parent_project_id") for v in comms.values() if isinstance(v, dict) and v.get("parent_project_id")}
         for pid, proj in projects.items():
