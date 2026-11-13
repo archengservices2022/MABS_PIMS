@@ -436,13 +436,6 @@
               </a>
             </li>
             {% endif %}
-            {% if session.get('user_role') == 'admin' %}
-            <li class="nav-item ms-auto">
-              <button type="button" class="btn btn-sm btn-outline-dark" id="showAllPwBtn" style="font-size:14px;">
-                <i class="bi bi-eye me-1"></i><span>Show All Passwords</span>
-              </button>
-            </li>
-            {% endif %}
           </ul>
 
           {% macro user_table(group, label) %}
@@ -473,9 +466,6 @@
                       {% if _is_me %}<span class="badge bg-secondary ms-1" style="font-size:9px;">You</span>{% endif %}
                     </div>
                     <div class="text-muted" style="font-size:11px;">{{ u.get('email','—') }}</div>
-                    {% if session.get('user_role') == 'admin' %}
-                    <div class="pw-cell d-none mt-1" data-uid="{{ u.firebase_uid }}" style="font-size:11px;"></div>
-                    {% endif %}
                   </td>
                   <!-- Role (click the badge to change it — disabled for your own row,
                        so you can't accidentally demote yourself out of Settings) -->
@@ -576,22 +566,6 @@
                               title="Send Password Reset Email">
                         <i class="bi bi-envelope-arrow-up"></i>
                       </button>
-                      {% if session.get('user_role') == 'admin' %}
-                      <button class="btn btn-xs btn-outline-dark set-pw-btn"
-                              data-uid="{{ u.firebase_uid }}"
-                              data-email="{{ u.get('email','') | e }}"
-                              data-name="{{ u.get('username','') | e }}"
-                              title="Set New Password">
-                        <i class="bi bi-key"></i>
-                      </button>
-                      <button class="btn btn-xs btn-outline-secondary view-pw-btn"
-                              data-uid="{{ u.firebase_uid }}"
-                              data-email="{{ u.get('email','') | e }}"
-                              data-name="{{ u.get('username','') | e }}"
-                              title="View Password">
-                        <i class="bi bi-eye"></i>
-                      </button>
-                      {% endif %}
                       {% if not _is_me %}
                       {% if user_role == 'admin' or u.firebase_uid in approved_user_deletes %}
                       <form method="POST"
@@ -1070,60 +1044,6 @@
     </div>
   </div>
 </div>
-
-<!-- Admin: Set Password Modal -->
-<div class="modal fade" id="setPasswordModal" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-key me-2"></i>Set New Password</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <p class="mb-2">For <strong id="spwName"></strong> <span class="text-muted" id="spwEmail"></span></p>
-        <input type="hidden" id="spwUid">
-        <label class="form-label fw-semibold">New Password</label>
-        <div class="input-group mb-2">
-          <input type="password" id="spwNew" class="form-control" placeholder="At least 6 characters" autocomplete="new-password">
-          <button class="btn btn-outline-secondary" type="button" id="spwToggle" title="Show / hide"><i class="bi bi-eye"></i></button>
-        </div>
-        <div class="form-text">The employee can log in with this straight away. You can look it up any time with the <i class="bi bi-eye"></i> button, even after the employee changes it.</div>
-        <div class="alert alert-danger py-2 mt-2 d-none" id="spwError"></div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button id="spwSaveBtn" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Update Password</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Admin: View Password Modal -->
-<div class="modal fade" id="viewPasswordModal" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-eye me-2"></i>Password</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <p class="mb-2">For <strong id="vpwName"></strong> <span class="text-muted" id="vpwEmail"></span></p>
-        <div id="vpwLoading" class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Loading…</div>
-        <div id="vpwResult" class="d-none">
-          <div class="input-group mb-2">
-            <input type="text" id="vpwValue" class="form-control font-monospace" readonly>
-            <button class="btn btn-outline-secondary" type="button" id="vpwCopy" title="Copy"><i class="bi bi-clipboard"></i></button>
-          </div>
-          <div class="form-text" id="vpwMeta"></div>
-        </div>
-        <div class="alert alert-warning py-2 mb-0 d-none" id="vpwError"></div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
-      </div>
-    </div>
-  </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
@@ -1200,148 +1120,6 @@ document.addEventListener('DOMContentLoaded', function() {
       })
       .catch(function() { alert('Request failed. Please try again.'); });
   };
-
-  (function() {
-    var modalEl = document.getElementById('setPasswordModal');
-    if (!modalEl) return;
-    var pwInput = document.getElementById('spwNew');
-    var errEl   = document.getElementById('spwError');
-    var saveBtn = document.getElementById('spwSaveBtn');
-    document.getElementById('spwToggle').addEventListener('click', function() {
-      var show = pwInput.type === 'password';
-      pwInput.type = show ? 'text' : 'password';
-      this.innerHTML = show ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>';
-    });
-    document.querySelectorAll('.set-pw-btn').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        document.getElementById('spwUid').value = btn.dataset.uid;
-        document.getElementById('spwName').textContent = btn.dataset.name;
-        document.getElementById('spwEmail').textContent = '(' + btn.dataset.email + ')';
-        pwInput.value = ''; pwInput.type = 'password';
-        errEl.classList.add('d-none');
-        bootstrap.Modal.getOrCreateInstance(modalEl).show();
-        setTimeout(function() { pwInput.focus(); }, 300);
-      });
-    });
-    saveBtn.addEventListener('click', function() {
-      var pw = pwInput.value;
-      if (pw.length < 6) {
-        errEl.textContent = 'Password must be at least 6 characters.';
-        errEl.classList.remove('d-none'); return;
-      }
-      saveBtn.disabled = true;
-      fetch('/api/admin/set-password', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({uid: document.getElementById('spwUid').value, new_password: pw})
-      }).then(r => r.json()).then(data => {
-        saveBtn.disabled = false;
-        if (data.success) {
-          bootstrap.Modal.getOrCreateInstance(modalEl).hide();
-          alert('Password updated for ' + document.getElementById('spwName').textContent + '.');
-        } else {
-          errEl.textContent = data.error || 'Failed to update password.';
-          errEl.classList.remove('d-none');
-        }
-      }).catch(function() {
-        saveBtn.disabled = false;
-        errEl.textContent = 'Network error. Please try again.';
-        errEl.classList.remove('d-none');
-      });
-    });
-  })();
-
-  (function() {
-    var btn = document.getElementById('showAllPwBtn');
-    if (!btn) return;
-    var shown = false;
-    var label = btn.querySelector('span');
-    function hideAll() {
-      document.querySelectorAll('.pw-cell').forEach(function(c) { c.textContent = ''; c.classList.add('d-none'); });
-      label.textContent = 'Show All Passwords';
-      btn.querySelector('i').className = 'bi bi-eye me-1';
-      shown = false;
-    }
-    btn.addEventListener('click', function() {
-      if (shown) { hideAll(); return; }
-      btn.disabled = true;
-      fetch('/api/admin/view-all-passwords', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})
-        .then(r => r.json()).then(data => {
-          btn.disabled = false;
-          if (!data.success) { alert(data.error || 'Could not load passwords.'); return; }
-          var pw = data.passwords || {};
-          document.querySelectorAll('.pw-cell').forEach(function(c) {
-            var p = pw[c.dataset.uid];
-            c.innerHTML = '';
-            var icon = document.createElement('i');
-            icon.className = 'bi bi-key me-1 text-muted';
-            c.appendChild(icon);
-            var s = document.createElement('span');
-            if (p) {
-              s.className = 'font-monospace fw-semibold';
-              s.textContent = p;
-            } else {
-              s.className = 'text-muted fst-italic';
-              s.textContent = 'shows after next login';
-            }
-            c.appendChild(s);
-            c.classList.remove('d-none');
-          });
-          label.textContent = 'Hide Passwords';
-          btn.querySelector('i').className = 'bi bi-eye-slash me-1';
-          shown = true;
-        }).catch(function() { btn.disabled = false; alert('Network error. Please try again.'); });
-    });
-  })();
-
-  (function() {
-    var modalEl = document.getElementById('viewPasswordModal');
-    if (!modalEl) return;
-    var loading = document.getElementById('vpwLoading');
-    var result  = document.getElementById('vpwResult');
-    var errEl   = document.getElementById('vpwError');
-    var valEl   = document.getElementById('vpwValue');
-    var metaEl  = document.getElementById('vpwMeta');
-    modalEl.addEventListener('hidden.bs.modal', function() { valEl.value = ''; });
-    document.getElementById('vpwCopy').addEventListener('click', function() {
-      var b = this;
-      navigator.clipboard.writeText(valEl.value).then(function() {
-        b.innerHTML = '<i class="bi bi-check-lg"></i>';
-        setTimeout(function() { b.innerHTML = '<i class="bi bi-clipboard"></i>'; }, 1500);
-      }).catch(function() { valEl.select(); });
-    });
-    document.querySelectorAll('.view-pw-btn').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        document.getElementById('vpwName').textContent = btn.dataset.name;
-        document.getElementById('vpwEmail').textContent = '(' + btn.dataset.email + ')';
-        loading.classList.remove('d-none');
-        result.classList.add('d-none');
-        errEl.classList.add('d-none');
-        bootstrap.Modal.getOrCreateInstance(modalEl).show();
-        fetch('/api/admin/view-password', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({uid: btn.dataset.uid})
-        }).then(r => r.json()).then(data => {
-          loading.classList.add('d-none');
-          if (data.success) {
-            valEl.value = data.password;
-            var when = data.set_at ? new Date(data.set_at).toLocaleString() : '';
-            var who = data.set_by === 'self' ? 'Changed by the user' : ('Set' + (data.set_by ? ' by ' + data.set_by : ''));
-            metaEl.textContent = who + (when ? ' on ' + when : '') + '.';
-            result.classList.remove('d-none');
-          } else {
-            errEl.textContent = data.error || 'Could not load the password.';
-            errEl.classList.remove('d-none');
-          }
-        }).catch(function() {
-          loading.classList.add('d-none');
-          errEl.textContent = 'Network error. Please try again.';
-          errEl.classList.remove('d-none');
-        });
-      });
-    });
-  })();
 
   document.querySelectorAll('.send-reset-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
