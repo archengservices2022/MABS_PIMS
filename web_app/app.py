@@ -520,6 +520,35 @@ if not _flask_secret:
     )
 app.secret_key = _flask_secret
 
+
+# Admin-set passwords are kept (encrypted) so an admin can look them up later.
+# Key: PASSWORD_VIEW_KEY if set, else derived from FLASK_SECRET. Only passwords an
+# admin typed in are stored; a user choosing their own password clears it.
+def _pw_fernet():
+    import base64, hashlib
+    from cryptography.fernet import Fernet
+    seed = os.environ.get("PASSWORD_VIEW_KEY") or _flask_secret
+    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(("pwview:" + seed).encode()).digest()))
+
+
+def _pw_encrypt(plain: str) -> str:
+    return _pw_fernet().encrypt(plain.encode()).decode()
+
+
+def _pw_decrypt(token: str):
+    try:
+        return _pw_fernet().decrypt(token.encode()).decode()
+    except Exception:
+        return None
+
+
+@app.template_filter("pw_plain")
+def _pw_plain_filter(token):
+    """Settings > Users: show a user's stored password. Admins only."""
+    if not token or session.get("user_role") != "admin":
+        return ""
+    return _pw_decrypt(token) or ""
+
 app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
     # Session cookie hardening
@@ -1923,6 +1952,7 @@ def login():
                         error = "Your account is inactive. Contact your administrator."
                     else:
                         _clear_login_attempts(ip)
+                        _store_user_password(uid, password, profile)
                         role         = normalize_role(profile.get("role", "sales"))
                         custom_pages = profile.get("custom_pages") or None
 
@@ -1958,8 +1988,56 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
+def _send_app_reset_email(email: str):
+    """Email a reset link that opens THIS app's /reset-password page (not Firebase's
+    hosted page), so the new password is saved for admins the moment it's set.
+    Returns (sent, error_msg); sent=False with no error means SMTP isn't set up."""
+    # Uses the SMTP login from Settings > Email even when "Enable Email Sending" is
+    # off, so password resets work without turning on client emails (reminders etc.).
+    em = (load_settings() or {}).get("email", {}) or {}
+    if not (em.get("smtp_user") and em.get("smtp_password")):
+        return False, ""
+    try:
+        from urllib.parse import urlparse, parse_qs
+        from firebase_admin import auth as fb_auth
+        fb_link  = fb_auth.generate_password_reset_link(email)
+        oob_code = (parse_qs(urlparse(fb_link).query).get("oobCode") or [""])[0]
+        if not oob_code:
+            return False, "Could not create reset link."
+        link = url_for("reset_password", email=email, oobCode=oob_code, _external=True)
+        co   = (load_settings() or {}).get("company", {}) or {}
+        html_body = f"""<html><body style="font-family:Arial,sans-serif;color:#1a1a1a;">
+<div style="max-width:560px;margin:0 auto;padding:24px;">
+  <h2 style="margin-top:0;">Reset your password</h2>
+  <p>We received a request to reset the password for <strong>{email}</strong>.</p>
+  <p style="margin:24px 0;"><a href="{link}" style="background:#0d6efd;color:#fff;padding:12px 22px;
+     border-radius:6px;text-decoration:none;font-weight:bold;">Reset Password</a></p>
+  <p style="font-size:13px;color:#555;">If the button doesn't work, open this link:<br>
+     <a href="{link}">{link}</a></p>
+  <p style="font-size:13px;color:#555;">If you didn't ask for this, you can ignore this email.</p>
+  <p style="margin-top:24px;">{co.get('name','')}</p>
+</div></body></html>"""
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Reset your password"
+        msg["From"]    = f"{em.get('from_name', co.get('name',''))} <{em.get('smtp_user','')}>"
+        msg["To"]      = email
+        msg.attach(MIMEText(html_body, "html"))
+        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"), int(em.get("smtp_port", 587)), timeout=15) as srv:
+            srv.ehlo(); srv.starttls()
+            srv.login(em.get("smtp_user", ""), em.get("smtp_password", ""))
+            srv.sendmail(em.get("smtp_user", ""), [email], msg.as_string())
+        return True, ""
+    except Exception as exc:
+        log.warning("App reset email failed for %s, falling back to Firebase email: %s", email, exc)
+        return False, ""
+
+
 def firebase_send_password_reset(email: str):
-    """Send password reset email using Firebase. Returns (success, error_msg)"""
+    """Send password reset email. Prefers the app's own email (link opens our reset
+    page); falls back to Firebase's email if SMTP isn't configured. Returns (success, error_msg)"""
+    sent, _ = _send_app_reset_email(email)
+    if sent:
+        return True, ""
     try:
         url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={FIREBASE_API_KEY}"
         resp = requests.post(url, json={"email": email, "requestType": "PASSWORD_RESET"}, timeout=10)
@@ -1989,12 +2067,14 @@ def api_forgot_password():
 
         user_found = False
         user_data = None
+        user_uid = ""
         users = fb_get("/users") or {}
 
         for uid, u_data in users.items():
             if isinstance(u_data, dict) and u_data.get("email", "").lower() == email:
                 user_found = True
                 user_data = u_data
+                user_uid = uid
                 break
 
         if not user_found:
@@ -2003,14 +2083,44 @@ def api_forgot_password():
         if not user_data.get("active", True):
             return jsonify({"success": False, "error": "Account does not exist. Please contact your administrator."})
 
-        ok, err_msg = firebase_send_password_reset(email)
-
-        if ok:
+        # The link opens THIS app's reset page, so admins see the new password straight
+        # away (no login needed): the app's own email if SMTP is set up, else Firebase's
+        # email-link email. If neither can be sent, fall back to Firebase's own reset
+        # email/page (then the password shows after the user's next login).
+        sent, _ = _send_app_reset_email(email)
+        if not sent:
+            sent, link_err = firebase_send_signin_link_for_reset(email)
+            if not sent:
+                log.warning("Email-link reset not available for %s: %s", email, link_err)
+        if not sent:
+            try:
+                r = requests.post(
+                    f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={FIREBASE_API_KEY}",
+                    json={"email": email, "requestType": "PASSWORD_RESET"}, timeout=10)
+                sent = r.status_code == 200
+                if not sent:
+                    log.error("Firebase password reset failed for %s: %s", email, r.text[:300])
+            except Exception as e:
+                log.error("Firebase password reset failed for %s: %s", email, e)
+        if sent:
             log.info("Password reset email sent via Firebase for %s", email)
-            return jsonify({"success": True, "message": f"Reset link sent to {email}. Please check your email to continue."})
-        else:
-            log.error("Firebase password reset failed for %s: %s", email, err_msg)
-            return jsonify({"success": False, "error": "Failed to send reset email. Please try again later."})
+            return jsonify({"success": True, "message": "Reset link sent to your email. "
+                            "Please check your email to continue."})
+
+        done_msg = ("Your request has been sent to the admin. They will set a new "
+                    "password and share it with you.")
+        if user_data.get("pw_reset_requested_at"):
+            return jsonify({"success": True, "message": done_msg})
+        fb_update(f"/users/{user_uid}", {"pw_reset_requested_at": datetime.now(timezone.utc).isoformat()})
+        cache_bust("all_users")
+        name = user_data.get("username") or email
+        for a_uid, a in users.items():
+            if isinstance(a, dict) and normalize_role(a.get("role", "")) == "admin" and a.get("active", True):
+                _push_notification(a_uid, "password_reset", "Password reset requested",
+                                   f"{name} ({email}) forgot their password. Set a new one in Settings > Users.",
+                                   url_for("settings") + "?tab=users")
+        log.info("Password reset requested by %s", email)
+        return jsonify({"success": True, "message": done_msg})
 
     except Exception as e:
         log.error("API forgot password error: %s", str(e))
@@ -2048,6 +2158,7 @@ def api_change_password():
                                                   "returnSecureToken": True}, timeout=10)
         if upd_resp.status_code == 200:
             log.info("Password changed for %s", email)
+            _store_user_password(session.get("user_uid", ""), new_pw)
             return jsonify({"success": True, "message": "Password changed successfully."})
         err = upd_resp.json().get("error", {}).get("message", "Failed to update password.")
         return jsonify({"success": False, "error": err})
@@ -2074,8 +2185,101 @@ def api_admin_send_reset_email():
         log.error("Admin reset email error: %s", e)
         return jsonify({"success": False, "error": "An error occurred."})
 
-def firebase_reset_password_with_code(email: str, password: str, oob_code: str):
+
+@app.route("/api/admin/set-password", methods=["POST"])
+@login_required
+def api_admin_set_password():
+    """Admin sets a new password for any user directly (no email needed)."""
+    if session.get("user_role") != "admin":
+        return jsonify({"success": False, "error": "Admin access required."}), 403
+    if not FIREBASE_AVAILABLE:
+        return jsonify({"success": False, "error": "Firebase not available."})
+    try:
+        data   = request.get_json() or {}
+        uid    = (data.get("uid") or "").strip()
+        new_pw = data.get("new_password") or ""
+        if not uid:
+            return jsonify({"success": False, "error": "No user selected."})
+        if len(new_pw) < 6:
+            return jsonify({"success": False, "error": "Password must be at least 6 characters."})
+        from firebase_admin import auth as fb_auth
+        fb_auth.update_user(uid, password=new_pw)
+        fb_update(f"/users/{uid}", {
+            "admin_set_pw":        _pw_encrypt(new_pw),
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+            "password_changed_by": session.get("user_email", ""),
+            "pw_reset_requested_at": None,
+            "updated_at":          datetime.now(timezone.utc).isoformat(),
+        })
+        cache_bust("all_users")
+        log.info("Admin %s set a new password for uid %s", session.get("user_email"), uid)
+        return jsonify({"success": True, "message": "Password updated."})
+    except Exception as e:
+        log.error("Admin set password error: %s", e)
+        return jsonify({"success": False, "error": str(e) or "Failed to update password."})
+
+
+def _store_user_password(uid: str, password: str, profile: dict = None):
+    """Keep the user's current password (encrypted) so an admin can view it.
+    Called when a user changes/resets their own password and on every login, so the
+    stored copy always matches what the user actually types. Skips the write if unchanged."""
+    if not uid or not password:
+        return
+    try:
+        if profile is None:
+            profile = fb_get(f"/users/{uid}") or {}
+        old = profile.get("admin_set_pw")
+        if old and _pw_decrypt(old) == password:
+            # Same password, but it was just typed successfully, so the stored copy is
+            # confirmed current (clears "changed by user" after a reset to the same value).
+            fb_update(f"/users/{uid}", {"password_verified_at": datetime.now(timezone.utc).isoformat(),
+                                        "pw_reset_requested_at": None})
+            cache_bust("all_users")
+            return
+        fb_update(f"/users/{uid}", {"admin_set_pw": _pw_encrypt(password),
+                                    "password_changed_at": datetime.now(timezone.utc).isoformat(),
+                                    "password_changed_by": "self",
+                                    "pw_reset_requested_at": None})
+        cache_bust("all_users")
+    except Exception as e:
+        log.warning("Could not store password for %s: %s", uid, e)
+
+
+def firebase_send_signin_link_for_reset(email: str):
+    """Forgot password without the Firebase Action URL setting: send Firebase's
+    "email link" sign-in email. Firebase forwards that link to our /reset-password
+    page (continueUrl, an Authorized domain), where the user sets the new password,
+    so the app sees it. Needs Email link sign-in enabled in Firebase. Returns (ok, err)."""
+    try:
+        resp = requests.post(
+            f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={FIREBASE_API_KEY}",
+            json={"requestType": "EMAIL_SIGNIN", "email": email,
+                  "continueUrl": url_for("reset_password", email=email, _external=True),
+                  "canHandleCodeInApp": True},
+            timeout=10)
+        if resp.status_code == 200:
+            return True, ""
+        return False, resp.json().get("error", {}).get("message", "Failed to send email")
+    except Exception as exc:
+        return False, str(exc)
+
+
+def firebase_reset_password_with_code(email: str, password: str, oob_code: str, mode: str = ""):
     """Reset password using Firebase OOB code. Returns (ok, error_msg)"""
+    if mode == "signIn":
+        # Code from the email-link flow: it proves the user owns the email. Use it,
+        # then set the new password with the Admin SDK.
+        try:
+            r = requests.post(
+                f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithEmailLink?key={FIREBASE_API_KEY}",
+                json={"email": email, "oobCode": oob_code}, timeout=10)
+            if r.status_code != 200:
+                return False, r.json().get("error", {}).get("message", "This link has expired. Request a new one.")
+            from firebase_admin import auth as fb_auth
+            fb_auth.update_user(r.json().get("localId"), password=password)
+            return True, ""
+        except Exception as exc:
+            return False, str(exc)
     try:
         url = f"https://identitytoolkit.googleapis.com/v1/accounts:resetPassword?key={FIREBASE_API_KEY}"
         resp = requests.post(url, json={
@@ -2097,6 +2301,18 @@ def firebase_reset_password_with_code(email: str, password: str, oob_code: str):
 def reset_password():
     email = request.args.get("email", "").strip().lower()
     oob_code = request.args.get("oobCode", "").strip()
+    # Firebase's own reset email (with its Action URL pointed here) sends only
+    # ?mode=resetPassword&oobCode=..., no email. Look the email up from the code
+    # (this only checks the code, it doesn't use it up).
+    if oob_code and not email and FIREBASE_AVAILABLE:
+        try:
+            vr = requests.post(
+                f"https://identitytoolkit.googleapis.com/v1/accounts:resetPassword?key={FIREBASE_API_KEY}",
+                json={"oobCode": oob_code}, timeout=10)
+            if vr.status_code == 200:
+                email = (vr.json().get("email") or "").strip().lower()
+        except Exception as e:
+            log.warning("Could not verify reset code: %s", e)
     error = None
     message = None
     valid_token = False
@@ -2112,35 +2328,32 @@ def reset_password():
 
                 if request.method == "POST":
                     password = request.form.get("password", "")
-                    confirm = request.form.get("confirm_password", "")
+                    # Single password box (Firebase-style page); confirm is optional.
+                    confirm = request.form.get("confirm_password", password)
 
-                    if not password or not confirm:
-                        error = "Please enter both password fields."
-                    elif len(password) < 8:
-                        error = "Password must be at least 8 characters long."
+                    if not password:
+                        error = "Enter a new password."
+                    elif len(password) < 6:
+                        error = "Password should be at least 6 characters."
                     elif password != confirm:
                         error = "Passwords do not match."
                     else:
                         try:
-                            ok, err_msg = firebase_reset_password_with_code(email, password, oob_code)
+                            ok, err_msg = firebase_reset_password_with_code(
+                                email, password, oob_code, request.args.get("mode", ""))
                             if not ok:
                                 error = "Failed to reset password. " + err_msg
                                 log.error("Password reset failed for %s: %s", email, err_msg)
                             else:
-                                ok, uid, err_msg = firebase_sign_in(email, password)
-                                if ok:
-                                    profile = load_user_profile(uid)
-                                    if profile and profile.get("active", True):
-                                        role = normalize_role(profile.get("role", "sales"))
-                                        session.permanent = True
-                                        session["user_email"] = email
-                                        session["user_uid"] = uid
-                                        session["user_name"] = profile.get("username", email.split("@")[0])
-                                        session["user_role"] = role
-                                        log.info("Password reset and auto-login for %s", email)
-                                        return redirect(url_for(first_page(role)))
-
-                                message = "Password reset successfully. You can now sign in with your new password."
+                                try:
+                                    from firebase_admin import auth as fb_auth
+                                    _store_user_password(fb_auth.get_user_by_email(email).uid, password)
+                                except Exception:
+                                    pass
+                                # No automatic login: the user signs in themselves.
+                                # The new password is already saved for admins above.
+                                session.clear()
+                                message = "Password changed. Please sign in with your new password."
                                 valid_token = False
                                 log.info("Password reset successful for %s", email)
                         except Exception as e:
@@ -11953,7 +12166,7 @@ def payroll():
     # Build employee list from /users (Settings) — normalize 'username' → 'name' for template compatibility
     raw_users = _load_all_users()
     employee_profiles = [
-        dict(u, name=u.get("username", ""))
+        {**{k: v for k, v in u.items() if k != "admin_set_pw"}, "name": u.get("username", "")}
         for u in raw_users
         if u.get("active", True)
     ]
@@ -25208,6 +25421,26 @@ def _has_approved_delete_request(uid, entity_type, entity_id):
 @role_required("settings")
 def settings():
     all_users = _load_all_users()
+    # A password changed outside the app (Firebase's own reset page) makes the stored
+    # copy out of date. Firebase records when the password last changed; if that is
+    # newer than our copy, don't show the old password.
+    if session.get("user_role") == "admin" and FIREBASE_AVAILABLE:
+        try:
+            from firebase_admin import auth as fb_auth
+            changed_ms = {r.uid: (r.tokens_valid_after_timestamp or 0)
+                          for r in fb_auth.list_users().iterate_all()}
+            for u in all_users:
+                stale = False
+                if u.get("admin_set_pw") and u.get("password_changed_at"):
+                    try:
+                        ours_ms = max(datetime.fromisoformat(u[k]).timestamp() * 1000
+                                      for k in ("password_changed_at", "password_verified_at") if u.get(k))
+                        stale = changed_ms.get(u.get("firebase_uid"), 0) > ours_ms
+                    except ValueError:
+                        pass
+                u["_pw_stale"] = stale
+        except Exception as e:
+            log.warning("Could not check password change times: %s", e)
     # Normalize role to lowercase so template selectattr filters match reliably
     for _u in all_users:
         if isinstance(_u, dict) and _u.get("role"):
@@ -26051,6 +26284,9 @@ def user_new():
             "monthly_salary":  _safe_float(request.form.get("monthly_salary", 0)),
             "employee_type":   request.form.get("employee_type", "").strip(),
             "commission_rate": _safe_float(request.form.get("commission_rate", 0)),
+            "admin_set_pw":    _pw_encrypt(password),
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+            "password_changed_by": session.get("user_email", ""),
             "created_at":     datetime.now(timezone.utc).isoformat(),
             "updated_at":     datetime.now(timezone.utc).isoformat(),
         }

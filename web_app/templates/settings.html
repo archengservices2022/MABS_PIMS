@@ -176,6 +176,10 @@
             Used for sending invoices, welcome emails, and payment reminders.
             For Gmail, use an <strong>App Password</strong> (not your regular password).
           </p>
+          <p class="text-muted small">
+            <i class="bi bi-key me-1"></i>"Forgot password" emails always use these login details, even when
+            Enable Email Sending is off, so new passwords show in Users straight away.
+          </p>
           <form method="POST" action="{{ url_for('settings_email') }}">
             <div class="form-check form-switch mb-3">
               <input class="form-check-input" type="checkbox" name="enabled"
@@ -363,6 +367,17 @@
             <h6 class="section-heading mb-0">User Management</h6>
             <span class="text-muted small">{{ users|length }} user{{ 's' if users|length != 1 }}</span>
           </div>
+          {% set _reset_reqs = users | selectattr('pw_reset_requested_at') | list %}
+          {% if _reset_reqs and session.get('user_role') == 'admin' %}
+          <div class="alert alert-warning py-2 d-flex align-items-start gap-2" style="font-size:14px;">
+            <i class="bi bi-bell-fill mt-1"></i>
+            <div>
+              <strong>Password reset requested:</strong>
+              {% for r in _reset_reqs %}{{ r.get('username') or r.get('email') }}{{ ', ' if not loop.last }}{% endfor %}.
+              Click <i class="bi bi-key"></i> on their row to set a new password, then share it with them.
+            </div>
+          </div>
+          {% endif %}
 
           <!-- Role filter tabs -->
           {% set _g_admin    = users | selectattr('role','equalto','admin')    | list %}
@@ -464,8 +479,21 @@
                     <div class="fw-semibold">
                       {{ u.get('username','—') }}
                       {% if _is_me %}<span class="badge bg-secondary ms-1" style="font-size:9px;">You</span>{% endif %}
+                      {% if u.get('pw_reset_requested_at') and session.get('user_role') == 'admin' %}
+                      <span class="badge bg-warning text-dark ms-1" style="font-size:9px;" title="Forgot password: set a new one with the key button">
+                        <i class="bi bi-bell-fill me-1"></i>Reset requested</span>
+                      {% endif %}
                     </div>
                     <div class="text-muted" style="font-size:11px;">{{ u.get('email','—') }}</div>
+                    {% if session.get('user_role') == 'admin' %}
+                    {% set _pw = '' if u.get('_pw_stale') else (u.get('admin_set_pw') | pw_plain) %}
+                    <div class="mt-1" style="font-size:12px;">
+                      <i class="bi bi-key me-1 text-muted"></i>
+                      {% if _pw %}<span class="font-monospace fw-semibold">{{ _pw }}</span>
+                      {% elif u.get('_pw_stale') %}<span class="text-muted fst-italic">changed by user, shows after next login</span>
+                      {% else %}<span class="text-muted fst-italic">shows after next login</span>{% endif %}
+                    </div>
+                    {% endif %}
                   </td>
                   <!-- Role (click the badge to change it — disabled for your own row,
                        so you can't accidentally demote yourself out of Settings) -->
@@ -560,12 +588,15 @@
                               title="Customize Pages{% if _role == 'accountant' %} (Grant Tabs){% endif %}">
                         <i class="bi bi-layout-sidebar"></i>
                       </button>
-                      <button class="btn btn-xs btn-outline-warning send-reset-btn"
+                      {% if session.get('user_role') == 'admin' %}
+                      <button class="btn btn-xs btn-outline-dark set-pw-btn"
+                              data-uid="{{ u.firebase_uid }}"
                               data-email="{{ u.get('email','') | e }}"
                               data-name="{{ u.get('username','') | e }}"
-                              title="Send Password Reset Email">
-                        <i class="bi bi-envelope-arrow-up"></i>
+                              title="Set New Password">
+                        <i class="bi bi-key"></i>
                       </button>
+                      {% endif %}
                       {% if not _is_me %}
                       {% if user_role == 'admin' or u.firebase_uid in approved_user_deletes %}
                       <form method="POST"
@@ -1044,6 +1075,33 @@
     </div>
   </div>
 </div>
+
+<!-- Admin: Set Password Modal -->
+<div class="modal fade" id="setPasswordModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-key me-2"></i>Set New Password</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">For <strong id="spwName"></strong> <span class="text-muted" id="spwEmail"></span></p>
+        <input type="hidden" id="spwUid">
+        <label class="form-label fw-semibold">New Password</label>
+        <div class="input-group mb-2">
+          <input type="password" id="spwNew" class="form-control" placeholder="At least 6 characters" autocomplete="new-password">
+          <button class="btn btn-outline-secondary" type="button" id="spwToggle" title="Show / hide"><i class="bi bi-eye"></i></button>
+        </div>
+        <div class="form-text">The employee can log in with this straight away. Let them know the new password.</div>
+        <div class="alert alert-danger py-2 mt-2 d-none" id="spwError"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="spwSaveBtn" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Update Password</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -1120,6 +1178,56 @@ document.addEventListener('DOMContentLoaded', function() {
       })
       .catch(function() { alert('Request failed. Please try again.'); });
   };
+
+  (function() {
+    var modalEl = document.getElementById('setPasswordModal');
+    if (!modalEl) return;
+    var pwInput = document.getElementById('spwNew');
+    var errEl   = document.getElementById('spwError');
+    var saveBtn = document.getElementById('spwSaveBtn');
+    document.getElementById('spwToggle').addEventListener('click', function() {
+      var show = pwInput.type === 'password';
+      pwInput.type = show ? 'text' : 'password';
+      this.innerHTML = show ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>';
+    });
+    document.querySelectorAll('.set-pw-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.getElementById('spwUid').value = btn.dataset.uid;
+        document.getElementById('spwName').textContent = btn.dataset.name;
+        document.getElementById('spwEmail').textContent = '(' + btn.dataset.email + ')';
+        pwInput.value = ''; pwInput.type = 'password';
+        errEl.classList.add('d-none');
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        setTimeout(function() { pwInput.focus(); }, 300);
+      });
+    });
+    saveBtn.addEventListener('click', function() {
+      var pw = pwInput.value;
+      if (pw.length < 6) {
+        errEl.textContent = 'Password must be at least 6 characters.';
+        errEl.classList.remove('d-none'); return;
+      }
+      saveBtn.disabled = true;
+      fetch('/api/admin/set-password', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({uid: document.getElementById('spwUid').value, new_password: pw})
+      }).then(r => r.json()).then(data => {
+        saveBtn.disabled = false;
+        if (data.success) {
+          bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+          window.location.reload();
+        } else {
+          errEl.textContent = data.error || 'Failed to update password.';
+          errEl.classList.remove('d-none');
+        }
+      }).catch(function() {
+        saveBtn.disabled = false;
+        errEl.textContent = 'Network error. Please try again.';
+        errEl.classList.remove('d-none');
+      });
+    });
+  })();
 
   document.querySelectorAll('.send-reset-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
