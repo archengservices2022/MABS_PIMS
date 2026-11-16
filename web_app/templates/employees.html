@@ -2269,8 +2269,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <div id="empReceiptPreview" class="mt-1" style="display:none;">
               <span class="badge bg-success"><i class="bi bi-paperclip me-1"></i><span id="empReceiptName"></span></span>
             </div>
-            <div class="form-text text-danger fw-semibold" style="font-size:11px;">
-              <i class="bi bi-info-circle me-1"></i>Receipt is required — expenses without a receipt will not be accepted.
+            <div id="empReceiptHint" class="form-text text-muted" style="font-size:11px;">
+              <i class="bi bi-info-circle me-1"></i>A receipt is required — expenses without a receipt will not be accepted.
             </div>
           </div>
 
@@ -3478,11 +3478,19 @@ window.empUpdateNames = function(catVal, nameId) {
 window.onEmpReceiptChange = function(input) {
   var preview = document.getElementById('empReceiptPreview');
   var nameEl  = document.getElementById('empReceiptName');
+  var hint    = document.getElementById('empReceiptHint');
   if (input.files && input.files[0]) {
     nameEl.textContent = input.files[0].name;
     preview.style.display = 'block';
+    input.classList.remove('is-invalid');
+    if (hint) {
+      hint.style.display = 'none';
+      hint.classList.remove('text-danger', 'fw-semibold');
+      hint.classList.add('text-muted');
+    }
   } else {
     preview.style.display = 'none';
+    if (hint) hint.style.display = '';
   }
 };
 
@@ -3675,6 +3683,12 @@ window.empCancelEdit = function() {
   // Reset receipt requirement
   document.getElementById('empReceiptInput').required = true;
   document.getElementById('empReceiptPreview').style.display = 'none';
+  var receiptHint = document.getElementById('empReceiptHint');
+  if (receiptHint) {
+    receiptHint.style.display = '';
+    receiptHint.classList.remove('text-danger', 'fw-semibold');
+    receiptHint.classList.add('text-muted');
+  }
 
   // Reset form to default state (dropdowns enabled, text inputs disabled)
   document.getElementById('empCatSelectWrap').style.display = 'block';
@@ -3752,6 +3766,12 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!isEditing && (!receipt || !receipt.files || !receipt.files[0])) {
         e.preventDefault();
         receipt.classList.add('is-invalid');
+        var hint = document.getElementById('empReceiptHint');
+        if (hint) {
+          hint.style.display = '';
+          hint.classList.remove('text-muted');
+          hint.classList.add('text-danger', 'fw-semibold');
+        }
         receipt.focus();
         alert('A receipt is required to submit a new expense.');
       } else {
