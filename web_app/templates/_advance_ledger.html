@@ -134,7 +134,7 @@
           <th class="al-left" style="width:176px;">Type</th>
           <th class="al-left">Description</th>
           <th style="width:126px;">Advance Amount</th>
-          <th style="width:136px;">Commission Adjustment</th>
+          <th style="width:136px;">Adjustment Amount</th>
           <th style="width:122px;">Balance</th>
           <th style="width:172px;">Submitted By</th>
           <th style="width:84px;">Actions</th>
@@ -452,8 +452,10 @@ window.AdvLedger = (function () {
     const e = LEDGER.entries[i];
     const label = e.type_label || e.type;
     const isCommission = e.type === 'Commission Deduction';
+    const isCash = e.type === 'Cash Adjustment';
     confirmDelete('Delete Adjustment',
       `Delete ${e.employee}'s ${money(e.amount)} ${label}?`,
+      isCash ? 'Deleting this adjustment will restore the advance balance.' :
       'Deleting this adjustment will restore the advance balance, remove the associated expense' +
         (isCommission ? ', and restore the commission amount reduced by this adjustment.' : '.'),
       () => postJson('{{ url_for("delete_employee_adjustment") }}', { pieces: e.pieces })
@@ -480,7 +482,15 @@ window.AdvLedger = (function () {
     const box = $('alAdjHint');
     const max = maxAllowed();
     $('alAdjAmount').max = isFinite(max) && max ? String(max) : '';
-    if (!(amount > max + 0.005)) { box.classList.add('d-none'); return; }
+    if (!(amount > max + 0.005)) {
+      if ($('alAdjType').value === 'Cash Adjustment') {
+        box.textContent = 'Cash Adjustment reduces the advance balance only. No expense is recorded.';
+        box.classList.remove('d-none');
+      } else {
+        box.classList.add('d-none');
+      }
+      return;
+    }
     const info = LEDGER.employees[adjEmployee()];
     box.classList.remove('d-none');
     box.textContent = $('alAdjType').value === 'Commission Deduction' && info.pending_commission < info.balance
