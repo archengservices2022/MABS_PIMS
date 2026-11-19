@@ -521,6 +521,7 @@
                 {% for co in change_orders %}
                   {% set co_stages = co_plan_stages[loop.index0] if co_plan_stages and loop.index0 < co_plan_stages|length else [] %}
                   {% if co is mapping and co.get('status') != 'Rejected' and co_stages and co_stages[0].planned %}
+                  {% set plan_co_idx = loop.index0 %}
                   {% for pst in co_stages %}
                 <tr class="co-planned-stage" title="Becomes a payment stage when {{ co.get('co_number','the CO') }} is approved">
                   <td>{{ co.get('co_number','CO') }}{{ ' · ' ~ pst.label if co_stages|length > 1 }}</td>
@@ -528,7 +529,21 @@
                   <td><span class="badge bg-light text-secondary border">Planned · {{ co.get('status') or 'Draft' }}</span></td>
                   <td class="text-end"><span class="text-muted">-</span></td>
                   <td><span class="text-muted">-</span></td>
-                  <td class="text-center"><span class="text-muted small">Awaiting approval</span></td>
+                  <td class="text-center">
+                    {% if loop.first and can_manage_projects and co.get('status') in ('Draft', 'Submitted', None, '') %}
+                    <form id="planApproveCoForm{{ plan_co_idx }}" method="POST" class="d-inline"
+                          action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=plan_co_idx) }}">
+                      <input type="hidden" name="status" value="Approved">
+                      <input type="hidden" name="co_firebase_id" value="{{ co.get('firebase_id','') }}">
+                      <button type="button" class="btn btn-xs btn-success" title="Approve {{ co.get('co_number','CO') }}: adds it to the contract value and makes these payments invoiceable"
+                              onclick="confirmApproveCo('planApproveCoForm{{ plan_co_idx }}', '{{ co.get('co_number','CO') | e }}', {{ co.get('amount',0)|float }})">
+                        <i class="bi bi-check-lg"></i> Approve
+                      </button>
+                    </form>
+                    {% else %}
+                    <span class="text-muted small">Awaiting approval</span>
+                    {% endif %}
+                  </td>
                 </tr>
                   {% endfor %}
                   {% endif %}
