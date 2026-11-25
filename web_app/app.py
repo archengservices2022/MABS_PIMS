@@ -19295,6 +19295,7 @@ def expense_delete(exp_id):
 
     archive_exp.update({
         "firebase_id": exp_id,
+        "was_employee_expense": is_emp_expense,  # restore puts it back in /expenses only if it came from there
         "deleted_at": now_utc,
         "deleted_at_readable": now_readable,
         "deleted_by": deleted_by_name,
@@ -19539,8 +19540,15 @@ def expense_restore(exp_id):
             restored["description"] = f"Employee Salary for {emp_name}"
 
     fb_update(f"/balance_sheet_expenses/{exp_id}", restored)
-    # Restore to /expenses if it was an employee expense
-    if archive.get("submitted_by") or archive.get("employee_name"):
+    # Restore to /expenses only if it was an employee expense claim. Advance
+    # adjustments and commission payments also carry submitted_by / employee_name
+    # but live only in Finance; copying them into /expenses made them show up as
+    # "Pending" employee expense submissions.
+    if "was_employee_expense" in archive:
+        _was_claim = bool(archive.get("was_employee_expense")) and _is_employee_claim(archive)
+    else:  # archived before the flag existed
+        _was_claim = _is_employee_claim(archive)
+    if _was_claim:
         fb_update(f"/expenses/{exp_id}", restored)
 
     # If this expense is linked to a salary, restore the salary as well —
@@ -23267,7 +23275,10 @@ def employees():
     all_emp_expenses = []
     if isinstance(raw_emp_exp, dict):
         for eid, edata in raw_emp_exp.items():
-            if isinstance(edata, dict):
+            # Only expenses employees submitted here; medical claims are listed in
+            # the Medical Claims tab, not under Expenses
+            if (isinstance(edata, dict) and _is_employee_claim(edata)
+                    and edata.get("source") != "medical_claim"):
                 slim = {k: v for k, v in edata.items() if k not in _LARGE_FIELDS}
                 slim["firebase_id"] = eid
                 if slim.get("source") == "medical_claim" and not slim.get("medical_expense_type"):
@@ -25414,7 +25425,7 @@ def approvals():
     _raw_exp = fb_get("/expenses") or {}
     if isinstance(_raw_exp, dict):
         for eid, edata in _raw_exp.items():
-            if isinstance(edata, dict):
+            if isinstance(edata, dict) and _is_employee_claim(edata):
                 edata["firebase_id"] = eid
                 pending_expenses.append(edata)
     pending_expenses.sort(key=lambda x: x.get("created_at", ""), reverse=True)
@@ -25673,6 +25684,31 @@ def api_approval_time_off(req_id, action):
 # It stays "Approved · Unpaid" until someone marks it Paid; only then is the
 # expense recorded, dated on the payment date. Claims approved before this
 # change have no payment_status and are already recorded, so they count as Paid.
+
+def _is_employee_claim(rec: dict) -> bool:
+    """True only for an expense an employee submitted (Employees > Expenses) or an
+    approved medical claim.
+
+    Finance records (salary, bonus, commission, advance adjustments, expenses added
+    in Finance) used to be copied into /expenses when restored from Deleted
+    Expenses. They are not employee claims, so they must not show in Employee
+    Expenses or Approvals."""
+    if not isinstance(rec, dict):
+        return False
+    # Finance / payroll records
+    if (rec.get("adjustment_id") or rec.get("is_adjustment") or rec.get("linked_adjustment_id")
+            or rec.get("is_commission") or rec.get("commission_id") or rec.get("salary_id")
+            or rec.get("salary_type") or rec.get("is_salary")):
+        return False
+    if (rec.get("expense_type") == "Employee Salary"
+            or rec.get("vendor") in ("Advance Adjustments", "Sales Commissions")):
+        return False
+    # Must have been submitted by an employee on the Employees page (or come from a
+    # medical claim). The category does not matter: an employee may submit e.g. a
+    # bonus-related expense, and it still shows.
+    return bool(rec.get("source") == "medical_claim" or rec.get("employee_uid")
+                or rec.get("submitted_by_email"))
+
 
 def _claim_payment_status(rec: dict) -> str:
     if not isinstance(rec, dict) or rec.get("status") != "Approved":
