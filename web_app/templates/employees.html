@@ -2340,8 +2340,13 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {% endif %}
                 {% elif st == 'Approved' %}
                   <span class="badge bg-success">Approved</span>
+                  {% set _ps = e.get('payment_status') or 'Paid' %}
+                  {% if _ps == 'Unpaid' %}<span class="badge bg-warning text-dark">Unpaid</span>{% else %}<span class="badge" style="background:#0f766e;">Paid</span>{% endif %}
                   {% if reviewed_at %}
-                  <div class="text-muted small" style="margin-top:3px;">{{ reviewed_at[:10] | format_date }}</div>
+                  <div class="text-muted text-nowrap" style="font-size:11px;margin-top:3px;">Approved on {{ reviewed_at[:10] | format_date }}</div>
+                  {% endif %}
+                  {% if _ps != 'Unpaid' and e.get('paid_date') %}
+                  <div class="text-nowrap" style="font-size:11px;color:#0f766e;">Paid on {{ e.paid_date | format_date }}</div>
                   {% endif %}
                 {% elif st == 'Rejected' %}
                   <span class="badge bg-danger" title="{{ e.get('review_note','') }}">Rejected</span>
@@ -2590,11 +2595,26 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             {% set reviewed_at = e.get('reviewed_at', '') %}
             {% if st == 'Approved' %}
               <span class="badge bg-success">Approved</span>
-              {% if reviewed_by %}
-              <div class="text-muted small" style="font-size:11px;margin-top:4px;">by <strong>{{ reviewed_by }}</strong></div>
-              {% if reviewed_at %}
-              <div class="text-muted small" style="font-size:10px;">{{ reviewed_at[:10] | format_date }}</div>
+              {% set _ps = e.get('payment_status') or 'Paid' %}
+              {% if _ps == 'Unpaid' %}
+              <span class="badge bg-warning text-dark">Unpaid</span>
+              {% if user_role in ('admin', 'accountant') %}
+              <div class="mt-1">
+                <button type="button" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:12px;"
+                        onclick="openMarkPaid('expense', '{{ e.firebase_id }}', {{ (e.submitted_by_name or '')|tojson|forceescape }})">
+                  <i class="bi bi-cash-coin me-1"></i>Mark as Paid</button>
+              </div>
               {% endif %}
+              {% else %}
+              <span class="badge" style="background:#0f766e;">Paid</span>
+              {% endif %}
+              {% if reviewed_at %}
+              <div class="text-muted text-nowrap" style="font-size:11px;margin-top:4px;">Approved on {{ reviewed_at[:10] | format_date }}{% if reviewed_by %} by <strong>{{ reviewed_by }}</strong>{% endif %}</div>
+              {% elif reviewed_by %}
+              <div class="text-muted text-nowrap" style="font-size:11px;margin-top:4px;">Approved by <strong>{{ reviewed_by }}</strong></div>
+              {% endif %}
+              {% if _ps != 'Unpaid' and e.get('paid_date') %}
+              <div class="text-nowrap" style="font-size:11px;color:#0f766e;">Paid on {{ e.paid_date | format_date }}</div>
               {% endif %}
             {% elif st == 'Rejected' %}
               <span class="badge bg-danger">Rejected</span>
@@ -2823,7 +2843,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 {% else %}
                   <span class="badge" style="background:#fef9c3;color:#92400e;">{{ cs }}</span>
                 {% endif %}
-                {% if c.get('reviewed_at','') %}<div class="text-muted small" style="margin-top:3px;">{{ c.get('reviewed_at','') | format_date }}</div>{% endif %}
+                {% if c.get('reviewed_at','') %}<div class="text-muted text-nowrap" style="font-size:11px;margin-top:3px;">{{ 'Approved' if cs == 'Approved' else 'Reviewed' }} on {{ c.get('reviewed_at','') | format_date }}</div>{% endif %}
+                {% if cs == 'Approved' %}{% if (c.get('payment_status') or 'Paid') == 'Unpaid' %}<div><span class="badge bg-warning text-dark">Unpaid</span></div>{% elif c.get('paid_date') %}<div class="text-nowrap" style="font-size:11px;color:#0f766e;">Paid on {{ c.paid_date | format_date }}</div>{% endif %}{% endif %}
               </td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
@@ -2913,12 +2934,26 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 {% set cs = c.status or 'Pending' %}
                 {% if cs == 'Approved' %}
                   <span class="badge bg-success">{{ cs }}</span>
+                  {% set _ps = c.get('payment_status') or 'Paid' %}
+                  {% if _ps == 'Unpaid' %}
+                  <span class="badge bg-warning text-dark">Unpaid</span>
+                  {% if user_role in ('admin', 'accountant') %}
+                  <div class="mt-1">
+                    <button type="button" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:12px;"
+                            onclick="openMarkPaid('medical', '{{ c.firebase_id }}', {{ (c.employee_name or '')|tojson|forceescape }})">
+                      <i class="bi bi-cash-coin me-1"></i>Mark as Paid</button>
+                  </div>
+                  {% endif %}
+                  {% else %}
+                  <span class="badge" style="background:#0f766e;">Paid</span>
+                  {% endif %}
                 {% elif cs == 'Rejected' %}
                   <span class="badge bg-danger">{{ cs }}</span>
                 {% else %}
                   <span class="badge" style="background:#fef9c3;color:#92400e;">{{ cs }}</span>
                 {% endif %}
-                {% if c.get('reviewed_at','') %}<div class="text-muted small" style="margin-top:3px;">{{ c.get('reviewed_at','') | format_date }}</div>{% endif %}
+                {% if c.get('reviewed_at','') %}<div class="text-muted text-nowrap" style="font-size:11px;margin-top:3px;">{{ 'Approved' if cs == 'Approved' else 'Reviewed' }} on {{ c.get('reviewed_at','') | format_date }}</div>{% endif %}
+                {% if cs == 'Approved' and (c.get('payment_status') or 'Paid') != 'Unpaid' and c.get('paid_date') %}<div class="text-nowrap" style="font-size:11px;color:#0f766e;">Paid on {{ c.paid_date | format_date }}</div>{% endif %}
               </td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
@@ -2932,10 +2967,10 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 {% if c.status == 'Pending' %}
                 <button class="btn btn-xs btn-outline-success"
                         onclick="openMedReview('{{ c.firebase_id }}','{{ c.employee_name }}','{{ c.amount_claimed }}','approve')"
-                        title="Approve"><i class="bi bi-check-lg"></i></button>
+                        title="Approve"><i class="bi bi-check-lg me-1"></i>Approve</button>
                 <button class="btn btn-xs btn-outline-danger ms-1"
                         onclick="openMedReview('{{ c.firebase_id }}','{{ c.employee_name }}','{{ c.amount_claimed }}','reject')"
-                        title="Reject"><i class="bi bi-x-lg"></i></button>
+                        title="Reject"><i class="bi bi-x-lg me-1"></i>Reject</button>
                 {% else %}
                 <span class="text-muted small me-1">{{ c.reviewed_by or '' }}</span>
                 {% if c.status == 'Approved' and c.get('firebase_id') %}
@@ -3050,6 +3085,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
 {% endblock %}
 
 {% block scripts %}
+{% if user_role in ('admin', 'accountant') %}{% include '_mark_paid_modal.html' %}{% endif %}
 <script>
 // Live elapsed timer
 (function () {

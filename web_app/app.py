@@ -23521,76 +23521,20 @@ def medical_claim_review(claim_id):
     except ValueError:
         amt_approved = 0.0
     now_str = datetime.now(timezone.utc).isoformat()
+    old = fb_get(f"/medical_claims/{claim_id}") or {}
     fb_update(f"/medical_claims/{claim_id}", {
         "status":          status,
         "amount_approved": amt_approved if status == "Approved" else None,
         "admin_notes":     request.form.get("admin_notes", "").strip(),
         "reviewed_by":     session.get("user_name", ""),
         "reviewed_at":     now_str,
+        **_approval_payment_fields(old, status == "Approved"),
     })
 
-    if status == "Approved" and amt_approved > 0:
-        claim = fb_get(f"/medical_claims/{claim_id}") or {}
-        # amt_approved is in USD (admin entered USD after seeing BDT→USD conversion)
-        # Preserve the original exchange rate from when the claim was submitted
-        original_exchange_rate = _safe_float(claim.get("exchange_rate", 0))
-        if original_exchange_rate > 0:
-            exchange_rate = original_exchange_rate
-        else:
-            # Fallback for old claims without exchange_rate stored
-            _emp_cfg   = load_settings().get("employee", {})
-            exchange_rate = _safe_float(_emp_cfg.get("bdt_exchange_rate", 110)) or 110
-
-        bdt_amount = amt_approved * exchange_rate
-
-        orig_currency = claim.get("amount_currency", "USD")
-        orig_usd   = _safe_float(claim.get("amount_claimed", 0))
-        admin_note = request.form.get("admin_notes", "").strip()
-        notes_parts = [f"Medical claim by {claim.get('employee_name', '')}"]
-        if orig_currency == "USD":
-            notes_parts.append(f"Original claim: ${orig_usd:,.2f} USD (at ৳{exchange_rate:.0f}/$1)")
-        if admin_note:
-            notes_parts.append(admin_note)
-        exp_data = {
-            "expense_type":         "Other Expenses",
-            "expense_name":         claim.get("description") or "Medical Allowance",
-            "description":          claim.get("description") or "Medical Allowance",
-            "amount":               amt_approved,           # USD
-            "amount_bdt":           bdt_amount,
-            "exchange_rate":        exchange_rate,
-            "category":             "Medical/Benefits",
-            "date":                 claim.get("claim_date") or now_str[:10],
-            "vendor":               "Medical Expenses",
-            "notes":                " | ".join(notes_parts),
-            "submitted_by_name":    claim.get("employee_name", ""),
-            "submitted_by_uid":     claim.get("employee_uid", ""),
-            "submitted_by_email":   "",
-            "status":               "Approved",
-            "reviewed_by":          session.get("user_name", ""),
-            "reviewed_at":          now_str,
-            "created_at":           claim.get("submitted_at", now_str),
-            "updated_at":           now_str,
-            "source":               "medical_claim",
-            "medical_claim_id":     claim_id,
-            "medical_expense_type": claim.get("expense_type", "Medical"),
-            "firebase_id":          claim_id,
-            "created_by":           claim.get("employee_name", ""),
-            "has_receipt":          bool(claim.get("has_receipt")),
-            "receipt_filename":     claim.get("receipt_filename", ""),
-        }
-        # Use claim_id as key so re-approval overwrites, not duplicates
-        fb_update(f"/expenses/{claim_id}", exp_data)
-        fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)
-
-        # Sync receipt from medical_claim_receipts to expense_receipts if it exists
-        if bool(claim.get("has_receipt")):
-            med_receipt = fb_get(f"/medical_claim_receipts/{claim_id}") or {}
-            if isinstance(med_receipt, dict) and med_receipt.get("receipt_base64"):
-                fb_update(f"/expense_receipts/{claim_id}", {
-                    "receipt_base64": med_receipt.get("receipt_base64"),
-                    "receipt_filename": med_receipt.get("receipt_filename", ""),
-                    "receipt_type": med_receipt.get("receipt_type", "application/octet-stream")
-                })
+    # Recorded as an expense only when marked Paid on the Approvals page
+    # (an already-paid claim is re-synced so Finance shows the new amount).
+    if status == "Approved" and old.get("payment_status") == "Paid":
+        _record_medical_claim_expense(claim_id)
 
     flash(f"Claim {status.lower()} successfully.", "success")
     return redirect(url_for("employees") + "#tab-medical")
@@ -23621,48 +23565,13 @@ def medical_claim_update_amount(claim_id):
         "reviewed_at":     now_str,
     })
 
-    # Build full expense record (same shape as medical_claim_review) so that old
-    # claims that were approved before /balance_sheet_expenses writing was added
-    # get properly created — not just 3-field partial updates.
-    _emp_cfg  = load_settings().get("employee", {})
-    bdt_rate  = _safe_float(_emp_cfg.get("bdt_exchange_rate", 110)) or 110
-    orig_currency = claim.get("amount_currency", "BDT")
-    orig_bdt  = _safe_float(claim.get("amount_claimed", 0))
-    notes_parts = [f"Medical claim by {claim.get('employee_name', '')}"]
-    if orig_currency == "BDT":
-        notes_parts.append(f"Original claim: ৳{orig_bdt:,.0f} BDT (at ৳{bdt_rate:.0f}/$1)")
-    exp_data = {
-        "expense_type":       "Other Expenses",
-        "expense_name":       claim.get("description") or "Medical Allowance",
-        "description":        claim.get("description") or "Medical Allowance",
-        "amount":             new_usd,
-        "amount_usd":         new_usd,
-        "amount_original":    orig_bdt,
-        "amount_currency":    orig_currency,
-        "category":           "Medical/Benefits",
-        "date":               claim.get("claim_date") or now_str[:10],
-        "vendor":             "Medical Expenses",
-        "notes":              " | ".join(notes_parts),
-        "submitted_by_name":  claim.get("employee_name", ""),
-        "submitted_by_uid":   claim.get("employee_uid", ""),
-        "submitted_by_email": "",
-        "status":             "Approved",
-        "reviewed_by":        session.get("user_name", ""),
-        "reviewed_at":        now_str,
-        "created_at":         claim.get("submitted_at", now_str),
-        "updated_at":         now_str,
-        "source":             "medical_claim",
-        "medical_claim_id":   claim_id,
-        "medical_expense_type": claim.get("expense_type", "Medical"),
-        "firebase_id":        claim_id,
-        "created_by":         claim.get("employee_name", ""),
-        "has_receipt":        bool(claim.get("has_receipt")),
-        "receipt_filename":   claim.get("receipt_filename", ""),
-    }
-    fb_update(f"/expenses/{claim_id}", exp_data)
-    fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)
-
-    flash("Approved amount updated and expense synced to Financial.", "success")
+    # Only a paid claim is in Finance; update it there too. An unpaid claim
+    # is recorded with the new amount when it is marked Paid.
+    if _claim_payment_status(claim) == "Paid":
+        _record_medical_claim_expense(claim_id)
+        flash("Approved amount updated and expense synced to Financial.", "success")
+    else:
+        flash("Approved amount updated. It will be recorded as an expense when marked Paid.", "success")
     return redirect(url_for("employees") + "#tab-medical")
 
 
@@ -23829,12 +23738,18 @@ def employee_expense_edit_review(exp_id):
             exp_data["edit_review_note"] = review_note
             exp_data["updated_at"] = now_str
 
+            # Not in Finance yet = not paid yet: it waits for Mark as Paid.
+            in_ledger = bool(fb_get(f"/balance_sheet_expenses/{exp_id}"))
+            if not in_ledger and not exp_data.get("payment_status"):
+                exp_data["payment_status"] = "Unpaid"
+
             # Update /expenses with merged data
             fb_update(f"/expenses/{exp_id}", exp_data)
 
-            # Also update /balance_sheet_expenses (Finance tab) if it exists
-            if fb_get(f"/balance_sheet_expenses/{exp_id}"):
-                fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+            # Also update /balance_sheet_expenses (Finance tab) if it exists,
+            # keeping the payment date as the expense date
+            if in_ledger:
+                _record_expense_claim_in_ledger(exp_id)
 
             flash("Edit approved and expense updated.", "success")
         else:
@@ -23869,21 +23784,16 @@ def employee_expense_review(exp_id):
 
     new_status = "Approved" if action == "approve" else "Rejected"
     now_str = datetime.now(timezone.utc).isoformat()
+    old = fb_get(f"/expenses/{exp_id}") or {}
     fb_update(f"/expenses/{exp_id}", {
         "status":      new_status,
         "reviewed_by": session.get("user_name", ""),
         "reviewed_at": now_str,
         "review_note": review_note,
         "updated_at":  now_str,
+        **_approval_payment_fields(old, new_status == "Approved"),
     })
-
-    if new_status == "Approved":
-        # Mirror into balance_sheet_expenses so it appears in Financial tab
-        exp_data = fb_get(f"/expenses/{exp_id}") or {}
-        if isinstance(exp_data, dict):
-            exp_data["firebase_id"] = exp_id
-            exp_data["created_by"] = exp_data.get("submitted_by_email", "")
-            fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+    # Recorded in Finance only when marked Paid on the Approvals page.
 
     flash(f"Expense {new_status.lower()}.", "success")
     return redirect(url_for("employees") + "#tab-emp-expenses")
@@ -25567,7 +25477,11 @@ def approvals():
             'reviewed_at': claim.get('reviewed_at', ''),
             'notes': claim.get('description', '—'),
             'days_pending': days_pending,
-            'cat': 'medical'
+            'cat': 'medical',
+            'payment_status': _claim_payment_status(claim),
+            'paid_date': claim.get('paid_date', ''),
+            'paid_by': claim.get('paid_by', ''),
+            'amount_approved': claim.get('amount_approved'),
         })
     for exp in pending_expenses:
         # Skip expenses that are created from medical claims (they appear as Medical, not Expense)
@@ -25603,7 +25517,11 @@ def approvals():
             'reviewed_at': exp.get('reviewed_at', ''),
             'notes': exp.get('description', '—') or exp.get('expense_name', '—'),
             'days_pending': days_pending,
-            'cat': 'expense'
+            'cat': 'expense',
+            'payment_status': _claim_payment_status(exp),
+            'paid_date': exp.get('paid_date', ''),
+            'paid_by': exp.get('paid_by', ''),
+            'amount_approved': exp.get('amount_approved'),
         })
     # Show time off to admins and accountants
     if _role in ("admin", "accountant"):
@@ -25750,6 +25668,134 @@ def api_approval_time_off(req_id, action):
     return jsonify({"success": True, "status": new_status})
 
 
+# ── Expense / Medical claims: Approved → Paid ─────────────────────────────────
+# Approving a claim no longer records it in Finance (/balance_sheet_expenses).
+# It stays "Approved · Unpaid" until someone marks it Paid; only then is the
+# expense recorded, dated on the payment date. Claims approved before this
+# change have no payment_status and are already recorded, so they count as Paid.
+
+def _claim_payment_status(rec: dict) -> str:
+    if not isinstance(rec, dict) or rec.get("status") != "Approved":
+        return ""
+    return rec.get("payment_status") or "Paid"
+
+
+def _record_expense_claim_in_ledger(exp_id: str, paid_date: str = ""):
+    """Copy an employee expense claim into Finance expenses."""
+    exp_data = fb_get(f"/expenses/{exp_id}") or {}
+    if not isinstance(exp_data, dict) or not exp_data:
+        return
+    existing = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
+    exp_data["firebase_id"] = exp_id
+    exp_data["created_by"] = exp_data.get("submitted_by_email", "")
+    exp_data.setdefault("claim_date", exp_data.get("date", ""))
+    exp_data["date"] = paid_date or (existing.get("date") if isinstance(existing, dict) else "") or exp_data.get("date", "")
+    fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+    cache_bust("financial")
+
+
+def _record_medical_claim_expense(claim_id: str, paid_date: str = ""):
+    """Record an approved medical claim as an expense (/expenses + Finance)."""
+    claim = fb_get(f"/medical_claims/{claim_id}") or {}
+    amt_approved = _safe_float(claim.get("amount_approved", 0)) if isinstance(claim, dict) else 0
+    if amt_approved <= 0:
+        return
+    now_str = datetime.now(timezone.utc).isoformat()
+    existing = fb_get(f"/balance_sheet_expenses/{claim_id}") or {}
+    exchange_rate = _safe_float(claim.get("exchange_rate", 0))
+    if exchange_rate <= 0:
+        exchange_rate = _safe_float(load_settings().get("employee", {}).get("bdt_exchange_rate", 110)) or 110
+    notes_parts = [f"Medical claim by {claim.get('employee_name', '')}"]
+    if claim.get("amount_currency", "USD") == "USD":
+        notes_parts.append(f"Original claim: ${_safe_float(claim.get('amount_claimed', 0)):,.2f} USD (at ৳{exchange_rate:.0f}/$1)")
+    if (claim.get("admin_notes") or "").strip():
+        notes_parts.append(claim["admin_notes"].strip())
+    exp_data = {
+        "expense_type":         "Other Expenses",
+        "expense_name":         claim.get("description") or "Medical Allowance",
+        "description":          claim.get("description") or "Medical Allowance",
+        "amount":               amt_approved,
+        "amount_bdt":           amt_approved * exchange_rate,
+        "exchange_rate":        exchange_rate,
+        "category":             "Medical/Benefits",
+        "date":                 paid_date or (existing.get("date") if isinstance(existing, dict) else "")
+                                or claim.get("paid_date") or claim.get("claim_date") or now_str[:10],
+        "claim_date":           claim.get("claim_date", ""),
+        "vendor":               "Medical Expenses",
+        "notes":                " | ".join(notes_parts),
+        "submitted_by_name":    claim.get("employee_name", ""),
+        "submitted_by_uid":     claim.get("employee_uid", ""),
+        "submitted_by_email":   "",
+        "status":               "Approved",
+        "payment_status":       "Paid",
+        "paid_date":            claim.get("paid_date", ""),
+        "reviewed_by":          claim.get("reviewed_by", ""),
+        "reviewed_at":          claim.get("reviewed_at", now_str),
+        "created_at":           claim.get("submitted_at", now_str),
+        "updated_at":           now_str,
+        "source":               "medical_claim",
+        "medical_claim_id":     claim_id,
+        "medical_expense_type": claim.get("expense_type", "Medical"),
+        "firebase_id":          claim_id,
+        "created_by":           claim.get("employee_name", ""),
+        "has_receipt":          bool(claim.get("has_receipt")),
+        "receipt_filename":     claim.get("receipt_filename", ""),
+    }
+    # claim_id as key so re-recording overwrites instead of duplicating
+    fb_update(f"/expenses/{claim_id}", exp_data)
+    fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)
+    if bool(claim.get("has_receipt")):
+        med_receipt = fb_get(f"/medical_claim_receipts/{claim_id}") or {}
+        if isinstance(med_receipt, dict) and med_receipt.get("receipt_base64"):
+            fb_update(f"/expense_receipts/{claim_id}", {
+                "receipt_base64":   med_receipt.get("receipt_base64"),
+                "receipt_filename": med_receipt.get("receipt_filename", ""),
+                "receipt_type":     med_receipt.get("receipt_type", "application/octet-stream"),
+            })
+    cache_bust("financial")
+
+
+def _approval_payment_fields(old: dict, approved: bool) -> dict:
+    """Fields to save on approve/reject. A claim already marked paid stays paid."""
+    if not approved:
+        return {"payment_status": None}
+    if isinstance(old, dict) and old.get("payment_status") == "Paid":
+        return {}
+    return {"payment_status": "Unpaid"}
+
+
+@app.route("/api/mark-claim-paid/<kind>/<item_id>", methods=["POST"])
+@login_required
+def api_approval_mark_paid(kind, item_id):
+    """Mark an approved Expense or Medical claim as paid and record the expense."""
+    if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
+        return jsonify({"error": "Admin access required"}), 403
+    if kind not in ("expense", "medical"):
+        return jsonify({"error": "Invalid type"}), 400
+    path = f"/expenses/{item_id}" if kind == "expense" else f"/medical_claims/{item_id}"
+    rec = fb_get(path) or {}
+    if not isinstance(rec, dict) or not rec:
+        return jsonify({"error": "Claim not found"}), 404
+    if rec.get("status") != "Approved":
+        return jsonify({"error": "Only approved claims can be marked as paid."}), 400
+    if _claim_payment_status(rec) == "Paid":
+        return jsonify({"error": "This claim is already marked as paid."}), 400
+    data = request.get_json(silent=True) or {}
+    paid_date = (data.get("paid_date") or "").strip()[:10] or datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
+    fb_update(path, {
+        "payment_status": "Paid",
+        "paid_date":      paid_date,
+        "paid_by":        session.get("user_name", ""),
+        "paid_at":        datetime.now(timezone.utc).isoformat(),
+    })
+    if kind == "expense":
+        _record_expense_claim_in_ledger(item_id, paid_date)
+    else:
+        _record_medical_claim_expense(item_id, paid_date)
+    log.info("%s claim %s marked paid on %s by %s", kind, item_id, paid_date, session.get("user_name"))
+    return jsonify({"success": True, "paid_date": paid_date})
+
+
 @app.route("/api/approvals/expense/<exp_id>/<action>", methods=["POST"])
 @login_required
 def api_approval_expense(exp_id, action):
@@ -25761,19 +25807,16 @@ def api_approval_expense(exp_id, action):
     review_note = (data.get("notes") or "").strip()
     new_status = "Approved" if action == "approve" else "Rejected"
     now_str = datetime.now(timezone.utc).isoformat()
+    old = fb_get(f"/expenses/{exp_id}") or {}
     fb_update(f"/expenses/{exp_id}", {
         "status":      new_status,
         "reviewed_by": session.get("user_name", ""),
         "reviewed_at": now_str,
         "review_note": review_note,
         "updated_at":  now_str,
+        **_approval_payment_fields(old, new_status == "Approved"),
     })
-    if new_status == "Approved":
-        exp_data = fb_get(f"/expenses/{exp_id}") or {}
-        if isinstance(exp_data, dict):
-            exp_data["firebase_id"] = exp_id
-            exp_data["created_by"] = exp_data.get("submitted_by_email", "")
-            fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+    # Not recorded in Finance until it is marked Paid (api_approval_mark_paid).
     return jsonify({"success": True, "status": new_status})
 
 
@@ -25792,65 +25835,18 @@ def api_approval_medical(claim_id, action):
     except (ValueError, TypeError):
         amt_approved = 0.0
     admin_notes = (data.get("admin_notes") or "").strip()
+    old = fb_get(f"/medical_claims/{claim_id}") or {}
     fb_update(f"/medical_claims/{claim_id}", {
         "status":          status,
         "amount_approved": amt_approved if status == "Approved" else None,
         "admin_notes":     admin_notes,
         "reviewed_by":     session.get("user_name", ""),
         "reviewed_at":     now_str,
+        **_approval_payment_fields(old, status == "Approved"),
     })
-    if status == "Approved" and amt_approved > 0:
-        claim = fb_get(f"/medical_claims/{claim_id}") or {}
-        original_exchange_rate = _safe_float(claim.get("exchange_rate", 0))
-        if original_exchange_rate > 0:
-            exchange_rate = original_exchange_rate
-        else:
-            _emp_cfg = load_settings().get("employee", {})
-            exchange_rate = _safe_float(_emp_cfg.get("bdt_exchange_rate", 110)) or 110
-        bdt_amount = amt_approved * exchange_rate
-        orig_currency = claim.get("amount_currency", "USD")
-        orig_usd = _safe_float(claim.get("amount_claimed", 0))
-        notes_parts = [f"Medical claim by {claim.get('employee_name', '')}"]
-        if orig_currency == "USD":
-            notes_parts.append(f"Original claim: ${orig_usd:,.2f} USD (at ৳{exchange_rate:.0f}/$1)")
-        if admin_notes:
-            notes_parts.append(admin_notes)
-        exp_data = {
-            "expense_type":       "Other Expenses",
-            "expense_name":       claim.get("description") or "Medical Allowance",
-            "description":        claim.get("description") or "Medical Allowance",
-            "amount":             amt_approved,
-            "amount_bdt":         bdt_amount,
-            "exchange_rate":      exchange_rate,
-            "category":           "Medical/Benefits",
-            "date":               claim.get("claim_date") or now_str[:10],
-            "vendor":             "Medical Expenses",
-            "notes":              " | ".join(notes_parts),
-            "submitted_by_name":  claim.get("employee_name", ""),
-            "submitted_by_uid":   claim.get("employee_uid", ""),
-            "submitted_by_email": "",
-            "status":             "Approved",
-            "reviewed_by":        session.get("user_name", ""),
-            "reviewed_at":        now_str,
-            "created_at":         claim.get("submitted_at", now_str),
-            "updated_at":         now_str,
-            "source":             "medical_claim",
-            "medical_claim_id":   claim_id,
-            "firebase_id":        claim_id,
-            "created_by":         claim.get("employee_name", ""),
-            "has_receipt":        bool(claim.get("has_receipt")),
-            "receipt_filename":   claim.get("receipt_filename", ""),
-        }
-        fb_update(f"/expenses/{claim_id}", exp_data)
-        fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)
-        if bool(claim.get("has_receipt")):
-            med_receipt = fb_get(f"/medical_claim_receipts/{claim_id}") or {}
-            if isinstance(med_receipt, dict) and med_receipt.get("receipt_base64"):
-                fb_update(f"/expense_receipts/{claim_id}", {
-                    "receipt_base64":    med_receipt.get("receipt_base64"),
-                    "receipt_filename":  med_receipt.get("receipt_filename", ""),
-                    "receipt_type":      med_receipt.get("receipt_type", "application/octet-stream"),
-                })
+    # Recorded as an expense only when marked Paid (api_approval_mark_paid).
+    if status == "Approved" and old.get("payment_status") == "Paid":
+        _record_medical_claim_expense(claim_id)
     return jsonify({"success": True, "status": status})
 
 

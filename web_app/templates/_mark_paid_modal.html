@@ -1,0 +1,61 @@
+<!-- Mark as Paid -->
+<div class="modal fade" id="markPaidModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>Mark as Paid</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">Mark <strong id="mpName"></strong>'s claim as paid?</p>
+        <label class="form-label fw-semibold" for="mpDate">Payment date</label>
+        <input type="date" id="mpDate" class="form-control">
+        <div class="form-text">The amount is recorded as an expense in Finance on this date.</div>
+        <div class="alert alert-danger py-2 mt-2 mb-0 d-none" id="mpError"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-success" id="mpSave"><i class="bi bi-check-lg me-1"></i>Mark as Paid</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var _mp = null;
+function openMarkPaid(cat, id, name) {
+  _mp = {cat: cat, id: id};
+  document.getElementById('mpName').textContent = name;
+  var d = new Date();
+  document.getElementById('mpDate').value = d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  document.getElementById('mpError').classList.add('d-none');
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('markPaidModal')).show();
+}
+document.addEventListener('DOMContentLoaded', function() {
+  var btn = document.getElementById('mpSave');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    if (!_mp) return;
+    var err = document.getElementById('mpError');
+    btn.disabled = true;
+    fetch('/api/mark-claim-paid/' + _mp.cat + '/' + _mp.id, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({paid_date: document.getElementById('mpDate').value})
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      btn.disabled = false;
+      if (!data.success) {
+        err.textContent = data.error || 'Could not mark as paid.';
+        err.classList.remove('d-none');
+        return;
+      }
+      location.reload();
+    }).catch(function() {
+      btn.disabled = false;
+      err.textContent = 'Network error. Please try again.';
+      err.classList.remove('d-none');
+    });
+  });
+});
+</script>

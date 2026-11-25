@@ -356,12 +356,14 @@
         <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#hist-expense" style="font-size:13px;">
           <i class="bi bi-receipt me-1" style="color:#b91c1c;"></i>Expenses
           {% if hist_exp %}<span class="badge ms-1" style="background:#b91c1c;color:white;">{{ hist_exp|length }}</span>{% endif %}
+          {% set _unpaid = hist_exp | selectattr('payment_status', 'equalto', 'Unpaid') | list %}{% if _unpaid %}<span class="badge ms-1 bg-warning text-dark" title="Approved but not paid yet">{{ _unpaid|length }} unpaid</span>{% endif %}
         </a>
       </li>
       <li class="nav-item">
         <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#hist-medical" style="font-size:13px;">
           <i class="bi bi-heart-pulse me-1" style="color:#7C3AED;"></i>Medical
           {% if hist_med %}<span class="badge ms-1" style="background:#7C3AED;color:white;">{{ hist_med|length }}</span>{% endif %}
+          {% set _unpaid = hist_med | selectattr('payment_status', 'equalto', 'Unpaid') | list %}{% if _unpaid %}<span class="badge ms-1 bg-warning text-dark" title="Approved but not paid yet">{{ _unpaid|length }} unpaid</span>{% endif %}
         </a>
       </li>
       <li class="nav-item">
@@ -434,6 +436,7 @@
                   <th>Status</th>
                   <th>Reviewed By</th>
                   <th>Reviewed At</th>
+                  <th>Paid On</th>
                 </tr>
               </thead>
               <tbody>
@@ -457,10 +460,21 @@
                   <td class="text-muted small">{{ item.notes or '—' }}</td>
                   <td>
                     {% if item.status == 'Approved' %}<span class="badge bg-success">Approved</span>
+                      {% if item.payment_status == 'Unpaid' %}
+                      <span class="badge bg-warning text-dark">Unpaid</span>
+                      <div class="mt-1">
+                        <button type="button" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:12px;"
+                                onclick="openMarkPaid('expense', '{{ item.firebase_id }}', {{ item.employee|tojson|forceescape }})">
+                          <i class="bi bi-cash-coin me-1"></i>Mark as Paid</button>
+                      </div>
+                      {% elif item.payment_status == 'Paid' %}
+                      <span class="badge" style="background:#0f766e;">Paid</span>
+                      {% endif %}
                     {% else %}<span class="badge bg-danger">{{ item.status }}</span>{% endif %}
                   </td>
                   <td class="text-muted">{{ item.reviewed_by or '—' }}</td>
                   <td class="text-muted text-nowrap">{{ (item.reviewed_at[:10] | format_date) if item.reviewed_at else '—' }}</td>
+                  <td class="text-nowrap">{% if item.status == 'Approved' and item.payment_status == 'Paid' and item.paid_date %}<span style="color:#0f766e;font-weight:600;">{{ item.paid_date | format_date }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -489,6 +503,7 @@
                   <th>Status</th>
                   <th>Reviewed By</th>
                   <th>Reviewed At</th>
+                  <th>Paid On</th>
                 </tr>
               </thead>
               <tbody>
@@ -512,10 +527,21 @@
                   <td class="text-muted small">{{ item.notes or '—' }}</td>
                   <td>
                     {% if item.status == 'Approved' %}<span class="badge bg-success">Approved</span>
+                      {% if item.payment_status == 'Unpaid' %}
+                      <span class="badge bg-warning text-dark">Unpaid</span>
+                      <div class="mt-1">
+                        <button type="button" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:12px;"
+                                onclick="openMarkPaid('medical', '{{ item.firebase_id }}', {{ item.employee|tojson|forceescape }})">
+                          <i class="bi bi-cash-coin me-1"></i>Mark as Paid</button>
+                      </div>
+                      {% elif item.payment_status == 'Paid' %}
+                      <span class="badge" style="background:#0f766e;">Paid</span>
+                      {% endif %}
                     {% else %}<span class="badge bg-danger">{{ item.status }}</span>{% endif %}
                   </td>
                   <td class="text-muted">{{ item.reviewed_by or '—' }}</td>
                   <td class="text-muted text-nowrap">{{ (item.reviewed_at[:10] | format_date) if item.reviewed_at else '—' }}</td>
+                  <td class="text-nowrap">{% if item.status == 'Approved' and item.payment_status == 'Paid' and item.paid_date %}<span style="color:#0f766e;font-weight:600;">{{ item.paid_date | format_date }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -733,6 +759,70 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- Mark as Paid -->
+<div class="modal fade" id="markPaidModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>Mark as Paid</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">Mark <strong id="mpName"></strong>'s claim as paid?</p>
+        <label class="form-label fw-semibold" for="mpDate">Payment date</label>
+        <input type="date" id="mpDate" class="form-control">
+        <div class="form-text">The amount is recorded as an expense in Finance on this date.</div>
+        <div class="alert alert-danger py-2 mt-2 mb-0 d-none" id="mpError"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-success" id="mpSave"><i class="bi bi-check-lg me-1"></i>Mark as Paid</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var _mp = null;
+function openMarkPaid(cat, id, name) {
+  _mp = {cat: cat, id: id};
+  document.getElementById('mpName').textContent = name;
+  var d = new Date();
+  document.getElementById('mpDate').value = d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  document.getElementById('mpError').classList.add('d-none');
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('markPaidModal')).show();
+}
+document.addEventListener('DOMContentLoaded', function() {
+  var btn = document.getElementById('mpSave');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    if (!_mp) return;
+    var err = document.getElementById('mpError');
+    btn.disabled = true;
+    fetch('/api/mark-claim-paid/' + _mp.cat + '/' + _mp.id, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({paid_date: document.getElementById('mpDate').value})
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      btn.disabled = false;
+      if (!data.success) {
+        err.textContent = data.error || 'Could not mark as paid.';
+        err.classList.remove('d-none');
+        return;
+      }
+      localStorage.setItem('approvalsActiveTab', '#tab-history');
+      localStorage.setItem('approvalsHistorySubTab', _mp.cat === 'medical' ? '#hist-medical' : '#hist-expense');
+      location.reload();
+    }).catch(function() {
+      btn.disabled = false;
+      err.textContent = 'Network error. Please try again.';
+      err.classList.remove('d-none');
+    });
+  });
+});
+</script>
+
 <script>
 var currentPermReqId  = null;
 var currentMedicalId  = null;
